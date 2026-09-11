@@ -1,0 +1,65 @@
+{
+  "project": "KochbuchV2",
+  "version": "2.0.0",
+  "entry": "public/kochbuchV2.html",
+  "runtime": "Node.js >= 22 (benoetigt das eingebaute Modul node:sqlite)",
+  "start": "node server.js",
+  "dependencies": "keine - ausschliesslich Node.js-Standardmodule",
+  "files": {
+    "server": [
+      "server.js",
+      "api.js",
+      "db.js"
+    ],
+    "client": [
+      "public/kochbuchV2.html",
+      "public/kochbuchV2.css",
+      "public/kochbuchV2.js"
+    ],
+    "docs": [
+      "README.md"
+    ]
+  },
+  "database": {
+    "type": "sqlite",
+    "driver": "node:sqlite (in Node.js eingebaut, keine native Kompilierung)",
+    "file": "kochbuch.sqlite (ueberschreibbar mit der Umgebungsvariable KOCHBUCH_DB)",
+    "journalMode": "WAL",
+    "schemaVersion": 1,
+    "tables": [
+      "recipes",
+      "ingredients (FK -> recipes, ON DELETE CASCADE)",
+      "images (FK -> recipes, ON DELETE CASCADE, Bilddaten als BLOB)",
+      "fridge_items",
+      "ingredient_catalog (PK COLLATE NOCASE)",
+      "meta"
+    ],
+    "note": "Die Datenhaltung liegt vollstaendig auf dem Server. Der Browser spricht ueber die REST-API unter /api mit der Datenbank; im localStorage bleibt nur die Theme-Einstellung. Bilder liegen als BLOB in der Tabelle images und werden einzeln ueber GET /api/images/:id ausgeliefert - nicht mehr als Base64 im Datensatz."
+  },
+  "api": {
+    "base": "/api",
+    "doc": "README.md",
+    "endpoints": [
+      "GET    /api/health",
+      "GET    /api/state",
+      "GET    /api/recipes",
+      "POST   /api/recipes",
+      "GET    /api/recipes/:id",
+      "PUT    /api/recipes/:id",
+      "DELETE /api/recipes/:id",
+      "GET    /api/images/:id",
+      "GET    /api/fridge",
+      "POST   /api/fridge",
+      "DELETE /api/fridge",
+      "PATCH  /api/fridge/:id",
+      "DELETE /api/fridge/:id",
+      "GET    /api/catalog",
+      "POST   /api/catalog",
+      "DELETE /api/catalog/:name",
+      "POST   /api/import"
+    ]
+  },
+  "description": "Schlanke Kochbuch-WebApp: Rezeptverwaltung mit Zutatenlisten, Bildupload und Kuehlschrank-Tracking. Daten in SQLite auf dem Server, Zugriff ueber eine REST-API.",
+  "createdAt": "2026-09-07",
+  "updatedAt": "2026-09-11"
+}

@@ -1,0 +1,16 @@
+# SQLite-Datenbank und Laufzeitdateien - lokale Daten, gehoeren nicht ins Repo
+kochbuch.sqlite
+kochbuch.sqlite-wal
+kochbuch.sqlite-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Editor/OS
+.DS_Store
+Thumbs.db
+.vscode/

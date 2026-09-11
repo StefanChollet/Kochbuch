@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KochbuchV2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="kochbuchV2.css">
+</head>
+<body>
+
+<header class="app-header">
+  <h1 class="app-title">Kochbuch<span class="app-title-accent">V2</span></h1>
+  <button id="themeToggle" class="btn btn-ghost" type="button" aria-label="Hell/Dunkel umschalten">
+    <span id="themeIcon">🌙</span>
+  </button>
+</header>
+
+<p id="appStatus" class="app-status" role="status" aria-live="polite" hidden></p>
+
+<main class="layout">
+
+  <!-- ============ Rezept-Uebersicht ============ -->
+  <section class="panel panel-recipes" aria-labelledby="recipesHeading">
+    <div class="panel-head">
+      <h2 id="recipesHeading">Rezepte</h2>
+      <button id="createRecipeBtn" class="btn btn-primary" type="button">+ Rezept erstellen</button>
+    </div>
+
+    <table class="recipe-table">
+      <thead>
+        <tr>
+          <th>Rezeptname</th>
+          <th>Kurze Beschreibung</th>
+          <th class="col-menu">Menu</th>
+        </tr>
+      </thead>
+      <tbody id="recipeTableBody">
+        <!-- wird per JS befuellt -->
+      </tbody>
+    </table>
+    <p id="recipeEmptyState" class="empty-state" hidden>Noch keine Rezepte vorhanden. Leg mit "Rezept erstellen" los.</p>
+  </section>
+
+  <!-- ============ Kuehlschrank ============ -->
+  <aside class="panel panel-fridge" aria-labelledby="fridgeHeading">
+    <div class="panel-head">
+      <h2 id="fridgeHeading">Kühlschrank</h2>
+      <button id="clearFridgeBtn" class="btn btn-danger-ghost" type="button">Leeren</button>
+    </div>
+    <p class="panel-sub">Ungefährer Bestand – keine exakte Inventur.</p>
+
+    <form id="fridgeForm" class="fridge-form">
+      <input type="text" id="fridgeItemName" placeholder="Lebensmittel" required maxlength="60">
+      <input type="text" id="fridgeItemAmount" placeholder="Menge" maxlength="20">
+      <button type="submit" class="btn btn-primary btn-small">+</button>
+    </form>
+
+    <ul id="fridgeList" class="fridge-list">
+      <!-- wird per JS befuellt -->
+    </ul>
+    <p id="fridgeEmptyState" class="empty-state" hidden>Der Kühlschrank ist leer.</p>
+  </aside>
+
+</main>
+
+<!-- ============ Dialog: Kochbuch-Detail ============ -->
+<dialog id="recipeDialog" class="recipe-dialog">
+  <form id="recipeForm" method="dialog">
+    <div class="dialog-head">
+      <h2>Kochbuch-Detail</h2>
+      <button type="button" class="btn btn-ghost" id="closeDialogBtn" aria-label="Schliessen">✕</button>
+    </div>
+
+    <input type="hidden" id="recipeId">
+
+    <label class="field">
+      <span>Rezeptname</span>
+      <input type="text" id="recipeName" required maxlength="80">
+    </label>
+
+    <label class="field">
+      <span>Kurze Beschreibung</span>
+      <input type="text" id="recipeShortDesc" maxlength="150" placeholder="Max. 100 Zeichen sichtbar in der Übersicht">
+    </label>
+
+    <label class="field">
+      <span>Zubereitung / Text</span>
+      <textarea id="recipeLongText" rows="6" placeholder="Zutaten-Mengen, Schritte, Anmerkungen..."></textarea>
+    </label>
+
+    <!-- Zutatenliste -->
+    <fieldset class="field-group">
+      <legend>Zutaten</legend>
+      <div class="ingredient-add-row">
+        <input type="text" id="ingredientNameInput" list="ingredientCatalogList" placeholder="Zutat wählen oder neu eingeben" maxlength="60">
+        <datalist id="ingredientCatalogList"></datalist>
+        <input type="text" id="ingredientAmountInput" placeholder="Menge" maxlength="30">
+        <button type="button" id="addIngredientBtn" class="btn btn-secondary btn-small">Hinzufügen</button>
+      </div>
+      <ul id="ingredientList" class="ingredient-list"></ul>
+      <p id="ingredientEmptyState" class="empty-state empty-state-small" hidden>Noch keine Zutaten erfasst.</p>
+    </fieldset>
+
+    <!-- Bilder -->
+    <fieldset class="field-group">
+      <legend>Bilder</legend>
+      <label class="upload-label" for="imageInput">Bild(er) hochladen</label>
+      <input type="file" id="imageInput" accept="image/*" multiple>
+      <div id="imageList" class="image-list"></div>
+    </fieldset>
+
+    <div class="dialog-actions">
+      <button type="button" id="cancelRecipeBtn" class="btn btn-ghost">Abbrechen</button>
+      <button type="submit" id="saveRecipeBtn" class="btn btn-primary">Speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="kochbuchV2.js"></script>
+</body>
+</html>
