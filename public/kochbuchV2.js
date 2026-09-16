@@ -82,6 +82,11 @@ const DB = {
     return this.recipesPage;
   },
 
+  // ---- Empfehlungen ----
+  async getRecommendations(limit = 5){
+    return API.get(`/recommendations?limit=${limit}`);
+  },
+
   // ---- Zutaten-Katalog ----
   async addToIngredientCatalog(name){
     const clean = name.trim();
@@ -195,6 +200,53 @@ themeToggleBtn.addEventListener("click", () => {
 });
 
 /* =========================================================================
+   Empfehlungen — Rezepte, deren Zutaten am besten zum Kuehlschrank-Bestand
+   passen (Server-Algorithmus in db.js: getRecommendations()). Ist der
+   Kuehlschrank leer oder passt nichts, kommt eine zufaellige Auswahl.
+   ========================================================================= */
+const recommendationsSection = document.getElementById("recommendationsSection");
+const recommendationsSub = document.getElementById("recommendationsSub");
+const recommendationsRow = document.getElementById("recommendationsRow");
+
+async function loadRecommendations(){
+  await guard(async () => {
+    const data = await DB.getRecommendations(5);
+    renderRecommendations(data);
+  });
+}
+
+function renderRecommendations({ items, basedOnFridge }){
+  recommendationsSection.hidden = items.length === 0;
+  if(items.length === 0) return;
+
+  recommendationsSub.textContent = basedOnFridge
+    ? "Rezepte, die am besten zu deinem Kühlschrank-Bestand passen"
+    : "Kühlschrank ist leer – eine kleine zufällige Auswahl zum Entdecken";
+
+  recommendationsRow.innerHTML = items.map(r => `
+    <button type="button" class="recommendation-card" data-id="${r.id}">
+      ${r.thumbnailUrl
+        ? `<img class="recommendation-thumb" src="${r.thumbnailUrl}" alt="" loading="lazy">`
+        : `<div class="recommendation-thumb recommendation-thumb-placeholder" aria-hidden="true">🍽️</div>`}
+      <span class="recommendation-name">${escapeHtml(r.name)}</span>
+      <span class="recommendation-desc">${truncate(r.shortDesc, 70)}</span>
+      ${basedOnFridge && r.matchCount > 0
+        ? `<span class="recommendation-badge">${r.matchCount}/${r.totalIngredients} Zutaten vorhanden</span>`
+        : ""}
+    </button>
+  `).join("");
+}
+
+recommendationsRow.addEventListener("click", async (e) => {
+  const card = e.target.closest(".recommendation-card");
+  if(!card) return;
+  await guard(async () => {
+    const recipe = await DB.getRecipe(card.dataset.id);
+    openRecipeDialog(recipe);
+  });
+});
+
+/* =========================================================================
    Rezept-Uebersicht (Tabelle) — mit Suche, Sortierung und Paging.
    Suche/Sortierung/Paging laufen serverseitig; recipeQuery haelt den
    aktuell angezeigten Zustand, loadRecipes() holt dazu die passende Seite.
@@ -283,6 +335,7 @@ recipeTableBody.addEventListener("click", async (e) => {
     await guard(async () => {
       await DB.deleteRecipe(id);
       await loadRecipes();
+      await loadRecommendations();
     }, { success: "Rezept gelöscht." });
   }
 });
@@ -530,6 +583,7 @@ recipeForm.addEventListener("submit", async (e) => {
   const ok = await guard(async () => {
     await DB.saveRecipe(payload);
     await loadRecipes();
+    await loadRecommendations();
     closeRecipeDialog();
   }, { success: "Rezept gespeichert." });
 
@@ -571,6 +625,7 @@ fridgeForm.addEventListener("submit", async (e) => {
     fridgeForm.reset();
     fridgeItemNameInput.focus();
     renderFridgeList();
+    await loadRecommendations();
   });
 });
 
@@ -584,7 +639,13 @@ function flushFridgeEdit(id){
   if(!entry) return;
   clearTimeout(entry.timer);
   pendingFridgeEdits.delete(id);
-  guard(() => DB.updateFridgeItem(id, entry.changes));
+  guard(async () => {
+    await DB.updateFridgeItem(id, entry.changes);
+    // Nur relevant fuer die Empfehlungen, wenn sich der Name aendert (die
+    // Menge fliesst nicht in den Abgleich ein) - trotzdem billig genug,
+    // um es einfach immer aufzufrischen.
+    await loadRecommendations();
+  });
 }
 
 function queueFridgeEdit(id, changes){
@@ -621,6 +682,7 @@ fridgeListEl.addEventListener("click", async (e) => {
   await guard(async () => {
     await DB.deleteFridgeItem(id);
     renderFridgeList();
+    await loadRecommendations();
   });
 });
 
@@ -632,6 +694,7 @@ clearFridgeBtn.addEventListener("click", async () => {
   await guard(async () => {
     await DB.clearFridge();
     renderFridgeList();
+    await loadRecommendations();
   }, { success: "Kühlschrank geleert." });
 });
 
@@ -678,6 +741,7 @@ async function offerLegacyImport(){
     await DB.load();
     await loadRecipes();
     renderFridgeList();
+    await loadRecommendations();
     showStatus(`Übernommen: ${result.recipes} Rezept(e), ${result.fridge} Kühlschrank-Eintrag/-Einträge.`, "success");
   });
 }
@@ -695,5 +759,6 @@ async function offerLegacyImport(){
   await loadRecipes();
   clearStatus();
   renderFridgeList();
+  await loadRecommendations();
   await offerLegacyImport();
 })();

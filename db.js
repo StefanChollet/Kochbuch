@@ -485,6 +485,128 @@ function getStats() {
   };
 }
 
+/* ---------------------------------------------------------- Empfehlungen */
+
+const DEFAULT_RECOMMENDATION_LIMIT = 5;
+const MAX_RECOMMENDATION_LIMIT = 20;
+
+/** Mischt ein Array in-place (Fisher-Yates) - fuer die Zufallsauswahl. */
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+/**
+ * Empfiehlt Rezepte anhand des Kuehlschrank-Bestands: je mehr Zutaten
+ * eines Rezepts bereits im Kuehlschrank stehen, desto weiter oben. Der
+ * Namensabgleich ist bewusst tolerant (Teilstring, case-insensitive) in
+ * beide Richtungen, weil Kuehlschrank- und Zutatennamen nicht aus
+ * demselben kontrollierten Vokabular stammen ("Zwiebel" im Kuehlschrank
+ * soll z.B. auch "Zwiebeln" in einem Rezept treffen).
+ *
+ * Ist der Kuehlschrank leer oder passt kein Rezept, wird mit einer
+ * zufaelligen Auswahl aufgefuellt - basedOnFridge zeigt dem Client, ob die
+ * Liste (ganz oder teilweise) eine echte Grundlage hat oder nur zum
+ * Stoebern gedacht ist.
+ */
+function getRecommendations(options = {}) {
+  const limit = Math.min(
+    MAX_RECOMMENDATION_LIMIT,
+    Math.max(1, Math.trunc(Number(options.limit)) || DEFAULT_RECOMMENDATION_LIMIT)
+  );
+
+  const fridgeNames = listFridge()
+    .map((f) => f.name.trim().toLowerCase())
+    .filter(Boolean);
+
+  const rows = db.prepare(`
+    SELECT r.id, r.name, r.short_desc AS shortDesc, i.name AS ingredientName
+    FROM recipes r
+    LEFT JOIN ingredients i ON i.recipe_id = r.id
+  `).all();
+
+  const byRecipe = new Map();
+  for (const row of rows) {
+    let entry = byRecipe.get(row.id);
+    if (!entry) {
+      entry = { id: row.id, name: row.name, shortDesc: row.shortDesc, ingredientNames: [] };
+      byRecipe.set(row.id, entry);
+    }
+    if (row.ingredientName) entry.ingredientNames.push(row.ingredientName);
+  }
+
+  const matchesFridge = (ingredientName) => {
+    const n = ingredientName.trim().toLowerCase();
+    if (!n) return false;
+    return fridgeNames.some((f) => n.includes(f) || f.includes(n));
+  };
+
+  const scored = [...byRecipe.values()].map((r) => {
+    const totalIngredients = r.ingredientNames.length;
+    const matchCount = r.ingredientNames.filter(matchesFridge).length;
+    return {
+      id: r.id,
+      name: r.name,
+      shortDesc: r.shortDesc,
+      totalIngredients,
+      matchCount,
+      matchRatio: totalIngredients ? matchCount / totalIngredients : 0,
+    };
+  });
+
+  let picked;
+  let basedOnFridge;
+
+  if (fridgeNames.length === 0) {
+    basedOnFridge = false;
+    picked = shuffle(scored).slice(0, limit);
+  } else {
+    const withMatches = scored
+      .filter((r) => r.matchCount > 0)
+      // Mehr treffende Zutaten zuerst, bei Gleichstand die Rezepte, bei
+      // denen der Kuehlschrank einen groesseren Anteil abdeckt, dann die
+      // mit weniger Zutaten insgesamt (schneller komplett zu beschaffen).
+      .sort((a, b) => b.matchCount - a.matchCount || b.matchRatio - a.matchRatio || a.totalIngredients - b.totalIngredients);
+
+    picked = withMatches.slice(0, limit);
+    basedOnFridge = picked.length > 0;
+
+    if (picked.length < limit) {
+      const usedIds = new Set(picked.map((r) => r.id));
+      const filler = shuffle(scored.filter((r) => !usedIds.has(r.id))).slice(0, limit - picked.length);
+      picked = [...picked, ...filler];
+    }
+  }
+
+  if (picked.length === 0) return { items: [], basedOnFridge: false };
+
+  const placeholders = picked.map(() => "?").join(",");
+  const imageRows = db.prepare(`
+    SELECT recipe_id AS recipeId, id FROM (
+      SELECT recipe_id, id,
+             ROW_NUMBER() OVER (PARTITION BY recipe_id ORDER BY position) AS rn
+      FROM images
+      WHERE recipe_id IN (${placeholders})
+    )
+    WHERE rn = 1
+  `).all(...picked.map((r) => r.id));
+  const thumbByRecipe = new Map(imageRows.map((row) => [row.recipeId, row.id]));
+
+  const items = picked.map((r) => ({
+    id: r.id,
+    name: r.name,
+    shortDesc: r.shortDesc,
+    matchCount: r.matchCount,
+    totalIngredients: r.totalIngredients,
+    thumbnailUrl: thumbByRecipe.has(r.id) ? `/api/images/${thumbByRecipe.get(r.id)}` : null,
+  }));
+
+  return { items, basedOnFridge };
+}
+
 module.exports = {
   HttpError,
   SCHEMA_VERSION,
@@ -509,4 +631,5 @@ module.exports = {
   importState,
   getState,
   getStats,
+  getRecommendations,
 };

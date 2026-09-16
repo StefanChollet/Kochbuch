@@ -88,6 +88,7 @@ Fehler kommen einheitlich als `{ "error": "..." }` mit passendem HTTP-Status
 | `GET` | `/api/health` | Status, Schema-Version, Bestandszahlen |
 | `GET` | `/api/state` | Kühlschrank + Katalog in einem Aufruf (Startaufbau) |
 | `GET` | `/api/recipes` | Rezeptübersicht: Suche, Sortierung, Paging |
+| `GET` | `/api/recommendations` | Empfehlungen anhand des Kühlschrank-Bestands |
 | `POST` | `/api/recipes` | Rezept anlegen → `201` + `Location` |
 | `GET` | `/api/recipes/:id` | vollständiges Rezept inkl. Zutaten und Bild-URLs |
 | `PUT` | `/api/recipes/:id` | Rezept vollständig ersetzen |
@@ -134,6 +135,33 @@ Antwort:
       "thumbnailUrl": "/api/images/mtx0dp13..." }
   ],
   "total": 102, "page": 1, "pageSize": 20, "totalPages": 6
+}
+```
+
+### Empfehlungen
+
+```
+GET /api/recommendations?limit=5
+```
+
+Empfiehlt Rezepte anhand des Kühlschrank-Bestands: bewertet wird, wie viele
+Zutaten eines Rezepts bereits im Kühlschrank stehen (Namensabgleich als
+Teilstring, case-insensitive, in beide Richtungen — "Zwiebel" im Kühlschrank
+trifft z. B. auch die Zutat "Zwiebeln"). Sortiert nach Trefferzahl, bei
+Gleichstand nach Trefferanteil, dann nach Gesamtzahl der Zutaten (weniger
+zuerst). Ist der Kühlschrank leer oder deckt kein Rezept auch nur eine Zutat
+ab, wird mit einer zufälligen Auswahl aufgefüllt — `basedOnFridge` zeigt an,
+ob die Liste (mindestens teilweise) eine echte Grundlage hat.
+
+`limit` ist optional, 1–20, Standard 5.
+
+```json
+{
+  "items": [
+    { "id": "mtx53cig...", "name": "Bratkartoffeln", "shortDesc": "...",
+      "matchCount": 2, "totalIngredients": 5, "thumbnailUrl": null }
+  ],
+  "basedOnFridge": true
 }
 ```
 
