@@ -217,6 +217,24 @@ body{
 .panel-fridge{
   background: repeating-linear-gradient(var(--surface), var(--surface) 34px, var(--surface-2) 35px);
   border: 1px dashed var(--line);
+  /* Bleibt beim Scrollen der (potenziell langen) Rezeptliste sichtbar und
+     bekommt bei viel Inhalt eine eigene Scrollleiste statt die ganze Seite
+     in die Laenge zu ziehen. */
+  position: sticky;
+  top: 1.75rem;
+  max-height: calc(100vh - 3.5rem);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.panel-fridge::-webkit-scrollbar{ width: 8px; }
+.panel-fridge::-webkit-scrollbar-track{ background: transparent; }
+.panel-fridge::-webkit-scrollbar-thumb{ background: var(--line); border-radius: 4px; }
+.panel-fridge::-webkit-scrollbar-thumb:hover{ background: var(--ink-soft); }
+@media (max-width: 860px){
+  /* Im einspaltigen Layout stuende ein fixierter Kuehlschrank der
+     Rezeptliste im Weg - dort ganz normal mitscrollen lassen. */
+  .panel-fridge{ position: static; max-height: none; overflow-y: visible; }
 }
 .fridge-form{
   display:flex;
