@@ -84,12 +84,6 @@ const routes = [
     sendJson(res, 200, db.getState());
   }],
 
-  // Empfehlungen anhand des Kuehlschrank-Bestands, siehe db.getRecommendations().
-  ["GET", /^\/api\/recommendations$/, async (req, res) => {
-    const q = getQuery(req);
-    sendJson(res, 200, db.getRecommendations({ limit: q.get("limit") || 5 }));
-  }],
-
   /* ---- Rezepte ---- */
   // Unterstuetzt ?search=&sortBy=name|shortDesc|updatedAt&sortDir=asc|desc&page=&pageSize=
   ["GET", /^\/api\/recipes$/, async (req, res) => {
