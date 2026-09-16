@@ -55,8 +55,9 @@ body{
   font-size: 1.6rem;
   margin:0;
   letter-spacing: 0.01em;
+  color: var(--danger);
 }
-.app-title-accent{ color: var(--accent); }
+.app-title-accent{ color: var(--danger); }
 
 /* ===== Statuszeile ===== */
 .app-status{
@@ -114,6 +115,63 @@ body{
   margin: 0 0 1rem;
 }
 
+/* ===== Recipe toolbar (Suche + Sortierung) ===== */
+.recipe-toolbar{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:.75rem;
+  margin-top: .9rem;
+}
+.recipe-search-wrap{ flex: 1 1 220px; min-width: 180px; }
+.recipe-sort-wrap{
+  display:flex;
+  align-items:center;
+  gap:.5rem;
+  flex: 0 0 auto;
+}
+.recipe-sort-wrap label{
+  font-size:.82rem;
+  color: var(--ink-soft);
+  white-space:nowrap;
+}
+.recipe-sort-wrap select{ width:auto; min-width: 200px; }
+#recipeResetFiltersBtn{ flex: 0 0 auto; margin-left: auto; }
+
+/* ===== Recipe pager ===== */
+.recipe-pager{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:space-between;
+  gap:.75rem;
+  margin-top: 1rem;
+  padding-top: .9rem;
+  border-top: 1px solid var(--line);
+}
+.recipe-pager-info{ margin:0; color: var(--ink-soft); font-size:.82rem; }
+.recipe-pager-controls{
+  display:flex;
+  align-items:center;
+  gap:.4rem;
+}
+.recipe-pager-controls select{ width:auto; }
+.recipe-page-indicator{
+  font-size:.85rem;
+  min-width: 108px;
+  text-align:center;
+  color: var(--ink);
+}
+.sr-only{
+  position:absolute;
+  width:1px; height:1px;
+  padding:0; margin:-1px;
+  overflow:hidden;
+  clip: rect(0,0,0,0);
+  white-space:nowrap;
+  border:0;
+}
+
 /* ===== Recipe table ===== */
 .recipe-table{
   width:100%;
@@ -134,7 +192,24 @@ body{
   vertical-align: middle;
 }
 .recipe-table tr:last-child td{ border-bottom:none; }
-.recipe-name-cell{ font-family: var(--font-display); font-size:1.02rem; }
+/* Zebra-Streifen: jede zweite Zeile in --surface-2 statt --surface -
+   bewusst nur ein minimaler Farbunterschied, damit lange Listen lesbarer
+   werden, ohne unruhig zu wirken. */
+.recipe-table tbody tr:nth-child(even){ background: var(--surface-2); }
+.recipe-name-cell{
+  font-family: var(--font-display);
+  font-size:1.02rem;
+  display:flex;
+  align-items:center;
+  gap:.5rem;
+}
+.recipe-row-thumb{
+  width:16px; height:16px;
+  flex:0 0 auto;
+  border-radius:3px;
+  object-fit:cover;
+  border:1px solid var(--line);
+}
 .col-menu{ width: 120px; }
 .menu-cell{ display:flex; gap:.4rem; }
 
@@ -181,6 +256,7 @@ body{
   transition: transform .08s ease, background .15s ease, border-color .15s ease;
 }
 .btn:active{ transform: scale(0.97); }
+.btn:disabled{ opacity:.4; cursor:not-allowed; transform:none; }
 .btn-primary{ background: var(--accent); color: var(--accent-contrast); font-weight:600; }
 .btn-secondary{ background: var(--surface-2); color: var(--ink); border-color: var(--line); }
 .btn-ghost{ background: transparent; color: var(--ink); border-color: var(--line); }
@@ -188,7 +264,7 @@ body{
 .btn-icon{ background: transparent; border-color: var(--line); padding: .35rem .55rem; }
 .btn-small{ padding: .35rem .6rem; font-size:.8rem; }
 
-input[type="text"], textarea, input[type="file"]{
+input[type="text"], input[type="search"], textarea, input[type="file"], select{
   font-family: var(--font-body);
   font-size: .9rem;
   color: var(--ink);
@@ -199,6 +275,7 @@ input[type="text"], textarea, input[type="file"]{
   width:100%;
 }
 textarea{ resize: vertical; }
+input[type="search"]::-webkit-search-cancel-button{ cursor:pointer; }
 
 .empty-state{ color: var(--ink-soft); font-size:.9rem; padding: .5rem 0; }
 .empty-state-small{ font-size: .8rem; }
@@ -232,6 +309,7 @@ textarea{ resize: vertical; }
   font-family: var(--font-display);
   font-weight:600;
   margin:0;
+  color: var(--danger);
 }
 .field{ display:flex; flex-direction:column; gap:.35rem; font-size:.85rem; color: var(--ink-soft); }
 .field input, .field textarea{ color: var(--ink); font-size:.95rem; }
@@ -282,23 +360,24 @@ textarea{ resize: vertical; }
   gap:.6rem;
   margin-top:.7rem;
 }
+/* Basisgroesse 84px, um 300% vergroessert (= das 4-fache) auf 336px. */
 .image-thumb{
   position:relative;
-  width: 84px; height:84px;
+  width: 336px; height:336px;
   border-radius: 6px;
   overflow:hidden;
   border: 1px solid var(--line);
 }
-.image-thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
+.image-thumb img{ width:100%; height:100%; object-fit:cover; display:block; cursor: zoom-in; }
 .image-remove{
   position:absolute;
-  top:2px; right:2px;
-  width:20px; height:20px;
+  top:6px; right:6px;
+  width:32px; height:32px;
   border-radius:50%;
   border:none;
   background: rgba(23,29,24,0.75);
   color:#fff;
-  font-size:.7rem;
+  font-size:1rem;
   line-height:1;
   cursor:pointer;
 }
@@ -309,4 +388,49 @@ textarea{ resize: vertical; }
   gap:.6rem;
   border-top: 1px solid var(--line);
   padding-top: 1rem;
+}
+
+/* ===== Bild-Lightbox: Doppelklick auf ein Bild zeigt es um weitere 300%
+   vergroessert (also das 4-fache der bereits vergroesserten 336px-Kachel
+   = 1344px), begrenzt auf den sichtbaren Bereich. Liegt als Kind im
+   <dialog>, damit sie im selben Top-Layer wie der modale Dialog steht und
+   ueber dessen Backdrop erscheint. */
+.image-lightbox{
+  position:fixed;
+  inset:0;
+  z-index:10;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding: 2rem;
+  background: rgba(15,18,15,0.82);
+  cursor: zoom-out;
+}
+/* [hidden] hat dieselbe Spezifitaet wie die Klasse oben und muesste sich
+   sonst rein per Kaskadenreihenfolge dagegen durchsetzen - lieber explizit
+   erzwingen, damit die Lightbox bei hidden="" zuverlaessig verschwindet. */
+.image-lightbox[hidden]{ display:none; }
+.image-lightbox img{
+  /* width/height statt max-*: das Bild soll aktiv auf die Zielgroesse
+     vergroessert werden (auch kleine Quellbilder), nicht nur begrenzt
+     werden, falls es zufällig groesser ist. object-fit haelt dabei das
+     Seitenverhaeltnis, noetigenfalls mit Letterboxing. */
+  width: min(1344px, 92vw);
+  height: min(1344px, 88vh);
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  background: var(--surface);
+}
+.image-lightbox-close{
+  position:absolute;
+  top: 1.1rem; right: 1.1rem;
+  width:38px; height:38px;
+  border-radius:50%;
+  border:none;
+  background: rgba(255,255,255,0.15);
+  color:#fff;
+  font-size:1.1rem;
+  line-height:1;
+  cursor:pointer;
 }

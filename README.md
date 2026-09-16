@@ -86,8 +86,8 @@ Fehler kommen einheitlich als `{ "error": "..." }` mit passendem HTTP-Status
 | Methode | Pfad | Zweck |
 |---|---|---|
 | `GET` | `/api/health` | Status, Schema-Version, Bestandszahlen |
-| `GET` | `/api/state` | Rezeptübersicht + Kühlschrank + Katalog in einem Aufruf |
-| `GET` | `/api/recipes` | Rezeptübersicht (ohne Zubereitungstext und Bilddaten) |
+| `GET` | `/api/state` | Kühlschrank + Katalog in einem Aufruf (Startaufbau) |
+| `GET` | `/api/recipes` | Rezeptübersicht: Suche, Sortierung, Paging |
 | `POST` | `/api/recipes` | Rezept anlegen → `201` + `Location` |
 | `GET` | `/api/recipes/:id` | vollständiges Rezept inkl. Zutaten und Bild-URLs |
 | `PUT` | `/api/recipes/:id` | Rezept vollständig ersetzen |
@@ -102,6 +102,40 @@ Fehler kommen einheitlich als `{ "error": "..." }` mit passendem HTTP-Status
 | `POST` | `/api/catalog` | Vorschlag ergänzen |
 | `DELETE` | `/api/catalog/:name` | Vorschlag entfernen → `204` |
 | `POST` | `/api/import` | Altbestand aus der localStorage-Version übernehmen |
+
+### Rezeptübersicht: Suche, Sortierung, Paging
+
+```
+GET /api/recipes?search=zwiebel&sortBy=name&sortDir=asc&page=1&pageSize=20
+```
+
+Alle Parameter sind optional. Suche, Sortierung und Paging laufen direkt in
+SQL — auch bei mehreren hundert Rezepten geht nur eine Seite an Daten über die
+Leitung.
+
+| Parameter | Werte | Standard |
+|---|---|---|
+| `search` | Freitext, geprüft gegen Name, Kurzbeschreibung und Zutatennamen | – (kein Filter) |
+| `sortBy` | `name`, `shortDesc`, `updatedAt` | `name` |
+| `sortDir` | `asc`, `desc` | `asc` |
+| `page` | 1-basiert | `1` |
+| `pageSize` | 1–100 | `20` |
+
+Ein unbekannter `sortBy`-Wert fällt still auf `name` zurück; eine `page`
+jenseits der letzten Seite wird auf die letzte gültige Seite begrenzt.
+
+Antwort:
+
+```json
+{
+  "items": [
+    { "id": "mtx0bs0y...", "name": "Zwiebelkuchen", "shortDesc": "...",
+      "updatedAt": "2026-09-11T13:43:51.203Z", "ingredientCount": 3, "imageCount": 1,
+      "thumbnailUrl": "/api/images/mtx0dp13..." }
+  ],
+  "total": 102, "page": 1, "pageSize": 20, "totalPages": 6
+}
+```
 
 ### Rezept anlegen
 

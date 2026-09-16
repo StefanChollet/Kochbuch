@@ -59,6 +59,11 @@ async function readJson(req) {
   }
 }
 
+/** Liefert die Query-Parameter einer Anfrage; der Host in der Basis-URL wird nicht verwendet. */
+function getQuery(req) {
+  return new URL(req.url, "http://internal").searchParams;
+}
+
 /* ------------------------------------------------------------- Routen */
 
 /**
@@ -80,8 +85,16 @@ const routes = [
   }],
 
   /* ---- Rezepte ---- */
+  // Unterstuetzt ?search=&sortBy=name|shortDesc|updatedAt&sortDir=asc|desc&page=&pageSize=
   ["GET", /^\/api\/recipes$/, async (req, res) => {
-    sendJson(res, 200, db.listRecipes());
+    const q = getQuery(req);
+    sendJson(res, 200, db.listRecipesPage({
+      search: q.get("search") || "",
+      sortBy: q.get("sortBy") || "name",
+      sortDir: q.get("sortDir") || "asc",
+      page: q.get("page") || 1,
+      pageSize: q.get("pageSize") || 20,
+    }));
   }],
 
   ["POST", /^\/api\/recipes$/, async (req, res) => {

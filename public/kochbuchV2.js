@@ -45,7 +45,10 @@ const enc = encodeURIComponent;
    Aenderung sofort ueber die API in die SQLite-Datenbank.
    ========================================================================= */
 const DB = {
-  data: { recipes: [], fridge: [], ingredientCatalog: [] },
+  data: { fridge: [], ingredientCatalog: [] },
+  // Aktuell angezeigte Seite der Rezeptuebersicht (Suche/Sortierung/Paging
+  // laufen serverseitig in SQL - siehe refreshRecipes()).
+  recipesPage: { items: [], total: 0, page: 1, pageSize: 20, totalPages: 1 },
 
   async load(){
     this.data = await API.get("/state");
@@ -53,8 +56,8 @@ const DB = {
   },
 
   // ---- Rezepte ----
-  // Die Uebersicht in data.recipes enthaelt nur Kopfdaten; Zutaten und
-  // Bilder kommen erst beim Oeffnen eines Rezepts dazu.
+  // Die Uebersicht enthaelt nur Kopfdaten; Zutaten und Bilder kommen erst
+  // beim Oeffnen eines Rezepts dazu.
   async getRecipe(id){
     return API.get(`/recipes/${enc(id)}`);
   },
@@ -62,16 +65,21 @@ const DB = {
     const saved = recipe.id
       ? await API.put(`/recipes/${enc(recipe.id)}`, recipe)
       : await API.post("/recipes", recipe);
-    await this.refreshRecipes();
     await this.refreshCatalog();
     return saved;
   },
   async deleteRecipe(id){
     await API.del(`/recipes/${enc(id)}`);
-    await this.refreshRecipes();
   },
-  async refreshRecipes(){
-    this.data.recipes = await API.get("/recipes");
+  async refreshRecipes(query){
+    const params = new URLSearchParams();
+    if(query.search) params.set("search", query.search);
+    params.set("sortBy", query.sortBy || "name");
+    params.set("sortDir", query.sortDir || "asc");
+    params.set("page", String(query.page || 1));
+    params.set("pageSize", String(query.pageSize || 20));
+    this.recipesPage = await API.get(`/recipes?${params.toString()}`);
+    return this.recipesPage;
   },
 
   // ---- Zutaten-Katalog ----
@@ -187,20 +195,52 @@ themeToggleBtn.addEventListener("click", () => {
 });
 
 /* =========================================================================
-   Rezept-Uebersicht (Tabelle)
+   Rezept-Uebersicht (Tabelle) — mit Suche, Sortierung und Paging.
+   Suche/Sortierung/Paging laufen serverseitig; recipeQuery haelt den
+   aktuell angezeigten Zustand, loadRecipes() holt dazu die passende Seite.
    ========================================================================= */
 const recipeTableBody = document.getElementById("recipeTableBody");
 const recipeEmptyState = document.getElementById("recipeEmptyState");
+const recipeSearchInput = document.getElementById("recipeSearchInput");
+const recipeSortSelect = document.getElementById("recipeSortSelect");
+const recipePageSizeSelect = document.getElementById("recipePageSizeSelect");
+const recipePagerInfo = document.getElementById("recipePagerInfo");
+const recipePageIndicator = document.getElementById("recipePageIndicator");
+const recipeFirstPageBtn = document.getElementById("recipeFirstPageBtn");
+const recipePrevPageBtn = document.getElementById("recipePrevPageBtn");
+const recipeNextPageBtn = document.getElementById("recipeNextPageBtn");
+const recipeLastPageBtn = document.getElementById("recipeLastPageBtn");
+const recipeResetFiltersBtn = document.getElementById("recipeResetFiltersBtn");
+
+const DEFAULT_RECIPE_QUERY = { search: "", sortBy: "name", sortDir: "asc", page: 1, pageSize: 20 };
+const recipeQuery = { ...DEFAULT_RECIPE_QUERY };
+
+/** Holt die zu recipeQuery passende Seite vom Server und zeichnet neu. */
+async function loadRecipes(){
+  const ok = await guard(() => DB.refreshRecipes(recipeQuery));
+  if(ok){
+    // Der Server kann die Seite begrenzt haben (z.B. nach einem Loeschen,
+    // das die letzte Seite leert) - recipeQuery synchron halten, sonst
+    // rechnen "Weiter"/"Zurueck" mit einer veralteten Seitenzahl.
+    recipeQuery.page = DB.recipesPage.page;
+  }
+  renderRecipeTable();
+}
 
 function renderRecipeTable(){
-  const recipes = DB.data.recipes;
-  recipeTableBody.innerHTML = "";
-  recipeEmptyState.hidden = recipes.length > 0;
+  const { items, total, page, totalPages } = DB.recipesPage;
+  const hasSearch = recipeQuery.search.trim().length > 0;
 
-  recipes.forEach(recipe => {
+  recipeTableBody.innerHTML = "";
+  recipeEmptyState.hidden = items.length > 0;
+  recipeEmptyState.textContent = hasSearch
+    ? `Keine Rezepte gefunden für "${recipeQuery.search.trim()}".`
+    : 'Noch keine Rezepte vorhanden. Leg mit "Rezept erstellen" los.';
+
+  items.forEach(recipe => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td class="recipe-name-cell">${escapeHtml(recipe.name)}</td>
+      <td class="recipe-name-cell">${recipe.thumbnailUrl ? `<img class="recipe-row-thumb" src="${recipe.thumbnailUrl}" alt="" loading="lazy">` : ""}${escapeHtml(recipe.name)}</td>
       <td>${truncate(recipe.shortDesc, 100)}</td>
       <td class="menu-cell">
         <button class="btn btn-icon" data-action="edit" data-id="${recipe.id}" title="Bearbeiten" aria-label="Bearbeiten">✏️</button>
@@ -209,6 +249,16 @@ function renderRecipeTable(){
     `;
     recipeTableBody.appendChild(tr);
   });
+
+  const pageSize = recipeQuery.pageSize;
+  recipePagerInfo.textContent = total === 0
+    ? "Keine Rezepte"
+    : `Rezept ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} von ${total}`;
+  recipePageIndicator.textContent = `Seite ${page} von ${totalPages}`;
+  recipeFirstPageBtn.disabled = page <= 1;
+  recipePrevPageBtn.disabled = page <= 1;
+  recipeNextPageBtn.disabled = page >= totalPages;
+  recipeLastPageBtn.disabled = page >= totalPages;
 }
 
 recipeTableBody.addEventListener("click", async (e) => {
@@ -227,14 +277,62 @@ recipeTableBody.addEventListener("click", async (e) => {
   }
 
   if(btn.dataset.action === "delete"){
-    const recipe = DB.data.recipes.find(r => r.id === id);
+    const recipe = DB.recipesPage.items.find(r => r.id === id);
     const ok = window.confirm(`Rezept "${recipe ? recipe.name : ""}" unwiderruflich löschen?`);
     if(!ok) return;
     await guard(async () => {
       await DB.deleteRecipe(id);
-      renderRecipeTable();
+      await loadRecipes();
     }, { success: "Rezept gelöscht." });
   }
+});
+
+/* ---- Suche (debounced, Enter loest sofort aus) ---- */
+let recipeSearchTimer = null;
+recipeSearchInput.addEventListener("input", () => {
+  clearTimeout(recipeSearchTimer);
+  recipeSearchTimer = setTimeout(() => {
+    recipeQuery.search = recipeSearchInput.value;
+    recipeQuery.page = 1;
+    loadRecipes();
+  }, 300);
+});
+recipeSearchInput.addEventListener("keydown", (e) => {
+  if(e.key !== "Enter") return;
+  clearTimeout(recipeSearchTimer);
+  recipeQuery.search = recipeSearchInput.value;
+  recipeQuery.page = 1;
+  loadRecipes();
+});
+
+/* ---- Sortierung ---- */
+recipeSortSelect.addEventListener("change", () => {
+  const [sortBy, sortDir] = recipeSortSelect.value.split("-");
+  recipeQuery.sortBy = sortBy;
+  recipeQuery.sortDir = sortDir;
+  recipeQuery.page = 1;
+  loadRecipes();
+});
+
+/* ---- Paging ---- */
+recipePageSizeSelect.addEventListener("change", () => {
+  recipeQuery.pageSize = Number(recipePageSizeSelect.value) || 20;
+  recipeQuery.page = 1;
+  loadRecipes();
+});
+recipeFirstPageBtn.addEventListener("click", () => { recipeQuery.page = 1; loadRecipes(); });
+recipePrevPageBtn.addEventListener("click", () => { recipeQuery.page = Math.max(1, recipeQuery.page - 1); loadRecipes(); });
+recipeNextPageBtn.addEventListener("click", () => { recipeQuery.page += 1; loadRecipes(); });
+recipeLastPageBtn.addEventListener("click", () => { recipeQuery.page = DB.recipesPage.totalPages; loadRecipes(); });
+
+/* ---- Filter zuruecksetzen ---- */
+recipeResetFiltersBtn.addEventListener("click", () => {
+  clearTimeout(recipeSearchTimer);
+  Object.assign(recipeQuery, DEFAULT_RECIPE_QUERY);
+  recipeSearchInput.value = "";
+  recipeSortSelect.value = "name-asc";
+  recipePageSizeSelect.value = "20";
+  loadRecipes();
 });
 
 /* =========================================================================
@@ -330,6 +428,36 @@ imageListEl.addEventListener("click", (e) => {
   renderImageList();
 });
 
+/* ---- Bild-Lightbox: Doppelklick auf ein Bild zeigt es vergroessert ---- */
+const imageLightbox = document.getElementById("imageLightbox");
+const imageLightboxImg = document.getElementById("imageLightboxImg");
+const imageLightboxClose = document.getElementById("imageLightboxClose");
+
+function openImageLightbox(src, alt){
+  imageLightboxImg.src = src;
+  imageLightboxImg.alt = alt;
+  imageLightbox.hidden = false;
+}
+
+function closeImageLightbox(){
+  imageLightbox.hidden = true;
+  imageLightboxImg.src = ""; // grosse Data-URL nicht unnoetig im Speicher halten
+}
+
+imageListEl.addEventListener("dblclick", (e) => {
+  const img = e.target.closest(".image-thumb img");
+  if(!img) return;
+  openImageLightbox(img.src, img.alt);
+});
+
+// Irgendwohin in die Lightbox klicken schliesst sie wieder (auch das Bild
+// selbst - "nochmal anklicken zum Verkleinern" ist die erwartete Geste).
+imageLightbox.addEventListener("click", closeImageLightbox);
+imageLightboxClose.addEventListener("click", (e) => { e.stopPropagation(); closeImageLightbox(); });
+document.addEventListener("keydown", (e) => {
+  if(e.key === "Escape" && !imageLightbox.hidden) closeImageLightbox();
+});
+
 imageInput.addEventListener("change", () => {
   const files = Array.from(imageInput.files || []);
   files.forEach(file => {
@@ -368,6 +496,7 @@ function openRecipeDialog(recipe){
 }
 
 function closeRecipeDialog(){
+  closeImageLightbox();
   recipeDialog.close();
 }
 
@@ -400,7 +529,7 @@ recipeForm.addEventListener("submit", async (e) => {
 
   const ok = await guard(async () => {
     await DB.saveRecipe(payload);
-    renderRecipeTable();
+    await loadRecipes();
     closeRecipeDialog();
   }, { success: "Rezept gespeichert." });
 
@@ -531,7 +660,7 @@ async function offerLegacyImport(){
   if(recipeCount + fridgeCount === 0) return false;
 
   // Nur anbieten, solange auf dem Server noch nichts liegt.
-  if(DB.data.recipes.length > 0 || DB.data.fridge.length > 0) return false;
+  if(DB.recipesPage.total > 0 || DB.data.fridge.length > 0) return false;
 
   const ok = window.confirm(
     `Im Browser liegen noch Daten aus der localStorage-Version:\n` +
@@ -547,6 +676,8 @@ async function offerLegacyImport(){
     const result = await API.post("/import", legacy);
     window.localStorage.setItem(LEGACY_DONE_KEY, new Date().toISOString());
     await DB.load();
+    await loadRecipes();
+    renderFridgeList();
     showStatus(`Übernommen: ${result.recipes} Rezept(e), ${result.fridge} Kühlschrank-Eintrag/-Einträge.`, "success");
   });
 }
@@ -561,10 +692,8 @@ async function offerLegacyImport(){
     // bleibt leer und die Fehlermeldung stehen.
     return;
   }
+  await loadRecipes();
   clearStatus();
-  renderRecipeTable();
   renderFridgeList();
   await offerLegacyImport();
-  renderRecipeTable();
-  renderFridgeList();
 })();

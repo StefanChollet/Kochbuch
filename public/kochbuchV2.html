@@ -28,6 +28,24 @@
       <button id="createRecipeBtn" class="btn btn-primary" type="button">+ Rezept erstellen</button>
     </div>
 
+    <div class="recipe-toolbar">
+      <div class="recipe-search-wrap">
+        <input type="search" id="recipeSearchInput" placeholder="Rezept oder Zutat suchen…" aria-label="Rezepte durchsuchen">
+      </div>
+      <div class="recipe-sort-wrap">
+        <label for="recipeSortSelect">Sortieren</label>
+        <select id="recipeSortSelect">
+          <option value="name-asc">Name (A–Z)</option>
+          <option value="name-desc">Name (Z–A)</option>
+          <option value="shortDesc-asc">Beschreibung (A–Z)</option>
+          <option value="shortDesc-desc">Beschreibung (Z–A)</option>
+          <option value="updatedAt-desc">Zuletzt geändert (neueste zuerst)</option>
+          <option value="updatedAt-asc">Zuletzt geändert (älteste zuerst)</option>
+        </select>
+      </div>
+      <button type="button" id="recipeResetFiltersBtn" class="btn btn-ghost btn-small" title="Suche und Sortierung zurücksetzen">Zurücksetzen</button>
+    </div>
+
     <table class="recipe-table">
       <thead>
         <tr>
@@ -41,6 +59,24 @@
       </tbody>
     </table>
     <p id="recipeEmptyState" class="empty-state" hidden>Noch keine Rezepte vorhanden. Leg mit "Rezept erstellen" los.</p>
+
+    <div class="recipe-pager" id="recipePager">
+      <p class="recipe-pager-info" id="recipePagerInfo"></p>
+      <div class="recipe-pager-controls">
+        <label for="recipePageSizeSelect" class="sr-only">Einträge pro Seite</label>
+        <select id="recipePageSizeSelect">
+          <option value="10">10 / Seite</option>
+          <option value="20" selected>20 / Seite</option>
+          <option value="50">50 / Seite</option>
+          <option value="100">100 / Seite</option>
+        </select>
+        <button type="button" id="recipeFirstPageBtn" class="btn btn-icon" aria-label="Erste Seite">«</button>
+        <button type="button" id="recipePrevPageBtn" class="btn btn-icon" aria-label="Vorherige Seite">‹</button>
+        <span id="recipePageIndicator" class="recipe-page-indicator"></span>
+        <button type="button" id="recipeNextPageBtn" class="btn btn-icon" aria-label="Nächste Seite">›</button>
+        <button type="button" id="recipeLastPageBtn" class="btn btn-icon" aria-label="Letzte Seite">»</button>
+      </div>
+    </div>
   </section>
 
   <!-- ============ Kuehlschrank ============ -->
@@ -116,6 +152,15 @@
       <button type="submit" id="saveRecipeBtn" class="btn btn-primary">Speichern</button>
     </div>
   </form>
+
+  <!-- Bild-Lightbox: Doppelklick auf ein Bild oeffnet es vergroessert.
+       Liegt bewusst als Kind von <dialog>, nicht als Geschwister ausserhalb -
+       ein modaler Dialog rendert im Browser-Top-Layer ueber allem anderen,
+       ein separates position:fixed-Element ausserhalb wuerde darunter liegen. -->
+  <div id="imageLightbox" class="image-lightbox" hidden>
+    <button type="button" class="image-lightbox-close" id="imageLightboxClose" aria-label="Vergrößerte Ansicht schließen">✕</button>
+    <img id="imageLightboxImg" src="" alt="">
+  </div>
 </dialog>
 
 <script src="kochbuchV2.js"></script>

@@ -151,15 +151,69 @@ function decodeDataUrl(dataUrl) {
 
 /* ------------------------------------------------------------- Rezepte */
 
-/** Uebersicht - bewusst ohne Langtext und ohne Bilddaten. */
-function listRecipes() {
-  return db.prepare(`
+const RECIPE_SORT_COLUMNS = {
+  name: "r.name COLLATE NOCASE",
+  shortDesc: "r.short_desc COLLATE NOCASE",
+  updatedAt: "r.updated_at",
+};
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+
+/** Escaped % und _ (LIKE-Platzhalter) sowie das Escape-Zeichen selbst. */
+function escapeLike(term) {
+  return term.replace(/[\\%_]/g, (c) => "\\" + c);
+}
+
+/**
+ * Rezeptuebersicht mit Suche, Sortierung und Seitenteilung - alles direkt
+ * in SQL, damit auch bei vielen hundert Rezepten nur eine Seite an Daten
+ * ueber die Leitung geht. Die Suche prueft Name, Kurzbeschreibung und
+ * Zutatennamen. Bewusst ohne Langtext und ohne Bilddaten.
+ */
+function listRecipesPage(options = {}) {
+  const sortBy = RECIPE_SORT_COLUMNS[options.sortBy] ? options.sortBy : "name";
+  const sortDir = options.sortDir === "desc" ? "DESC" : "ASC";
+  const term = text(options.search, "search", { max: 100 }).trim();
+  const page = Math.max(1, Math.trunc(Number(options.page)) || 1);
+  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.trunc(Number(options.pageSize)) || DEFAULT_PAGE_SIZE));
+
+  let where = "";
+  const params = [];
+  if (term) {
+    where = `WHERE r.name LIKE ? ESCAPE '\\'
+       OR r.short_desc LIKE ? ESCAPE '\\'
+       OR EXISTS (SELECT 1 FROM ingredients i WHERE i.recipe_id = r.id AND i.name LIKE ? ESCAPE '\\')`;
+    const like = `%${escapeLike(term)}%`;
+    params.push(like, like, like);
+  }
+
+  const total = db.prepare(`SELECT COUNT(*) AS n FROM recipes r ${where}`).get(...params).n;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  // Liegt die angeforderte Seite ausserhalb (z.B. nach dem Loeschen des
+  // letzten Eintrags einer Seite), auf die letzte gueltige Seite zurueckfallen.
+  const safePage = Math.min(page, totalPages);
+  const offset = (safePage - 1) * pageSize;
+
+  const items = db.prepare(`
     SELECT r.id, r.name, r.short_desc AS shortDesc, r.updated_at AS updatedAt,
            (SELECT COUNT(*) FROM ingredients i WHERE i.recipe_id = r.id) AS ingredientCount,
-           (SELECT COUNT(*) FROM images g      WHERE g.recipe_id = r.id) AS imageCount
+           (SELECT COUNT(*) FROM images g      WHERE g.recipe_id = r.id) AS imageCount,
+           (SELECT id FROM images g WHERE g.recipe_id = r.id ORDER BY position LIMIT 1) AS firstImageId
     FROM recipes r
-    ORDER BY r.name COLLATE NOCASE
-  `).all();
+    ${where}
+    ORDER BY ${RECIPE_SORT_COLUMNS[sortBy]} ${sortDir}, r.id ${sortDir}
+    LIMIT ? OFFSET ?
+  `).all(...params, pageSize, offset);
+
+  // Miniatur-URL fuer die Uebersicht: das erste Bild (nach position) des
+  // Rezepts, falls vorhanden. Die Bytes selbst kommen wie ueberall ueber
+  // GET /api/images/:id - hier wird nur die id in eine URL uebersetzt.
+  for (const item of items) {
+    item.thumbnailUrl = item.firstImageId ? `/api/images/${item.firstImageId}` : null;
+    delete item.firstImageId;
+  }
+
+  return { items, total, page: safePage, pageSize, totalPages };
 }
 
 function getRecipe(id) {
@@ -413,7 +467,10 @@ function importState(state) {
 /* --------------------------------------------------------------- Stand */
 
 function getState() {
-  return { recipes: listRecipes(), fridge: listFridge(), ingredientCatalog: listCatalog() };
+  // Die Rezeptliste kommt bewusst nicht hierher - sie wird paginiert ueber
+  // listRecipesPage()/GET /api/recipes geladen, damit /api/state bei vielen
+  // Rezepten klein und schnell bleibt.
+  return { fridge: listFridge(), ingredientCatalog: listCatalog() };
 }
 
 function getStats() {
@@ -435,7 +492,7 @@ module.exports = {
   open,
   close,
   makeId,
-  listRecipes,
+  listRecipesPage,
   getRecipe,
   createRecipe,
   updateRecipe,
