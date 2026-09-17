@@ -46,19 +46,21 @@
       <button type="button" id="recipeResetFiltersBtn" class="btn btn-ghost btn-small" title="Suche und Sortierung zurücksetzen">Zurücksetzen</button>
     </div>
 
-    <table class="recipe-table">
-      <thead>
-        <tr>
-          <th>Rezeptname</th>
-          <th>Kurze Beschreibung</th>
-          <th class="col-menu">Menu</th>
-        </tr>
-      </thead>
-      <tbody id="recipeTableBody">
-        <!-- wird per JS befuellt -->
-      </tbody>
-    </table>
-    <p id="recipeEmptyState" class="empty-state" hidden>Noch keine Rezepte vorhanden. Leg mit "Rezept erstellen" los.</p>
+    <div class="recipe-table-scroll">
+      <table class="recipe-table">
+        <thead>
+          <tr>
+            <th>Rezeptname</th>
+            <th>Kurze Beschreibung</th>
+            <th class="col-menu">Menu</th>
+          </tr>
+        </thead>
+        <tbody id="recipeTableBody">
+          <!-- wird per JS befuellt -->
+        </tbody>
+      </table>
+      <p id="recipeEmptyState" class="empty-state" hidden>Noch keine Rezepte vorhanden. Leg mit "Rezept erstellen" los.</p>
+    </div>
 
     <div class="recipe-pager" id="recipePager">
       <p class="recipe-pager-info" id="recipePagerInfo"></p>

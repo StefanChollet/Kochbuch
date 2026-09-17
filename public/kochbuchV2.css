@@ -173,12 +173,29 @@ body{
 }
 
 /* ===== Recipe table ===== */
+/* Begrenzt die Tabelle auf eine feste Hoehe und gibt ihr eine eigene
+   Scrollleiste - Suchleiste und Pager bleiben davon unberuehrt sichtbar,
+   auch wenn die Ergebnisliste lang ist. */
+.recipe-table-scroll{
+  max-height: 60vh;
+  overflow-y: auto;
+  margin-top: 1rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.recipe-table-scroll::-webkit-scrollbar{ width: 8px; }
+.recipe-table-scroll::-webkit-scrollbar-track{ background: transparent; }
+.recipe-table-scroll::-webkit-scrollbar-thumb{ background: var(--line); border-radius: 4px; }
+.recipe-table-scroll::-webkit-scrollbar-thumb:hover{ background: var(--ink-soft); }
+
 .recipe-table{
   width:100%;
   border-collapse: collapse;
-  margin-top: 1rem;
 }
 .recipe-table th{
+  position: sticky;
+  top: 0;
+  background: var(--surface);
   text-align:left;
   font-weight:500;
   color: var(--ink-soft);
