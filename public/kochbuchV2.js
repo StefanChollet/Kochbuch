@@ -74,7 +74,7 @@ const DB = {
   // Empfehlungen: Kuehlschrank + aktueller Suchfilter; exclude = zuletzt
   // gezeigte Rezepte, damit ein erneuter Klick eine andere Auswahl liefert.
   async getRecommendations(search, exclude){
-    const params = new URLSearchParams({ limit: "5" });
+    const params = new URLSearchParams({ limit: "4" });
     if(search) params.set("search", search);
     if(exclude.length) params.set("exclude", exclude.join(","));
     return API.get(`/recommendations?${params.toString()}`);

@@ -495,7 +495,7 @@ function getStats() {
 
 /* ---------------------------------------------------------- Empfehlungen */
 
-const DEFAULT_RECOMMENDATION_LIMIT = 5;
+const DEFAULT_RECOMMENDATION_LIMIT = 4;
 const MAX_RECOMMENDATION_LIMIT = 10;
 
 // Zutaten, die man praktisch immer im Haus hat: zaehlen als "vorhanden",

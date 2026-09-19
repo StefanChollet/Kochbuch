@@ -146,7 +146,7 @@ GET /api/recommendations?search=kartoffel&limit=5&exclude=id1,id2
 
 Die Oberfläche ruft das erst per Klick auf „Neue Empfehlungen" auf. Alle
 Parameter sind optional: `search` ist derselbe Filter wie in der Tabelle,
-`limit` 1–10 (Standard 5), `exclude` sind die zuletzt gezeigten Rezept-IDs.
+`limit` 1–10 (Standard 4), `exclude` sind die zuletzt gezeigten Rezept-IDs.
 
 Ablauf des Algorithmus (`getRecommendations` in `db.js`):
 

@@ -90,7 +90,7 @@ const routes = [
     const q = getQuery(req);
     sendJson(res, 200, db.getRecommendations({
       search: q.get("search") || "",
-      limit: q.get("limit") || 5,
+      limit: q.get("limit") || 4,
       exclude: (q.get("exclude") || "").split(",").filter(Boolean),
     }));
   }],
