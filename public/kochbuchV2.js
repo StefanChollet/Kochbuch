@@ -239,7 +239,7 @@ function renderRecommendations(data){
       <span class="recommendation-desc">${truncate(r.shortDesc, 70)}</span>
       ${r.reason === "fridge"
         ? `<span class="recommendation-badge">${r.matchCount}/${r.totalIngredients} Zutaten im Kühlschrank</span>
-           <span class="recommendation-detail"><strong>Da:</strong> ${escapeHtml(r.matched.join(", "))}</span>
+           <span class="recommendation-detail recommendation-have"><strong>Da:</strong> ${escapeHtml(r.matched.join(", "))}</span>
            ${r.missing.length ? `<span class="recommendation-detail recommendation-missing"><strong>Fehlt:</strong> ${escapeHtml(r.missing.join(", "))}</span>` : ""}`
         : `<span class="recommendation-badge recommendation-badge-filler">Zufallsvorschlag</span>`}
     </button>

@@ -10,6 +10,7 @@
   --accent-contrast: #F3F5EF;
   --gold: #B9822F;
   --danger: #A3402F;
+  --ok: #2E7D4F;
   --shadow: 0 8px 24px rgba(35, 43, 34, 0.08);
   --radius: 10px;
   --font-display: "Source Serif 4", Georgia, serif;
@@ -27,6 +28,7 @@
   --accent-contrast: #131A14;
   --gold: #D6A34E;
   --danger: #E08571;
+  --ok: #7FCB98;
   --shadow: 0 8px 28px rgba(0,0,0,0.4);
 }
 
@@ -140,6 +142,9 @@ body{
 .recommendation-detail{ font-size:.75rem; color: var(--ink-soft); }
 .recommendation-detail strong{ color: var(--ink); font-weight:600; }
 .recommendation-missing strong{ color: var(--danger); }
+/* "Da:" - vorhandene Zutaten komplett gruen (Label und Aufzaehlung) */
+.recommendation-have,
+.recommendation-have strong{ color: var(--ok); }
 
 /* ===== Layout ===== */
 .layout{
