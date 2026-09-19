@@ -14,6 +14,14 @@ const { DatabaseSync } = require("node:sqlite");
 const crypto = require("node:crypto");
 
 const SCHEMA_VERSION = 1;
+
+// Feste Auswahl fuer das Feld Kategorie (genau eine je Rezept, oder keine = "").
+// Die Liste liegt bewusst nur hier; der Client bekommt sie ueber /api/state.
+const CATEGORY_OPTIONS = [
+  "Suppe", "Vorspeise & Salat", "Fleisch", "Fisch", "Pasta & Italienisch",
+  "Asiatisch", "Vegetarisch & Vegan", "Beilage", "Brot & Backwaren",
+  "Dessert & Kuchen", "Frühstück", "Getränk",
+];
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8 MB pro Bild
 
 /** Fehler mit HTTP-Statuscode - die API uebersetzt ihn direkt in die Antwort. */
@@ -34,6 +42,7 @@ CREATE TABLE IF NOT EXISTS recipes (
   name        TEXT NOT NULL,
   short_desc  TEXT NOT NULL DEFAULT '',
   long_text   TEXT NOT NULL DEFAULT '',
+  category    TEXT NOT NULL DEFAULT '',
   created_at  TEXT NOT NULL,
   updated_at  TEXT NOT NULL
 );
@@ -81,6 +90,13 @@ function open(file) {
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA foreign_keys = ON");
   db.exec(SCHEMA_SQL);
+
+  // Bestehende Datenbanken aus der Zeit vor der Kategorie: Spalte nachziehen.
+  // (CREATE TABLE IF NOT EXISTS ergaenzt keine Spalten an vorhandenen Tabellen.)
+  const recipeColumns = db.prepare("PRAGMA table_info(recipes)").all().map((c) => c.name);
+  if (!recipeColumns.includes("category")) {
+    db.exec("ALTER TABLE recipes ADD COLUMN category TEXT NOT NULL DEFAULT ''");
+  }
 
   const row = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get();
   if (!row) {
@@ -226,7 +242,7 @@ function listRecipesPage(options = {}) {
 
 function getRecipe(id) {
   const recipe = db.prepare(`
-    SELECT id, name, short_desc AS shortDesc, long_text AS longText,
+    SELECT id, name, short_desc AS shortDesc, long_text AS longText, category,
            created_at AS createdAt, updated_at AS updatedAt
     FROM recipes WHERE id = ?
   `).get(id);
@@ -309,9 +325,19 @@ function normalizeRecipeInput(input) {
     name: text(input.name, "name", { max: 80, required: true }),
     shortDesc: text(input.shortDesc, "shortDesc", { max: 150 }).trim(),
     longText: text(input.longText, "longText", { max: 20000 }),
+    category: normalizeCategory(input.category),
     ingredients,
     images,
   };
+}
+
+/** Kategorie: leer (keine) oder genau ein Wert aus CATEGORY_OPTIONS. */
+function normalizeCategory(value) {
+  const category = value == null ? "" : String(value).trim();
+  if (category && !CATEGORY_OPTIONS.includes(category)) {
+    throw new HttpError(400, `Unbekannte Kategorie "${category}".`);
+  }
+  return category;
 }
 
 function createRecipe(input) {
@@ -323,9 +349,9 @@ function createRecipe(input) {
     }
     const ts = nowIso();
     db.prepare(`
-      INSERT INTO recipes (id, name, short_desc, long_text, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(id, data.name, data.shortDesc, data.longText, ts, ts);
+      INSERT INTO recipes (id, name, short_desc, long_text, category, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(id, data.name, data.shortDesc, data.longText, data.category, ts, ts);
     writeIngredients(id, data.ingredients);
     writeImages(id, data.images);
     syncCatalogFromIngredients(data.ingredients);
@@ -340,8 +366,8 @@ function updateRecipe(id, input) {
       throw new HttpError(404, `Rezept "${id}" nicht gefunden.`);
     }
     db.prepare(`
-      UPDATE recipes SET name = ?, short_desc = ?, long_text = ?, updated_at = ? WHERE id = ?
-    `).run(data.name, data.shortDesc, data.longText, nowIso(), id);
+      UPDATE recipes SET name = ?, short_desc = ?, long_text = ?, category = ?, updated_at = ? WHERE id = ?
+    `).run(data.name, data.shortDesc, data.longText, data.category, nowIso(), id);
     writeIngredients(id, data.ingredients);
     writeImages(id, data.images);
     syncCatalogFromIngredients(data.ingredients);
@@ -444,9 +470,9 @@ function importState(state) {
       const data = normalizeRecipeInput(recipe);
       const ts = nowIso();
       db.prepare(`
-        INSERT INTO recipes (id, name, short_desc, long_text, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(id, data.name, data.shortDesc, data.longText, ts, ts);
+        INSERT INTO recipes (id, name, short_desc, long_text, category, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(id, data.name, data.shortDesc, data.longText, data.category, ts, ts);
       writeIngredients(id, data.ingredients);
       // Altbestand kennt nur dataUrl-Bilder; ids aus dem Browser gelten hier nicht.
       writeImages(id, data.images.map((img) => ({ name: img && img.name, dataUrl: img && img.dataUrl })));
@@ -478,7 +504,7 @@ function getState() {
   // Die Rezeptliste kommt bewusst nicht hierher - sie wird paginiert ueber
   // listRecipesPage()/GET /api/recipes geladen, damit /api/state bei vielen
   // Rezepten klein und schnell bleibt.
-  return { fridge: listFridge(), ingredientCatalog: listCatalog() };
+  return { fridge: listFridge(), ingredientCatalog: listCatalog(), categoryOptions: CATEGORY_OPTIONS };
 }
 
 function getStats() {
@@ -709,6 +735,7 @@ function getRecommendations(options = {}) {
 module.exports = {
   HttpError,
   SCHEMA_VERSION,
+  CATEGORY_OPTIONS,
   MAX_IMAGE_BYTES,
   open,
   close,

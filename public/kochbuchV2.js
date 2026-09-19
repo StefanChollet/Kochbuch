@@ -45,7 +45,7 @@ const enc = encodeURIComponent;
    Aenderung sofort ueber die API in die SQLite-Datenbank.
    ========================================================================= */
 const DB = {
-  data: { fridge: [], ingredientCatalog: [] },
+  data: { fridge: [], ingredientCatalog: [], categoryOptions: [] },
   // Aktuell angezeigte Seite der Rezeptuebersicht (Suche/Sortierung/Paging
   // laufen serverseitig in SQL - siehe refreshRecipes()).
   recipesPage: { items: [], total: 0, page: 1, pageSize: 20, totalPages: 1 },
@@ -422,6 +422,14 @@ const ingredientCatalogList = document.getElementById("ingredientCatalogList");
 const imageInput = document.getElementById("imageInput");
 const imageListEl = document.getElementById("imageList");
 const saveRecipeBtn = document.getElementById("saveRecipeBtn");
+const recipeCategorySelect = document.getElementById("recipeCategory");
+
+// Auswahlfeld: genau eine Kategorie oder keine. Die Liste kommt vom Server.
+function fillCategorySelect(){
+  recipeCategorySelect.innerHTML =
+    `<option value="">– keine Kategorie –</option>` +
+    DB.data.categoryOptions.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+}
 
 let workingIngredients = [];   // [{key, name, amount}]
 let workingImages = [];        // gespeichert: {key, id, name, url} | neu: {key, name, dataUrl, isNew}
@@ -546,7 +554,9 @@ imageInput.addEventListener("change", () => {
 
 function openRecipeDialog(recipe){
   refreshIngredientCatalogDatalist();
+  fillCategorySelect();
   if(recipe){
+    recipeCategorySelect.value = recipe.category || "";
     recipeIdInput.value = recipe.id;
     recipeNameInput.value = recipe.name;
     recipeShortDescInput.value = recipe.shortDesc || "";
@@ -586,6 +596,7 @@ recipeForm.addEventListener("submit", async (e) => {
     name: recipeNameInput.value.trim(),
     shortDesc: recipeShortDescInput.value.trim(),
     longText: recipeLongTextInput.value,
+    category: recipeCategorySelect.value,
     ingredients: workingIngredients.map(i => ({ name: i.name, amount: i.amount })),
     // Bereits gespeicherte Bilder nur per id referenzieren - die Bytes
     // liegen auf dem Server und muessen nicht erneut hochgeladen werden.

@@ -43,7 +43,7 @@ nicht erreichbar.
 
 | Tabelle | Inhalt |
 |---|---|
-| `recipes` | Kopfdaten: Name, Kurzbeschreibung, Zubereitungstext, Zeitstempel |
+| `recipes` | Kopfdaten: Name, Kurzbeschreibung, Zubereitungstext, Kategorie (genau eine oder leer), Zeitstempel |
 | `ingredients` | Zutaten, `recipe_id` → `recipes`, `ON DELETE CASCADE`, Reihenfolge über `position` |
 | `images` | Bilder als BLOB inkl. MIME-Typ, `recipe_id` → `recipes`, `ON DELETE CASCADE` |
 | `fridge_items` | Kühlschrank-Bestand |
@@ -184,6 +184,7 @@ Content-Type: application/json
   "name": "Zwiebelkuchen",
   "shortDesc": "Herbstklassiker mit Speck und Kümmel",
   "longText": "Hefeteig gehen lassen, Zwiebeln glasig dünsten ...",
+  "category": "Vorspeise & Salat",
   "ingredients": [
     { "name": "Zwiebeln", "amount": "1 kg" },
     { "name": "Schmand",  "amount": "400 g" }
@@ -197,6 +198,14 @@ Content-Type: application/json
 Antwort `201` mit dem gespeicherten Rezept. Pflichtfeld ist nur `name`.
 Zutaten ohne Namen werden stillschweigend verworfen; die übrigen Namen wandern
 automatisch in den Zutaten-Katalog.
+
+`category` ist optional: leer (keine Kategorie) oder **genau ein** Wert aus der
+festen Auswahlliste (`CATEGORY_OPTIONS` in `db.js`: Suppe, Vorspeise & Salat,
+Fleisch, Fisch, Pasta & Italienisch, Asiatisch, Vegetarisch & Vegan, Beilage,
+Brot & Backwaren, Dessert & Kuchen, Frühstück, Getränk). Ein anderer Wert
+ergibt `400`. Der Client holt die Liste aus `GET /api/state`
+(`categoryOptions`) und zeigt sie im Dialog als Auswahlfeld. Bestehende
+Datenbanken bekommen die Spalte beim Start automatisch nachgezogen.
 
 ### Rezept ändern
 
