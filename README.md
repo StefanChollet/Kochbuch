@@ -88,6 +88,7 @@ Fehler kommen einheitlich als `{ "error": "..." }` mit passendem HTTP-Status
 | `GET` | `/api/health` | Status, Schema-Version, Bestandszahlen |
 | `GET` | `/api/state` | Kühlschrank + Katalog in einem Aufruf (Startaufbau) |
 | `GET` | `/api/recipes` | Rezeptübersicht: Suche, Sortierung, Paging |
+| `GET` | `/api/recommendations` | Empfehlungen aus Kühlschrank + Suchfilter |
 | `POST` | `/api/recipes` | Rezept anlegen → `201` + `Location` |
 | `GET` | `/api/recipes/:id` | vollständiges Rezept inkl. Zutaten und Bild-URLs |
 | `PUT` | `/api/recipes/:id` | Rezept vollständig ersetzen |
@@ -136,6 +137,40 @@ Antwort:
   "total": 102, "page": 1, "pageSize": 20, "totalPages": 6
 }
 ```
+
+### Empfehlungen
+
+```
+GET /api/recommendations?search=kartoffel&limit=5&exclude=id1,id2
+```
+
+Die Oberfläche ruft das erst per Klick auf „Neue Empfehlungen" auf. Alle
+Parameter sind optional: `search` ist derselbe Filter wie in der Tabelle,
+`limit` 1–10 (Standard 5), `exclude` sind die zuletzt gezeigten Rezept-IDs.
+
+Ablauf des Algorithmus (`getRecommendations` in `db.js`):
+
+1. **Kandidaten** sind alle Rezepte, die den Suchfilter erfüllen.
+2. **Zutatenabgleich über das Kernwort:** bei „Rote Zwiebeln, gehackt" zählt
+   „zwiebel" (Endungen wie -n/-en/-e werden gekürzt, Umlaute aufgelöst). Ein
+   Kühlschrank-Eintrag trifft, wenn die Kernwörter gleich sind oder eines
+   Anfang/Ende des anderen ist („Butter" ~ „Butterschmalz", „Kochspeck" ~
+   „Speck"). Salz, Pfeffer, Wasser, Öl und Zucker gelten als immer da (halbes
+   Gewicht).
+3. **Dringlichkeit:** Kühlschrank-Einträge, die schon länger drin liegen,
+   zählen bis zu 1,5-fach (Skala über 14 Tage) – Altes soll zuerst weg.
+4. **Score** = 0,55 × Abdeckung + 0,45 × Verwertung − 0,03 × fehlende Zutaten.
+5. **Gewichtete Zufallsziehung** (Gewicht = Score²) aus allen Rezepten mit
+   mindestens einem Treffer: Gute Rezepte sind wahrscheinlicher, aber jeder
+   Klick liefert eine andere Liste. Zuletzt gezeigte Rezepte (`exclude`)
+   behalten nur 5 % Gewicht.
+6. Reichen die Treffer nicht, wird aus dem Filter zufällig aufgefüllt
+   (`reason: "filler"`); bei leerem Kühlschrank ist `basedOnFridge` `false`.
+
+Antwort (gekürzt): `{ "items": [{ "id", "name", "shortDesc", "reason":
+"fridge"|"filler", "matchCount", "totalIngredients", "matched": [...],
+"missing": [...], "thumbnailUrl" }], "basedOnFridge", "fridgeItems",
+"candidates", "search" }`.
 
 ### Rezept anlegen
 

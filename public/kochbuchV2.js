@@ -71,6 +71,14 @@ const DB = {
   async deleteRecipe(id){
     await API.del(`/recipes/${enc(id)}`);
   },
+  // Empfehlungen: Kuehlschrank + aktueller Suchfilter; exclude = zuletzt
+  // gezeigte Rezepte, damit ein erneuter Klick eine andere Auswahl liefert.
+  async getRecommendations(search, exclude){
+    const params = new URLSearchParams({ limit: "5" });
+    if(search) params.set("search", search);
+    if(exclude.length) params.set("exclude", exclude.join(","));
+    return API.get(`/recommendations?${params.toString()}`);
+  },
   async refreshRecipes(query){
     const params = new URLSearchParams();
     if(query.search) params.set("search", query.search);
@@ -192,6 +200,68 @@ function applyTheme(theme){
 themeToggleBtn.addEventListener("click", () => {
   const current = document.documentElement.getAttribute("data-theme");
   applyTheme(current === "dark" ? "light" : "dark");
+});
+
+/* =========================================================================
+   Empfehlungen — entstehen erst per Klick auf "Neue Empfehlungen" aus
+   Kuehlschrank-Bestand und aktuellem Suchfilter (Algorithmus: db.js,
+   getRecommendations). Jeder weitere Klick zieht eine neue Auswahl.
+   ========================================================================= */
+const newRecommendationsBtn = document.getElementById("newRecommendationsBtn");
+const recommendationsSub = document.getElementById("recommendationsSub");
+const recommendationsRow = document.getElementById("recommendationsRow");
+let lastRecommendationIds = [];
+
+function renderRecommendations(data){
+  const { items, basedOnFridge, fridgeItems, candidates, search } = data;
+  lastRecommendationIds = items.map(r => r.id);
+
+  const filterText = search ? ` und Suchfilter „${search}"` : "";
+  if(items.length === 0){
+    recommendationsSub.textContent = search
+      ? `Keine Rezepte für den Suchfilter „${search}" – Suche ändern oder zurücksetzen.`
+      : "Keine Rezepte vorhanden.";
+    recommendationsRow.innerHTML = "";
+    return;
+  }
+  recommendationsSub.textContent = basedOnFridge
+    ? `Passend zu ${fridgeItems} Kühlschrank-Einträgen${filterText} – ${candidates} Rezepte geprüft.`
+    : (fridgeItems === 0
+        ? `Der Kühlschrank ist leer – zufällige Auswahl${filterText} zum Entdecken.`
+        : `Kein Rezept${search ? " im Filter" : ""} nutzt deinen Kühlschrank – zufällige Auswahl${filterText}.`);
+
+  recommendationsRow.innerHTML = items.map(r => `
+    <button type="button" class="recommendation-card" data-id="${r.id}">
+      ${r.thumbnailUrl
+        ? `<img class="recommendation-thumb" src="${r.thumbnailUrl}" alt="" loading="lazy">`
+        : `<div class="recommendation-thumb recommendation-thumb-placeholder" aria-hidden="true">🍽️</div>`}
+      <span class="recommendation-name">${escapeHtml(r.name)}</span>
+      <span class="recommendation-desc">${truncate(r.shortDesc, 70)}</span>
+      ${r.reason === "fridge"
+        ? `<span class="recommendation-badge">${r.matchCount}/${r.totalIngredients} Zutaten im Kühlschrank</span>
+           <span class="recommendation-detail"><strong>Da:</strong> ${escapeHtml(r.matched.join(", "))}</span>
+           ${r.missing.length ? `<span class="recommendation-detail recommendation-missing"><strong>Fehlt:</strong> ${escapeHtml(r.missing.join(", "))}</span>` : ""}`
+        : `<span class="recommendation-badge recommendation-badge-filler">Zufallsvorschlag</span>`}
+    </button>
+  `).join("");
+}
+
+newRecommendationsBtn.addEventListener("click", async () => {
+  newRecommendationsBtn.disabled = true;
+  await guard(async () => {
+    // Suchtext direkt aus dem Feld: der Filter gilt so, wie er gerade sichtbar ist.
+    const search = recipeSearchInput.value.trim();
+    renderRecommendations(await DB.getRecommendations(search, lastRecommendationIds));
+  });
+  newRecommendationsBtn.disabled = false;
+});
+
+recommendationsRow.addEventListener("click", async (e) => {
+  const card = e.target.closest(".recommendation-card");
+  if(!card) return;
+  await guard(async () => {
+    openRecipeDialog(await DB.getRecipe(card.dataset.id));
+  });
 });
 
 /* =========================================================================

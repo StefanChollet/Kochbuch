@@ -165,6 +165,22 @@ function escapeLike(term) {
 }
 
 /**
+ * WHERE-Klausel der Rezeptsuche (Name, Kurzbeschreibung, Zutatennamen) -
+ * gemeinsam genutzt von der Uebersicht und den Empfehlungen, damit beide
+ * exakt denselben Filter meinen. Tabellenalias im Aufrufer: r.
+ */
+function buildSearchWhere(term) {
+  if (!term) return { where: "", params: [] };
+  const like = `%${escapeLike(term)}%`;
+  return {
+    where: `WHERE (r.name LIKE ? ESCAPE '\\'
+       OR r.short_desc LIKE ? ESCAPE '\\'
+       OR EXISTS (SELECT 1 FROM ingredients si WHERE si.recipe_id = r.id AND si.name LIKE ? ESCAPE '\\'))`,
+    params: [like, like, like],
+  };
+}
+
+/**
  * Rezeptuebersicht mit Suche, Sortierung und Seitenteilung - alles direkt
  * in SQL, damit auch bei vielen hundert Rezepten nur eine Seite an Daten
  * ueber die Leitung geht. Die Suche prueft Name, Kurzbeschreibung und
@@ -177,15 +193,7 @@ function listRecipesPage(options = {}) {
   const page = Math.max(1, Math.trunc(Number(options.page)) || 1);
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.trunc(Number(options.pageSize)) || DEFAULT_PAGE_SIZE));
 
-  let where = "";
-  const params = [];
-  if (term) {
-    where = `WHERE r.name LIKE ? ESCAPE '\\'
-       OR r.short_desc LIKE ? ESCAPE '\\'
-       OR EXISTS (SELECT 1 FROM ingredients i WHERE i.recipe_id = r.id AND i.name LIKE ? ESCAPE '\\')`;
-    const like = `%${escapeLike(term)}%`;
-    params.push(like, like, like);
-  }
+  const { where, params } = buildSearchWhere(term);
 
   const total = db.prepare(`SELECT COUNT(*) AS n FROM recipes r ${where}`).get(...params).n;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -485,6 +493,219 @@ function getStats() {
   };
 }
 
+/* ---------------------------------------------------------- Empfehlungen */
+
+const DEFAULT_RECOMMENDATION_LIMIT = 5;
+const MAX_RECOMMENDATION_LIMIT = 10;
+
+// Zutaten, die man praktisch immer im Haus hat: zaehlen als "vorhanden",
+// aber nur mit halbem Gewicht - sie sollen ein Rezept nicht allein nach
+// vorne bringen.
+const PANTRY_STAPLES = new Set(["salz", "pfeffer", "wasser", "oel", "olivenoel", "zucker"]);
+
+// Fuellwoerter in Zutatennamen, die fuer den Abgleich nichts aussagen.
+const NAME_STOPWORDS = new Set([
+  "und", "oder", "mit", "frisch", "frische", "frischer", "gehackt", "gehackte",
+  "gekocht", "gekochte", "gemischt", "gemischte", "gross", "grosse", "klein", "kleine",
+]);
+
+/** Kleinbuchstaben, Umlaute aufgeloest, nur a-z/0-9 - fuer robusten Namensvergleich. */
+function foldWord(word) {
+  return word
+    .toLowerCase()
+    .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+/** Einfache Endungskuerzung, damit Zwiebel/Zwiebeln, Tomate/Tomaten, Kartoffel/Kartoffeln zusammenfallen. */
+function stemWord(word) {
+  if (word === "ei") return "eier";
+  const stripped = word.replace(/(ern|en|er|e|n|s)$/, "");
+  return stripped.length >= 4 ? stripped : word;
+}
+
+/**
+ * Kernwort eines Zutatennamens: bei "Rote Zwiebeln, gehackt" das letzte
+ * inhaltstragende Wort ("zwiebeln"). Im Deutschen steht der Kern hinten
+ * ("Rote Zwiebel" ist eine Zwiebel), dadurch trifft ein Kuehlschrank-
+ * eintrag "Rote Bete" nicht faelschlich jede andere "rote" Zutat.
+ */
+function coreWord(name) {
+  const words = String(name)
+    .split(/[^A-Za-zÄÖÜäöüß0-9]+/)
+    .map(foldWord)
+    .filter((w) => w && !NAME_STOPWORDS.has(w));
+  if (words.length === 0) return null;
+  const raw = words[words.length - 1];
+  return { raw, stem: stemWord(raw) };
+}
+
+/** Zwei Kernwoerter passen: gleich, Wortanfang oder Wortende (Komposita: "Butter" ~ "Butterschmalz", "Speck" ~ "Kochspeck"). */
+function coreMatch(a, b) {
+  if (a === b) return true;
+  if (Math.min(a.length, b.length) < 4) return false;
+  return a.startsWith(b) || b.startsWith(a) || a.endsWith(b) || b.endsWith(a);
+}
+
+/** Gewichtete Zufallsauswahl ohne Zuruecklegen: [{item, weight}] -> bis zu n Items. */
+function weightedSample(entries, n) {
+  const pool = entries.map((e) => ({ ...e }));
+  const picked = [];
+  while (picked.length < n && pool.length > 0) {
+    const total = pool.reduce((sum, e) => sum + e.weight, 0);
+    let r = Math.random() * total;
+    let idx = pool.findIndex((e) => (r -= e.weight) < 0);
+    if (idx === -1) idx = pool.length - 1;
+    picked.push(pool[idx].item);
+    pool.splice(idx, 1);
+  }
+  return picked;
+}
+
+/**
+ * Empfiehlt Rezepte anhand von Kuehlschrank-Bestand und aktuellem Suchfilter.
+ *
+ * Ablauf:
+ *  1. Kandidaten = Rezepte, die den Suchfilter der Tabelle erfuellen.
+ *  2. Jede Zutat wird ueber ihr Kernwort (siehe coreWord) gegen die
+ *     Kuehlschrank-Eintraege abgeglichen. Vorraete wie Salz/Pfeffer/Wasser
+ *     gelten als vorhanden (halbes Gewicht).
+ *  3. Kuehlschrank-Eintraege haben ein Dringlichkeitsgewicht: was schon
+ *     laenger drin liegt (createdAt), soll zuerst verbraucht werden
+ *     (Faktor 1.0 bis 1.5 ueber 14 Tage).
+ *  4. Score = 0.55 * Abdeckung (Anteil der Zutaten, die da sind)
+ *           + 0.45 * Verwertung (wie viel Dringlichkeit das Rezept aufbraucht)
+ *           - 0.03 pro fehlender Zutat.
+ *  5. Aus den Kandidaten mit mindestens einem Kuehlschrank-Treffer wird
+ *     GEWICHTET ZUFAELLIG gezogen (Gewicht = Score^2): gute Rezepte sind
+ *     wahrscheinlicher, aber nicht immer dieselben. Zuletzt gezeigte
+ *     Rezepte (exclude) bekommen nur 5 % Gewicht, damit ein erneuter Klick
+ *     wirklich eine neue Liste liefert, solange genug Alternativen da sind.
+ *  6. Reichen die Treffer nicht fuer limit, wird aus den uebrigen
+ *     Kandidaten des Filters zufaellig aufgefuellt (reason "filler").
+ */
+function getRecommendations(options = {}) {
+  const limit = Math.min(
+    MAX_RECOMMENDATION_LIMIT,
+    Math.max(1, Math.trunc(Number(options.limit)) || DEFAULT_RECOMMENDATION_LIMIT)
+  );
+  const term = text(options.search, "search", { max: 100 }).trim();
+  const exclude = new Set(Array.isArray(options.exclude) ? options.exclude.map(String) : []);
+
+  // Kuehlschrank -> Kernwoerter mit Dringlichkeit
+  const now = Date.now();
+  const fridge = listFridge()
+    .map((f) => {
+      const core = coreWord(f.name);
+      const ageDays = Math.max(0, (now - Date.parse(f.createdAt)) / 86400000) || 0;
+      return core ? { name: f.name, core, urgency: 1 + 0.5 * Math.min(ageDays, 14) / 14 } : null;
+    })
+    .filter(Boolean);
+
+  // Kandidaten laut Suchfilter samt Zutaten
+  const { where, params } = buildSearchWhere(term);
+  const rows = db.prepare(`
+    SELECT r.id, r.name, r.short_desc AS shortDesc, ing.name AS ingredientName
+    FROM recipes r
+    LEFT JOIN ingredients ing ON ing.recipe_id = r.id
+    ${where}
+    ORDER BY r.id, ing.position
+  `).all(...params);
+
+  const byRecipe = new Map();
+  for (const row of rows) {
+    let entry = byRecipe.get(row.id);
+    if (!entry) {
+      entry = { id: row.id, name: row.name, shortDesc: row.shortDesc, ingredients: [] };
+      byRecipe.set(row.id, entry);
+    }
+    if (row.ingredientName) entry.ingredients.push(row.ingredientName);
+  }
+
+  const scored = [...byRecipe.values()].map((r) => {
+    const matched = [];
+    const missing = [];
+    let pantryHits = 0;
+    let urgencySum = 0;
+    for (const ingredient of r.ingredients) {
+      const core = coreWord(ingredient);
+      if (!core) continue;
+      const hit = fridge.filter((f) => coreMatch(core.stem, f.core.stem));
+      if (hit.length > 0) {
+        matched.push(ingredient);
+        urgencySum += Math.max(...hit.map((f) => f.urgency));
+      } else if (PANTRY_STAPLES.has(core.raw)) {
+        pantryHits++;
+      } else {
+        missing.push(ingredient);
+      }
+    }
+    const total = matched.length + pantryHits + missing.length;
+    const coverage = total ? (matched.length + 0.5 * pantryHits) / total : 0;
+    const usage = Math.min(1, urgencySum / 4);
+    const score = matched.length > 0
+      ? Math.max(0.01, 0.55 * coverage + 0.45 * usage - 0.03 * missing.length)
+      : 0;
+    return {
+      id: r.id, name: r.name, shortDesc: r.shortDesc,
+      matched, missing, totalIngredients: total, score,
+    };
+  });
+
+  const weightOf = (r) => (r.score * r.score + 0.0001) * (exclude.has(r.id) ? 0.05 : 1);
+  const withHits = scored.filter((r) => r.score > 0);
+  let picked = weightedSample(withHits.map((r) => ({ item: r, weight: weightOf(r) })), limit)
+    .map((r) => ({ ...r, reason: "fridge" }));
+
+  if (picked.length < limit) {
+    const usedIds = new Set(picked.map((r) => r.id));
+    const rest = scored.filter((r) => !usedIds.has(r.id));
+    // Frisch Vorgeschlagenes zuletzt auffuellen, sonst gleichverteilt zufaellig.
+    const filler = weightedSample(
+      rest.map((r) => ({ item: r, weight: exclude.has(r.id) ? 0.05 : 1 })),
+      limit - picked.length
+    ).map((r) => ({ ...r, reason: "filler" }));
+    picked = [...picked, ...filler];
+  }
+
+  // Beste zuerst anzeigen
+  picked.sort((a, b) => b.score - a.score);
+
+  if (picked.length === 0) {
+    return { items: [], basedOnFridge: false, fridgeItems: fridge.length, candidates: 0, search: term };
+  }
+
+  const placeholders = picked.map(() => "?").join(",");
+  const imageRows = db.prepare(`
+    SELECT recipe_id AS recipeId, id FROM (
+      SELECT recipe_id, id,
+             ROW_NUMBER() OVER (PARTITION BY recipe_id ORDER BY position) AS rn
+      FROM images
+      WHERE recipe_id IN (${placeholders})
+    )
+    WHERE rn = 1
+  `).all(...picked.map((r) => r.id));
+  const thumbByRecipe = new Map(imageRows.map((row) => [row.recipeId, row.id]));
+
+  return {
+    items: picked.map((r) => ({
+      id: r.id,
+      name: r.name,
+      shortDesc: r.shortDesc,
+      reason: r.reason,
+      matchCount: r.matched.length,
+      totalIngredients: r.totalIngredients,
+      matched: r.matched,
+      missing: r.missing,
+      thumbnailUrl: thumbByRecipe.has(r.id) ? `/api/images/${thumbByRecipe.get(r.id)}` : null,
+    })),
+    basedOnFridge: picked.some((r) => r.reason === "fridge"),
+    fridgeItems: fridge.length,
+    candidates: scored.length,
+    search: term,
+  };
+}
+
 module.exports = {
   HttpError,
   SCHEMA_VERSION,
@@ -509,4 +730,5 @@ module.exports = {
   importState,
   getState,
   getStats,
+  getRecommendations,
 };

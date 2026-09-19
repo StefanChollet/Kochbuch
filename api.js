@@ -84,6 +84,17 @@ const routes = [
     sendJson(res, 200, db.getState());
   }],
 
+  // Empfehlungen aus Kuehlschrank + Suchfilter, siehe db.getRecommendations().
+  // ?search=&limit=5&exclude=id1,id2 (zuletzt gezeigte Rezepte, werden gemieden)
+  ["GET", /^\/api\/recommendations$/, async (req, res) => {
+    const q = getQuery(req);
+    sendJson(res, 200, db.getRecommendations({
+      search: q.get("search") || "",
+      limit: q.get("limit") || 5,
+      exclude: (q.get("exclude") || "").split(",").filter(Boolean),
+    }));
+  }],
+
   /* ---- Rezepte ---- */
   // Unterstuetzt ?search=&sortBy=name|shortDesc|updatedAt&sortDir=asc|desc&page=&pageSize=
   ["GET", /^\/api\/recipes$/, async (req, res) => {
