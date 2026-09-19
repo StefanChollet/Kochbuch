@@ -48,6 +48,8 @@ nicht erreichbar.
 | `images` | Bilder als BLOB inkl. MIME-Typ, `recipe_id` → `recipes`, `ON DELETE CASCADE` |
 | `fridge_items` | Kühlschrank-Bestand |
 | `ingredient_catalog` | Vorschlagsliste, Primärschlüssel `COLLATE NOCASE` (»Mehl« = »mehl«) |
+| `recipe_categories` | Kategorien je Rezept (mehrere möglich), `recipe_id` → `recipes`, `ON DELETE CASCADE`, Primärschlüssel `(recipe_id, name)` mit `COLLATE NOCASE` |
+| `category_catalog` | Vorschlagsliste aller vergebenen Kategorien |
 | `meta` | u. a. `schema_version` |
 
 Ein gelöschtes Rezept nimmt seine Zutaten und Bilder per Fremdschlüssel mit.
@@ -100,6 +102,7 @@ Fehler kommen einheitlich als `{ "error": "..." }` mit passendem HTTP-Status
 | `DELETE` | `/api/fridge/:id` | Eintrag löschen → `204` |
 | `DELETE` | `/api/fridge` | alles leeren → `{ "deleted": n }` |
 | `GET` | `/api/catalog` | Zutaten-Vorschläge |
+| `GET` | `/api/category-catalog` | Kategorie-Vorschläge |
 | `POST` | `/api/catalog` | Vorschlag ergänzen |
 | `DELETE` | `/api/catalog/:name` | Vorschlag entfernen → `204` |
 | `POST` | `/api/import` | Altbestand aus der localStorage-Version übernehmen |
@@ -184,6 +187,7 @@ Content-Type: application/json
   "name": "Zwiebelkuchen",
   "shortDesc": "Herbstklassiker mit Speck und Kümmel",
   "longText": "Hefeteig gehen lassen, Zwiebeln glasig dünsten ...",
+  "categories": ["Herzhaft", "Backen"],
   "ingredients": [
     { "name": "Zwiebeln", "amount": "1 kg" },
     { "name": "Schmand",  "amount": "400 g" }
@@ -197,6 +201,12 @@ Content-Type: application/json
 Antwort `201` mit dem gespeicherten Rezept. Pflichtfeld ist nur `name`.
 Zutaten ohne Namen werden stillschweigend verworfen; die übrigen Namen wandern
 automatisch in den Zutaten-Katalog.
+
+`categories` ist eine Liste von Texten (optional, max. 20 je Rezept, je max. 40
+Zeichen). Leere Einträge und Doppelte (ohne Beachtung der
+Groß-/Kleinschreibung) werden verworfen, die Reihenfolge bleibt erhalten, neue
+Namen wandern in den Kategorie-Katalog. `GET /api/recipes/:id` liefert sie im
+selben Feld zurück; `/api/state` enthält zusätzlich `categoryCatalog`.
 
 ### Rezept ändern
 

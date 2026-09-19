@@ -70,6 +70,20 @@ CREATE TABLE IF NOT EXISTS ingredient_catalog (
   name TEXT PRIMARY KEY COLLATE NOCASE
 );
 
+-- Kategorien eines Rezepts (mehrere moeglich). NOCASE im Primaerschluessel:
+-- "Suppe" und "suppe" sind dieselbe Kategorie und koennen nicht doppelt vorkommen.
+CREATE TABLE IF NOT EXISTS recipe_categories (
+  recipe_id TEXT NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+  name      TEXT NOT NULL COLLATE NOCASE,
+  position  INTEGER NOT NULL,
+  PRIMARY KEY (recipe_id, name)
+);
+
+-- Vorschlagsliste aller bisher vergebenen Kategorien (wie ingredient_catalog).
+CREATE TABLE IF NOT EXISTS category_catalog (
+  name TEXT PRIMARY KEY COLLATE NOCASE
+);
+
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -241,7 +255,24 @@ function getRecipe(id) {
     SELECT id, name, mime, bytes FROM images WHERE recipe_id = ? ORDER BY position
   `).all(id).map((img) => ({ ...img, url: `/api/images/${img.id}` }));
 
+  recipe.categories = db.prepare(`
+    SELECT name FROM recipe_categories WHERE recipe_id = ? ORDER BY position
+  `).all(id).map((row) => row.name);
+
   return recipe;
+}
+
+const MAX_CATEGORIES_PER_RECIPE = 20;
+
+/** Kategorien eines Rezepts komplett neu schreiben und in den Vorschlagskatalog uebernehmen. */
+function writeCategories(recipeId, categories) {
+  db.prepare("DELETE FROM recipe_categories WHERE recipe_id = ?").run(recipeId);
+  const insert = db.prepare("INSERT INTO recipe_categories (recipe_id, name, position) VALUES (?, ?, ?)");
+  const catalog = db.prepare("INSERT OR IGNORE INTO category_catalog (name) VALUES (?)");
+  categories.forEach((name, index) => {
+    insert.run(recipeId, name, index);
+    catalog.run(name);
+  });
 }
 
 function writeIngredients(recipeId, ingredients) {
@@ -311,7 +342,26 @@ function normalizeRecipeInput(input) {
     longText: text(input.longText, "longText", { max: 20000 }),
     ingredients,
     images,
+    categories: normalizeCategories(input.categories),
   };
+}
+
+/** Kategorien als Textliste: getrimmt, leere verworfen, ohne Doppelte (ohne Beachtung der Gross-/Kleinschreibung). */
+function normalizeCategories(value) {
+  if (value == null) return [];
+  if (!Array.isArray(value)) throw new HttpError(400, 'Feld "categories" muss eine Liste sein.');
+  const seen = new Set();
+  const result = [];
+  for (const entry of value) {
+    const name = text(entry, "categories[]", { max: 40 }).trim();
+    if (!name || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    result.push(name);
+  }
+  if (result.length > MAX_CATEGORIES_PER_RECIPE) {
+    throw new HttpError(400, `Zu viele Kategorien (max. ${MAX_CATEGORIES_PER_RECIPE} pro Rezept).`);
+  }
+  return result;
 }
 
 function createRecipe(input) {
@@ -328,6 +378,7 @@ function createRecipe(input) {
     `).run(id, data.name, data.shortDesc, data.longText, ts, ts);
     writeIngredients(id, data.ingredients);
     writeImages(id, data.images);
+    writeCategories(id, data.categories);
     syncCatalogFromIngredients(data.ingredients);
     return getRecipe(id);
   });
@@ -344,6 +395,7 @@ function updateRecipe(id, input) {
     `).run(data.name, data.shortDesc, data.longText, nowIso(), id);
     writeIngredients(id, data.ingredients);
     writeImages(id, data.images);
+    writeCategories(id, data.categories);
     syncCatalogFromIngredients(data.ingredients);
     return getRecipe(id);
   });
@@ -418,6 +470,10 @@ function addCatalogEntry(name) {
   return clean;
 }
 
+function listCategoryCatalog() {
+  return db.prepare("SELECT name FROM category_catalog ORDER BY name COLLATE NOCASE").all().map((r) => r.name);
+}
+
 function deleteCatalogEntry(name) {
   return db.prepare("DELETE FROM ingredient_catalog WHERE name = ?").run(String(name)).changes > 0;
 }
@@ -450,6 +506,7 @@ function importState(state) {
       writeIngredients(id, data.ingredients);
       // Altbestand kennt nur dataUrl-Bilder; ids aus dem Browser gelten hier nicht.
       writeImages(id, data.images.map((img) => ({ name: img && img.name, dataUrl: img && img.dataUrl })));
+      writeCategories(id, data.categories);
       syncCatalogFromIngredients(data.ingredients);
       result.recipes++;
     }
@@ -478,7 +535,7 @@ function getState() {
   // Die Rezeptliste kommt bewusst nicht hierher - sie wird paginiert ueber
   // listRecipesPage()/GET /api/recipes geladen, damit /api/state bei vielen
   // Rezepten klein und schnell bleibt.
-  return { fridge: listFridge(), ingredientCatalog: listCatalog() };
+  return { fridge: listFridge(), ingredientCatalog: listCatalog(), categoryCatalog: listCategoryCatalog() };
 }
 
 function getStats() {
@@ -725,6 +782,7 @@ module.exports = {
   deleteFridgeItem,
   clearFridge,
   listCatalog,
+  listCategoryCatalog,
   addCatalogEntry,
   deleteCatalogEntry,
   importState,
