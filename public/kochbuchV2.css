@@ -288,13 +288,13 @@ body{
   align-items:center;
   gap:.5rem;
 }
-.recipe-row-thumb{
+/* Kochbild-Symbol vor dem Rezeptnamen: 16x16, zwei Zustaende */
+.recipe-img-icon{
   width:16px; height:16px;
   flex:0 0 auto;
-  border-radius:3px;
-  object-fit:cover;
-  border:1px solid var(--line);
 }
+.recipe-img-icon.has-image{ color: var(--ok); }
+.recipe-img-icon.no-image{ color: var(--ink-soft); opacity:.4; }
 .col-menu{ width: 120px; }
 .menu-cell{ display:flex; gap:.4rem; }
 
