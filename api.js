@@ -179,10 +179,6 @@ const routes = [
     sendJson(res, 200, db.listCatalog());
   }],
 
-  ["GET", /^\/api\/category-catalog$/, async (req, res) => {
-    sendJson(res, 200, db.listCategoryCatalog());
-  }],
-
   ["POST", /^\/api\/catalog$/, async (req, res) => {
     const body = await readJson(req);
     sendJson(res, 201, { name: db.addCatalogEntry(body && body.name) });

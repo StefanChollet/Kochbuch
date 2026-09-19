@@ -138,18 +138,6 @@
       <textarea id="recipeLongText" rows="6" placeholder="Zutaten-Mengen, Schritte, Anmerkungen..."></textarea>
     </label>
 
-    <!-- Kategorien (gleich aufgebaut wie die Zutaten, nur ohne Menge) -->
-    <fieldset class="field-group">
-      <legend>Kategorie</legend>
-      <div class="ingredient-add-row">
-        <input type="text" id="categoryNameInput" list="categoryCatalogList" placeholder="Kategorie wählen oder neu eingeben" maxlength="40">
-        <datalist id="categoryCatalogList"></datalist>
-        <button type="button" id="addCategoryBtn" class="btn btn-secondary btn-small">Hinzufügen</button>
-      </div>
-      <ul id="categoryList" class="ingredient-list"></ul>
-      <p id="categoryEmptyState" class="empty-state empty-state-small" hidden>Noch keine Kategorien erfasst.</p>
-    </fieldset>
-
     <!-- Zutatenliste -->
     <fieldset class="field-group">
       <legend>Zutaten</legend>

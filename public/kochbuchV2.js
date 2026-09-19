@@ -45,7 +45,7 @@ const enc = encodeURIComponent;
    Aenderung sofort ueber die API in die SQLite-Datenbank.
    ========================================================================= */
 const DB = {
-  data: { fridge: [], ingredientCatalog: [], categoryCatalog: [] },
+  data: { fridge: [], ingredientCatalog: [] },
   // Aktuell angezeigte Seite der Rezeptuebersicht (Suche/Sortierung/Paging
   // laufen serverseitig in SQL - siehe refreshRecipes()).
   recipesPage: { items: [], total: 0, page: 1, pageSize: 20, totalPages: 1 },
@@ -66,7 +66,6 @@ const DB = {
       ? await API.put(`/recipes/${enc(recipe.id)}`, recipe)
       : await API.post("/recipes", recipe);
     await this.refreshCatalog();
-    await this.refreshCategoryCatalog();
     return saved;
   },
   async deleteRecipe(id){
@@ -102,9 +101,6 @@ const DB = {
   },
   async refreshCatalog(){
     this.data.ingredientCatalog = await API.get("/catalog");
-  },
-  async refreshCategoryCatalog(){
-    this.data.categoryCatalog = await API.get("/category-catalog");
   },
 
   // ---- Kuehlschrank ----
@@ -427,12 +423,6 @@ const imageInput = document.getElementById("imageInput");
 const imageListEl = document.getElementById("imageList");
 const saveRecipeBtn = document.getElementById("saveRecipeBtn");
 
-const categoryList = document.getElementById("categoryList");
-const categoryEmptyState = document.getElementById("categoryEmptyState");
-const categoryNameInput = document.getElementById("categoryNameInput");
-const categoryCatalogList = document.getElementById("categoryCatalogList");
-
-let workingCategories = [];    // [{key, name}]
 let workingIngredients = [];   // [{key, name, amount}]
 let workingImages = [];        // gespeichert: {key, id, name, url} | neu: {key, name, dataUrl, isNew}
 
@@ -441,60 +431,6 @@ function refreshIngredientCatalogDatalist(){
     .map(name => `<option value="${escapeHtml(name)}"></option>`)
     .join("");
 }
-
-/* ---- Kategorien: gleicher Aufbau wie die Zutaten, nur ohne Menge ---- */
-function refreshCategoryCatalogDatalist(){
-  categoryCatalogList.innerHTML = DB.data.categoryCatalog
-    .map(name => `<option value="${escapeHtml(name)}"></option>`)
-    .join("");
-}
-
-function renderCategoryList(){
-  categoryEmptyState.hidden = workingCategories.length > 0;
-  categoryList.innerHTML = workingCategories.map(cat => `
-    <li class="ingredient-row" data-key="${cat.key}">
-      <input type="text" class="category-edit-name" value="${escapeHtml(cat.name)}" maxlength="40">
-      <button type="button" class="btn btn-icon" data-action="remove-category" aria-label="Kategorie entfernen">✕</button>
-    </li>
-  `).join("");
-}
-
-categoryList.addEventListener("input", (e) => {
-  const row = e.target.closest("li.ingredient-row");
-  const cat = row && workingCategories.find(c => c.key === row.dataset.key);
-  if(cat && e.target.classList.contains("category-edit-name")) cat.name = e.target.value;
-});
-
-categoryList.addEventListener("click", (e) => {
-  const btn = e.target.closest('button[data-action="remove-category"]');
-  if(!btn) return;
-  const row = e.target.closest("li.ingredient-row");
-  workingCategories = workingCategories.filter(c => c.key !== row.dataset.key);
-  renderCategoryList();
-});
-
-function addCategoryFromInput(){
-  const name = categoryNameInput.value.trim();
-  if(!name) return;
-  categoryNameInput.value = "";
-  categoryNameInput.focus();
-  // Dieselbe Kategorie nicht doppelt (Gross-/Kleinschreibung egal).
-  if(workingCategories.some(c => c.name.trim().toLowerCase() === name.toLowerCase())) return;
-  workingCategories.push({ key: makeId(), name });
-  renderCategoryList();
-  // Neue Kategorie sofort als Vorschlag anbieten; gespeichert wird sie mit dem Rezept.
-  if(!DB.data.categoryCatalog.some(n => n.toLowerCase() === name.toLowerCase())){
-    DB.data.categoryCatalog.push(name);
-    refreshCategoryCatalogDatalist();
-  }
-}
-
-document.getElementById("addCategoryBtn").addEventListener("click", addCategoryFromInput);
-categoryNameInput.addEventListener("keydown", (e) => {
-  if(e.key !== "Enter") return;
-  e.preventDefault();               // sonst wuerde Enter das ganze Rezept speichern
-  addCategoryFromInput();
-});
 
 function renderIngredientList(){
   ingredientEmptyState.hidden = workingIngredients.length > 0;
@@ -610,9 +546,7 @@ imageInput.addEventListener("change", () => {
 
 function openRecipeDialog(recipe){
   refreshIngredientCatalogDatalist();
-  refreshCategoryCatalogDatalist();
   if(recipe){
-    workingCategories = (recipe.categories || []).map(name => ({ key: makeId(), name }));
     recipeIdInput.value = recipe.id;
     recipeNameInput.value = recipe.name;
     recipeShortDescInput.value = recipe.shortDesc || "";
@@ -622,11 +556,9 @@ function openRecipeDialog(recipe){
   }else{
     recipeForm.reset();
     recipeIdInput.value = "";
-    workingCategories = [];
     workingIngredients = [];
     workingImages = [];
   }
-  renderCategoryList();
   renderIngredientList();
   renderImageList();
   recipeDialog.showModal();
@@ -654,7 +586,6 @@ recipeForm.addEventListener("submit", async (e) => {
     name: recipeNameInput.value.trim(),
     shortDesc: recipeShortDescInput.value.trim(),
     longText: recipeLongTextInput.value,
-    categories: workingCategories.map(c => c.name.trim()).filter(Boolean),
     ingredients: workingIngredients.map(i => ({ name: i.name, amount: i.amount })),
     // Bereits gespeicherte Bilder nur per id referenzieren - die Bytes
     // liegen auf dem Server und muessen nicht erneut hochgeladen werden.
