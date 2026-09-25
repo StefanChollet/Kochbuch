@@ -48,6 +48,8 @@ nicht erreichbar.
 | `images` | Bilder als BLOB inkl. MIME-Typ, `recipe_id` → `recipes`, `ON DELETE CASCADE` |
 | `fridge_items` | Kühlschrank-Bestand |
 | `ingredient_catalog` | Vorschlagsliste, Primärschlüssel `COLLATE NOCASE` (»Mehl« = »mehl«) |
+| `users` | Benutzerkonten: Name (eindeutig, `COLLATE NOCASE`), Passwort-Hash (scrypt), Erstellzeit |
+| `sessions` | Angemeldete Sitzungen: SHA-256 des Tokens, `user_id` → `users` (`ON DELETE CASCADE`), Ablaufzeit |
 | `meta` | u. a. `schema_version` |
 
 Ein gelöschtes Rezept nimmt seine Zutaten und Bilder per Fremdschlüssel mit.
@@ -103,6 +105,10 @@ Fehler kommen einheitlich als `{ "error": "..." }` mit passendem HTTP-Status
 | `POST` | `/api/catalog` | Vorschlag ergänzen |
 | `DELETE` | `/api/catalog/:name` | Vorschlag entfernen → `204` |
 | `POST` | `/api/import` | Altbestand aus der localStorage-Version übernehmen |
+| `POST` | `/api/users` | Konto eröffnen (danach gleich angemeldet) → `201` |
+| `POST` | `/api/session` | Anmelden → `200` + Cookie |
+| `GET` | `/api/session` | Wer bin ich? `{ "authenticated": true, "user": {...} }` oder `false` |
+| `DELETE` | `/api/session` | Abmelden → `204` |
 
 ### Rezeptübersicht: Suche, Sortierung, Paging
 
@@ -171,6 +177,36 @@ Antwort (gekürzt): `{ "items": [{ "id", "name", "shortDesc", "reason":
 "fridge"|"filler", "matchCount", "totalIngredients", "matched": [...],
 "missing": [...], "thumbnailUrl" }], "basedOnFridge", "fridgeItems",
 "candidates", "search" }`.
+
+### Benutzerverwaltung
+
+Oben rechts steht der Benutzer samt Zustand: **Gast · Abgemeldet** mit den
+Knöpfen „Anmelden" und „Konto eröffnen", oder **Name · Angemeldet · Mitglied
+seit …** mit „Abmelden". Ein Klick öffnet einen Dialog mit den Reitern
+Anmelden / Konto eröffnen.
+
+```
+POST /api/users      { "username": "stefan", "password": "mindestens 8 Zeichen" }
+POST /api/session    { "username": "stefan", "password": "..." }
+```
+
+- **Regeln:** Benutzername 3–30 Zeichen (`A–Z a–z 0–9 _ . -`), Groß-/Kleinschreibung
+  egal und eindeutig (`409` bei Doppelten); Passwort 8–200 Zeichen.
+- **Passwörter** liegen nur als `scrypt`-Hash mit eigenem Salt in der Datenbank.
+- **Sitzung:** Cookie `kb_session` (30 Tage), `HttpOnly` (für JavaScript unsichtbar),
+  `SameSite=Lax`, hinter dem HTTPS-Proxy zusätzlich `Secure`. In der Datenbank
+  steht nur der SHA-256 des Tokens.
+- **Anmeldefehler** nennen bewusst nicht, ob der Name existiert (`401`, immer
+  dieselbe Meldung; auch bei unbekannten Namen wird ein Hash geprüft, damit
+  die Antwortzeit nichts verrät).
+- **Bremsen** (im Speicher, `429`): 5 Fehlversuche je Benutzer und IP sowie
+  20 je IP in 10 Minuten; 5 neue Konten je IP und Stunde. Die IP ist der letzte
+  `X-Forwarded-For`-Eintrag des eigenen nginx.
+- **CSRF:** `POST` verlangt `Content-Type: application/json` (`415` sonst).
+
+**Wichtig:** Die Benutzerverwaltung zeigt bisher nur, wer angemeldet ist. Die
+Rezept- und Kühlschrank-Endpunkte sind **nicht** geschützt und ohne Anmeldung
+les- und schreibbar.
 
 ### Rezept anlegen
 

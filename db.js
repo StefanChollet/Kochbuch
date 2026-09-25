@@ -12,6 +12,7 @@
 
 const { DatabaseSync } = require("node:sqlite");
 const crypto = require("node:crypto");
+const { promisify } = require("node:util");
 
 const SCHEMA_VERSION = 1;
 
@@ -78,6 +79,25 @@ CREATE TABLE IF NOT EXISTS fridge_items (
 CREATE TABLE IF NOT EXISTS ingredient_catalog (
   name TEXT PRIMARY KEY COLLATE NOCASE
 );
+
+-- Benutzerkonten. Der Benutzername ist ohne Beachtung der Gross-/Kleinschreibung
+-- eindeutig ("Stefan" = "stefan"). Passwoerter liegen nur als scrypt-Hash vor.
+CREATE TABLE IF NOT EXISTS users (
+  id            TEXT PRIMARY KEY,
+  username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  password_hash TEXT NOT NULL,
+  created_at    TEXT NOT NULL
+);
+
+-- Angemeldete Sitzungen. Gespeichert wird nur der SHA-256 des Tokens: wer die
+-- Datenbank liest, kann daraus keine gueltige Sitzung nachbauen.
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
@@ -732,6 +752,110 @@ function getRecommendations(options = {}) {
   };
 }
 
+/* ------------------------------------------------- Benutzer und Sitzungen */
+
+const scrypt = promisify(crypto.scrypt);
+const USERNAME_PATTERN = /^[A-Za-z0-9_.-]{3,30}$/;
+const MIN_PASSWORD_LENGTH = 8;
+const MAX_PASSWORD_LENGTH = 200;
+const SESSION_DAYS = 30;
+
+/** "scrypt$<salt>$<hash>" - Salt pro Passwort zufaellig, Verfahren im Wert vermerkt. */
+async function hashPassword(password) {
+  const salt = crypto.randomBytes(16);
+  const key = await scrypt(password, salt, 64);
+  return `scrypt$${salt.toString("hex")}$${key.toString("hex")}`;
+}
+
+async function verifyPassword(password, stored) {
+  const [scheme, saltHex, hashHex] = String(stored).split("$");
+  if (scheme !== "scrypt" || !saltHex || !hashHex) return false;
+  const expected = Buffer.from(hashHex, "hex");
+  const actual = await scrypt(password, Buffer.from(saltHex, "hex"), expected.length);
+  return crypto.timingSafeEqual(actual, expected);
+}
+
+// Fuer unbekannte Benutzernamen wird trotzdem ein Hash geprueft, damit man an
+// der Antwortzeit nicht erkennt, ob es den Benutzer gibt.
+let dummyHashPromise = null;
+function dummyHash() {
+  if (!dummyHashPromise) dummyHashPromise = hashPassword(crypto.randomBytes(16).toString("hex"));
+  return dummyHashPromise;
+}
+
+function publicUser(row) {
+  return { id: row.id, username: row.username, createdAt: row.created_at };
+}
+
+function validateCredentials(username, password) {
+  if (typeof username !== "string" || !USERNAME_PATTERN.test(username.trim())) {
+    throw new HttpError(400, "Benutzername: 3-30 Zeichen, erlaubt sind Buchstaben, Ziffern sowie _ . -");
+  }
+  if (typeof password !== "string" || password.length < MIN_PASSWORD_LENGTH) {
+    throw new HttpError(400, `Passwort: mindestens ${MIN_PASSWORD_LENGTH} Zeichen.`);
+  }
+  if (password.length > MAX_PASSWORD_LENGTH) {
+    throw new HttpError(400, `Passwort: hoechstens ${MAX_PASSWORD_LENGTH} Zeichen.`);
+  }
+  return username.trim();
+}
+
+/** Legt ein Konto an. Doppelte Namen (auch in anderer Schreibweise) -> 409. */
+async function createUser(username, password) {
+  const name = validateCredentials(username, password);
+  const id = makeId();
+  const hash = await hashPassword(password);
+  try {
+    db.prepare("INSERT INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)")
+      .run(id, name, hash, nowIso());
+  } catch (err) {
+    if (/UNIQUE/i.test(String(err.message))) {
+      throw new HttpError(409, `Der Benutzername "${name}" ist bereits vergeben.`);
+    }
+    throw err;
+  }
+  return publicUser(db.prepare("SELECT * FROM users WHERE id = ?").get(id));
+}
+
+/** Prueft die Anmeldedaten; liefert den Benutzer oder null (nie einen Hinweis, was falsch war). */
+async function authenticate(username, password) {
+  const row = typeof username === "string" && typeof password === "string"
+    ? db.prepare("SELECT * FROM users WHERE username = ?").get(username.trim())
+    : null;
+  const ok = await verifyPassword(
+    typeof password === "string" ? password.slice(0, MAX_PASSWORD_LENGTH) : "",
+    row ? row.password_hash : await dummyHash()
+  );
+  return row && ok ? publicUser(row) : null;
+}
+
+function hashToken(token) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+/** Neue Sitzung fuer den Benutzer; liefert das Klartext-Token (nur fuers Cookie). */
+function createSession(userId) {
+  const now = Date.now();
+  db.prepare("DELETE FROM sessions WHERE expires_at < ?").run(new Date(now).toISOString());
+  const token = crypto.randomBytes(32).toString("base64url");
+  db.prepare("INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)")
+    .run(hashToken(token), userId, new Date(now).toISOString(), new Date(now + SESSION_DAYS * 86400000).toISOString());
+  return token;
+}
+
+function getSessionUser(token) {
+  if (!token) return null;
+  const row = db.prepare(`
+    SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id
+    WHERE s.token_hash = ? AND s.expires_at > ?
+  `).get(hashToken(token), nowIso());
+  return row ? publicUser(row) : null;
+}
+
+function deleteSession(token) {
+  if (token) db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(hashToken(token));
+}
+
 module.exports = {
   HttpError,
   SCHEMA_VERSION,
@@ -758,4 +882,10 @@ module.exports = {
   getState,
   getStats,
   getRecommendations,
+  createUser,
+  authenticate,
+  createSession,
+  getSessionUser,
+  deleteSession,
+  SESSION_DAYS,
 };
