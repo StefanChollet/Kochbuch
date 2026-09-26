@@ -30,13 +30,9 @@
 
 <header class="app-header">
   <h1 class="app-title">Kochbuch<span class="app-title-accent">V2</span></h1>
-  <div class="header-right">
-    <!-- Benutzerverwaltung: Benutzer und Zustand, per JS befuellt -->
-    <div id="userWidget" class="user-widget" aria-live="polite"></div>
-    <button id="themeToggle" class="btn btn-ghost" type="button" aria-label="Hell/Dunkel umschalten">
-      <span id="themeIcon">🌙</span>
-    </button>
-  </div>
+  <button id="themeToggle" class="btn btn-ghost" type="button" aria-label="Hell/Dunkel umschalten">
+    <span id="themeIcon">🌙</span>
+  </button>
 </header>
 
 <p id="appStatus" class="app-status" role="status" aria-live="polite" hidden></p>
@@ -134,44 +130,6 @@
   </aside>
 
 </main>
-
-<!-- ============ Dialog: Anmelden / Konto eroeffnen ============ -->
-<dialog id="authDialog" class="recipe-dialog auth-dialog">
-  <form id="authForm" novalidate>
-    <div class="dialog-head">
-      <h2 id="authTitle">Anmelden</h2>
-      <button type="button" class="btn btn-ghost" id="authCloseBtn" aria-label="Schliessen">✕</button>
-    </div>
-
-    <div class="auth-tabs" role="tablist">
-      <button type="button" role="tab" id="authTabLogin" class="auth-tab" data-mode="login">Anmelden</button>
-      <button type="button" role="tab" id="authTabRegister" class="auth-tab" data-mode="register">Konto eröffnen</button>
-    </div>
-
-    <label class="field">
-      <span>Benutzername</span>
-      <input type="text" id="authUsername" autocomplete="username" maxlength="30" autocapitalize="none" spellcheck="false">
-    </label>
-
-    <label class="field">
-      <span>Passwort</span>
-      <input type="password" id="authPassword" maxlength="200">
-    </label>
-
-    <label class="field" id="authPassword2Field" hidden>
-      <span>Passwort wiederholen</span>
-      <input type="password" id="authPassword2" autocomplete="new-password" maxlength="200">
-    </label>
-
-    <p id="authHint" class="auth-hint" hidden>Benutzername: 3–30 Zeichen (Buchstaben, Ziffern, _ . -). Passwort: mindestens 8 Zeichen.</p>
-    <p id="authError" class="auth-error" role="alert" hidden></p>
-
-    <div class="dialog-actions">
-      <button type="button" id="authCancelBtn" class="btn btn-ghost">Abbrechen</button>
-      <button type="submit" id="authSubmitBtn" class="btn btn-primary">Anmelden</button>
-    </div>
-  </form>
-</dialog>
 
 <!-- ============ Dialog: Kochbuch-Detail ============ -->
 <dialog id="recipeDialog" class="recipe-dialog">

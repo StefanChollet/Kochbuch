@@ -367,7 +367,7 @@ body{
 .btn-icon{ background: transparent; border-color: var(--line); padding: .35rem .55rem; }
 .btn-small{ padding: .35rem .6rem; font-size:.8rem; }
 
-input[type="text"], input[type="password"], input[type="search"], textarea, input[type="file"], select{
+input[type="text"], input[type="search"], textarea, input[type="file"], select{
   font-family: var(--font-body);
   font-size: .9rem;
   color: var(--ink);
@@ -537,92 +537,3 @@ input[type="search"]::-webkit-search-cancel-button{ cursor:pointer; }
   line-height:1;
   cursor:pointer;
 }
-
-/* ===== Benutzerverwaltung (Header oben rechts) ===== */
-.app-header{ flex-wrap:wrap; gap:.75rem; }
-.header-right{
-  display:flex;
-  align-items:center;
-  gap:1rem;
-  margin-left:auto;
-}
-.user-widget{
-  display:flex;
-  align-items:center;
-  gap:.6rem;
-  flex-wrap:wrap;
-  justify-content:flex-end;
-}
-.user-avatar{
-  width:34px; height:34px;
-  flex:0 0 auto;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  border-radius:50%;
-  background: var(--accent);
-  color: var(--accent-contrast);
-  font-weight:600;
-  font-size:.95rem;
-  text-transform:uppercase;
-}
-.user-avatar-guest{
-  background: var(--surface-2);
-  color: var(--ink-soft);
-  border: 1px solid var(--line);
-}
-.user-info{
-  display:flex;
-  flex-direction:column;
-  line-height:1.2;
-  min-width:0;
-}
-.user-name{ font-size:.9rem; font-weight:600; overflow-wrap:anywhere; }
-.user-state{
-  display:inline-flex;
-  align-items:center;
-  gap:.35rem;
-  font-size:.74rem;
-  color: var(--ink-soft);
-}
-.user-dot{
-  width:8px; height:8px;
-  border-radius:50%;
-  background: var(--ink-soft);
-  opacity:.5;
-}
-.user-state-in{ color: var(--ok); font-weight:500; }
-.user-state-in .user-dot{ background: var(--ok); opacity:1; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
-@media (max-width: 560px){
-  .user-since{ display:none; }
-}
-
-/* ===== Dialog Anmelden / Konto eroeffnen ===== */
-.auth-dialog{ width: min(420px, 92vw); }
-.field[hidden]{ display:none; }   /* .field setzt display:flex und wuerde hidden sonst uebersteuern */
-.auth-tabs{
-  display:flex;
-  gap:.25rem;
-  padding:.25rem;
-  background: var(--surface-2);
-  border-radius:8px;
-}
-.auth-tab{
-  flex:1;
-  padding:.45rem .6rem;
-  border:none;
-  border-radius:6px;
-  background:transparent;
-  color: var(--ink-soft);
-  font-family: var(--font-body);
-  font-size:.85rem;
-  cursor:pointer;
-}
-.auth-tab[aria-selected="true"]{
-  background: var(--surface);
-  color: var(--ink);
-  font-weight:600;
-  box-shadow: 0 1px 3px rgba(35,43,34,.12);
-}
-.auth-hint{ margin:0; font-size:.78rem; color: var(--ink-soft); }
-.auth-error{ margin:0; font-size:.85rem; color: var(--danger); font-weight:500; }

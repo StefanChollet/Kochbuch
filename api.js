@@ -59,70 +59,6 @@ async function readJson(req) {
   }
 }
 
-/* ------------------------------------------- Anmeldung: Cookie und Bremse */
-
-const SESSION_COOKIE = "kb_session";
-
-function getCookie(req, name) {
-  for (const part of String(req.headers.cookie || "").split(";")) {
-    const idx = part.indexOf("=");
-    if (idx !== -1 && part.slice(0, idx).trim() === name) return part.slice(idx + 1).trim();
-  }
-  return null;
-}
-
-/**
- * Sitzungs-Cookie: HttpOnly (fuer JavaScript unsichtbar), SameSite=Lax (wird
- * bei fremden Seiten nicht mitgeschickt). Secure nur hinter dem HTTPS-Proxy -
- * bei lokalem http://localhost waere ein Secure-Cookie unbrauchbar.
- */
-function sessionCookie(req, token, maxAgeSeconds) {
-  const secure = req.headers["x-forwarded-proto"] === "https" ? "; Secure" : "";
-  return `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAgeSeconds}${secure}`;
-}
-
-function currentUser(req) {
-  return db.getSessionUser(getCookie(req, SESSION_COOKIE));
-}
-
-/** Nur JSON-Anfragen: ein fremdes HTML-Formular kann diesen Content-Type nicht senden. */
-function requireJson(req) {
-  if (!/^application\/json/i.test(req.headers["content-type"] || "")) {
-    throw new HttpError(415, "Anfrage muss als application/json gesendet werden.");
-  }
-}
-
-/** Hinter dem Proxy ist der letzte X-Forwarded-For-Eintrag der, den unser eigener nginx gesehen hat. */
-function clientIp(req) {
-  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",").map((s) => s.trim()).filter(Boolean);
-  return forwarded.length ? forwarded[forwarded.length - 1] : req.socket.remoteAddress || "unbekannt";
-}
-
-/** Einfache Bremse im Speicher: max Treffer je Schluessel im Zeitfenster, sonst 429. */
-function limiter(max, windowMs) {
-  const hits = new Map();
-  const live = (entry) => entry && Date.now() - entry.first < windowMs;
-  return {
-    check(key) {
-      const entry = hits.get(key);
-      if (live(entry) && entry.count >= max) {
-        throw new HttpError(429, "Zu viele Versuche - bitte in einigen Minuten erneut probieren.");
-      }
-    },
-    hit(key) {
-      if (hits.size > 5000) for (const [k, e] of hits) if (!live(e)) hits.delete(k);
-      const entry = hits.get(key);
-      if (live(entry)) entry.count++;
-      else hits.set(key, { count: 1, first: Date.now() });
-    },
-    reset(key) { hits.delete(key); },
-  };
-}
-
-const loginByUser = limiter(5, 10 * 60 * 1000);   // 5 Fehlversuche je Benutzer+IP
-const loginByIp = limiter(20, 10 * 60 * 1000);    // 20 Fehlversuche je IP (gegen Namens-Durchprobieren)
-const registerByIp = limiter(5, 60 * 60 * 1000);  // 5 neue Konten je IP und Stunde
-
 /** Liefert die Query-Parameter einer Anfrage; der Host in der Basis-URL wird nicht verwendet. */
 function getQuery(req) {
   return new URL(req.url, "http://internal").searchParams;
@@ -157,52 +93,6 @@ const routes = [
       limit: q.get("limit") || 4,
       exclude: (q.get("exclude") || "").split(",").filter(Boolean),
     }));
-  }],
-
-  /* ---- Benutzer und Anmeldung ---- */
-  // Wer bin ich? Antwortet immer 200 - "nicht angemeldet" ist kein Fehler.
-  ["GET", /^\/api\/session$/, async (req, res) => {
-    const user = currentUser(req);
-    sendJson(res, 200, user ? { authenticated: true, user } : { authenticated: false });
-  }],
-
-  // Konto eroeffnen; der neue Benutzer ist danach gleich angemeldet.
-  ["POST", /^\/api\/users$/, async (req, res) => {
-    requireJson(req);
-    const ip = clientIp(req);
-    registerByIp.check(ip);
-    registerByIp.hit(ip);
-    const body = await readJson(req);
-    const user = await db.createUser(body.username, body.password);
-    const token = db.createSession(user.id);
-    res.setHeader("Set-Cookie", sessionCookie(req, token, db.SESSION_DAYS * 86400));
-    sendJson(res, 201, { authenticated: true, user });
-  }],
-
-  // Anmelden. Die Fehlermeldung verraet bewusst nicht, ob der Name existiert.
-  ["POST", /^\/api\/session$/, async (req, res) => {
-    requireJson(req);
-    const ip = clientIp(req);
-    const body = await readJson(req);
-    const userKey = `${ip}|${String(body.username || "").toLowerCase()}`;
-    loginByUser.check(userKey);
-    loginByIp.check(ip);
-    const user = await db.authenticate(body.username, body.password);
-    if (!user) {
-      loginByUser.hit(userKey);
-      loginByIp.hit(ip);
-      throw new HttpError(401, "Benutzername oder Passwort ist falsch.");
-    }
-    loginByUser.reset(userKey);
-    const token = db.createSession(user.id);
-    res.setHeader("Set-Cookie", sessionCookie(req, token, db.SESSION_DAYS * 86400));
-    sendJson(res, 200, { authenticated: true, user });
-  }],
-
-  ["DELETE", /^\/api\/session$/, async (req, res) => {
-    db.deleteSession(getCookie(req, SESSION_COOKIE));
-    res.setHeader("Set-Cookie", sessionCookie(req, "", 0));
-    sendEmpty(res, 204);
   }],
 
   /* ---- Rezepte ---- */
