@@ -25,7 +25,11 @@ const API = {
     const payload = isJson ? await res.json() : await res.text();
 
     if(!res.ok){
-      throw new Error((payload && payload.error) || `Serverfehler (HTTP ${res.status}).`);
+      const err = new Error((payload && payload.error) || `Serverfehler (HTTP ${res.status}).`);
+      // "code" ist ein stabiler, uebersetzbarer Bezeichner (siehe db.js HttpError) -
+      // fehlt er, bleibt es bei der (nur deutschen) message aus der API.
+      if(payload && payload.code) err.code = payload.code;
+      throw err;
     }
     return payload;
   },
@@ -201,6 +205,368 @@ themeToggleBtn.addEventListener("click", () => {
   const current = document.documentElement.getAttribute("data-theme");
   applyTheme(current === "dark" ? "light" : "dark");
 });
+
+/* =========================================================================
+   Sprache — de/fr/it/en. Deckt den Anmelde-Bereich ab (Widget, Dialog,
+   Meldungen); die Rezeptdaten selbst bleiben unuebersetzt (Nutzerinhalte).
+   ========================================================================= */
+const I18N = {
+  de: {
+    guest: "Gast", stateOut: "Abgemeldet", stateIn: "Angemeldet", memberSince: "Mitglied seit",
+    login: "Anmelden", logout: "Abmelden", register: "Konto eröffnen",
+    loginTitle: "Anmelden", registerTitle: "Konto eröffnen", forgotTitle: "Passwort vergessen", resetTitle: "Neues Passwort setzen",
+    loginTab: "Anmelden", registerTab: "Konto eröffnen",
+    emailLabel: "E-Mail", passwordLabel: "Passwort", password2Label: "Passwort wiederholen",
+    forgotLink: "Passwort vergessen?", backToLogin: "Zurück zur Anmeldung",
+    cancel: "Abbrechen", submitLogin: "Anmelden", submitRegister: "Konto eröffnen",
+    submitForgot: "Link anfordern", submitReset: "Passwort speichern",
+    hintPassword: "Passwort: mindestens 8 Zeichen.",
+    errFillFields: "Bitte E-Mail und Passwort eingeben.",
+    errPasswordMismatch: "Die beiden Passwörter stimmen nicht überein.",
+    okRegistered: (email) => `Konto eröffnet – willkommen, ${email}!`,
+    okLoggedIn: (email) => `Angemeldet als ${email}.`,
+    okLoggedOut: "Abgemeldet.",
+    resetSentInfo: "Falls ein Konto zu dieser Adresse existiert, wurde eine E-Mail verschickt.",
+    okResetDone: "Neues Passwort gesetzt – du bist angemeldet.",
+    errorCodes: {
+      auth_invalid_email: "Bitte eine gültige E-Mail-Adresse angeben.",
+      auth_password_too_short: "Passwort: mindestens 8 Zeichen.",
+      auth_password_too_long: "Passwort: höchstens 200 Zeichen.",
+      auth_email_taken: "Für diese Adresse existiert bereits ein Konto.",
+      auth_invalid_credentials: "E-Mail-Adresse oder Passwort ist falsch.",
+      auth_rate_limited: "Zu viele Versuche – bitte später erneut probieren.",
+      auth_reset_invalid: "Der Link ist ungültig oder abgelaufen.",
+    },
+  },
+  fr: {
+    guest: "Invité", stateOut: "Déconnecté", stateIn: "Connecté", memberSince: "Membre depuis",
+    login: "Connexion", logout: "Déconnexion", register: "Créer un compte",
+    loginTitle: "Connexion", registerTitle: "Créer un compte", forgotTitle: "Mot de passe oublié", resetTitle: "Nouveau mot de passe",
+    loginTab: "Connexion", registerTab: "Créer un compte",
+    emailLabel: "E-mail", passwordLabel: "Mot de passe", password2Label: "Répéter le mot de passe",
+    forgotLink: "Mot de passe oublié ?", backToLogin: "Retour à la connexion",
+    cancel: "Annuler", submitLogin: "Connexion", submitRegister: "Créer un compte",
+    submitForgot: "Demander le lien", submitReset: "Enregistrer",
+    hintPassword: "Mot de passe : au moins 8 caractères.",
+    errFillFields: "Veuillez saisir l'e-mail et le mot de passe.",
+    errPasswordMismatch: "Les deux mots de passe ne correspondent pas.",
+    okRegistered: (email) => `Compte créé – bienvenue, ${email} !`,
+    okLoggedIn: (email) => `Connecté en tant que ${email}.`,
+    okLoggedOut: "Déconnecté.",
+    resetSentInfo: "Si un compte existe pour cette adresse, un e-mail a été envoyé.",
+    okResetDone: "Nouveau mot de passe enregistré – vous êtes connecté.",
+    errorCodes: {
+      auth_invalid_email: "Veuillez indiquer une adresse e-mail valide.",
+      auth_password_too_short: "Mot de passe : au moins 8 caractères.",
+      auth_password_too_long: "Mot de passe : au maximum 200 caractères.",
+      auth_email_taken: "Un compte existe déjà pour cette adresse.",
+      auth_invalid_credentials: "Adresse e-mail ou mot de passe incorrect.",
+      auth_rate_limited: "Trop de tentatives – veuillez réessayer plus tard.",
+      auth_reset_invalid: "Le lien est invalide ou a expiré.",
+    },
+  },
+  it: {
+    guest: "Ospite", stateOut: "Disconnesso", stateIn: "Connesso", memberSince: "Membro dal",
+    login: "Accedi", logout: "Disconnetti", register: "Crea un conto",
+    loginTitle: "Accedi", registerTitle: "Crea un conto", forgotTitle: "Password dimenticata", resetTitle: "Nuova password",
+    loginTab: "Accedi", registerTab: "Crea un conto",
+    emailLabel: "E-mail", passwordLabel: "Password", password2Label: "Ripeti la password",
+    forgotLink: "Password dimenticata?", backToLogin: "Torna all'accesso",
+    cancel: "Annulla", submitLogin: "Accedi", submitRegister: "Crea un conto",
+    submitForgot: "Richiedi il link", submitReset: "Salva password",
+    hintPassword: "Password: almeno 8 caratteri.",
+    errFillFields: "Inserisci e-mail e password.",
+    errPasswordMismatch: "Le due password non coincidono.",
+    okRegistered: (email) => `Conto creato – benvenuto, ${email}!`,
+    okLoggedIn: (email) => `Connesso come ${email}.`,
+    okLoggedOut: "Disconnesso.",
+    resetSentInfo: "Se esiste un conto con questo indirizzo, è stata inviata un'e-mail.",
+    okResetDone: "Nuova password impostata – sei connesso.",
+    errorCodes: {
+      auth_invalid_email: "Inserisci un indirizzo e-mail valido.",
+      auth_password_too_short: "Password: almeno 8 caratteri.",
+      auth_password_too_long: "Password: massimo 200 caratteri.",
+      auth_email_taken: "Esiste già un conto per questo indirizzo.",
+      auth_invalid_credentials: "Indirizzo e-mail o password errati.",
+      auth_rate_limited: "Troppi tentativi – riprova più tardi.",
+      auth_reset_invalid: "Il link non è valido o è scaduto.",
+    },
+  },
+  en: {
+    guest: "Guest", stateOut: "Signed out", stateIn: "Signed in", memberSince: "Member since",
+    login: "Log in", logout: "Log out", register: "Create account",
+    loginTitle: "Log in", registerTitle: "Create account", forgotTitle: "Forgot password", resetTitle: "Set new password",
+    loginTab: "Log in", registerTab: "Create account",
+    emailLabel: "Email", passwordLabel: "Password", password2Label: "Repeat password",
+    forgotLink: "Forgot password?", backToLogin: "Back to log in",
+    cancel: "Cancel", submitLogin: "Log in", submitRegister: "Create account",
+    submitForgot: "Request link", submitReset: "Save password",
+    hintPassword: "Password: at least 8 characters.",
+    errFillFields: "Please enter email and password.",
+    errPasswordMismatch: "The two passwords do not match.",
+    okRegistered: (email) => `Account created – welcome, ${email}!`,
+    okLoggedIn: (email) => `Signed in as ${email}.`,
+    okLoggedOut: "Signed out.",
+    resetSentInfo: "If an account exists for this address, an email has been sent.",
+    okResetDone: "New password set – you're signed in.",
+    errorCodes: {
+      auth_invalid_email: "Please enter a valid email address.",
+      auth_password_too_short: "Password: at least 8 characters.",
+      auth_password_too_long: "Password: at most 200 characters.",
+      auth_email_taken: "An account already exists for this address.",
+      auth_invalid_credentials: "Email address or password is incorrect.",
+      auth_rate_limited: "Too many attempts – please try again later.",
+      auth_reset_invalid: "The link is invalid or has expired.",
+    },
+  },
+};
+
+const langSwitch = document.getElementById("langSwitch");
+let currentLang = "de";
+
+function t(key, ...args){
+  const dict = I18N[currentLang] || I18N.de;
+  const entry = key in dict ? dict[key] : I18N.de[key];
+  return typeof entry === "function" ? entry(...args) : entry;
+}
+
+/** Uebersetzt einen Fehler vom Server: bekannter "code" -> Woerterbuch, sonst die (deutsche) message. */
+function authErrorText(err){
+  const dict = I18N[currentLang] || I18N.de;
+  return (err.code && dict.errorCodes[err.code]) || err.message;
+}
+
+function applyI18n(){
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    el.textContent = t(el.dataset.i18n);
+  });
+}
+
+function setLanguage(lang){
+  currentLang = I18N[lang] ? lang : "de";
+  window.localStorage.setItem("kochbuchV2_lang", currentLang);
+  document.documentElement.setAttribute("lang", currentLang);
+  langSwitch.querySelectorAll(".lang-btn").forEach(btn => {
+    btn.setAttribute("aria-pressed", String(btn.dataset.lang === currentLang));
+  });
+  applyI18n();
+  renderUserWidget();          // Zustandstext haengt von der Sprache ab
+  if(!authDialog.hidden) setAuthMode(Auth.mode);   // Titel/Beschriftungen im offenen Dialog nachziehen
+}
+
+langSwitch.addEventListener("click", (e) => {
+  const btn = e.target.closest(".lang-btn");
+  if(btn) setLanguage(btn.dataset.lang);
+});
+
+/**
+ * Bewusst NICHT sofort aufgerufen: setLanguage() rendert schon das
+ * Benutzer-Widget mit, dessen Elemente (authDialog, Auth, ...) erst weiter
+ * unten im Skript als const deklariert werden. Aufruf folgt in init(),
+ * nachdem der ganze Datei-Kopf durchlaufen ist.
+ */
+function initLanguage(){
+  const saved = window.localStorage.getItem("kochbuchV2_lang");
+  const browser = (navigator.language || "de").slice(0, 2).toLowerCase();
+  setLanguage(saved || (I18N[browser] ? browser : "de"));
+}
+
+/* =========================================================================
+   Benutzerverwaltung — Konto per E-Mail eroeffnen, anmelden, abmelden,
+   Passwort vergessen. Oben rechts stehen der Benutzer und sein Zustand.
+   Die Anmeldung haengt an einem HttpOnly-Cookie; das Passwort bleibt nie
+   im Browser gespeichert, hier liegt nur, wer gerade angemeldet ist.
+   ========================================================================= */
+const userWidget = document.getElementById("userWidget");
+const authDialog = document.getElementById("authDialog");
+const authForm = document.getElementById("authForm");
+const authTitle = document.getElementById("authTitle");
+const authTabs = document.getElementById("authTabs");
+const authTabLogin = document.getElementById("authTabLogin");
+const authTabRegister = document.getElementById("authTabRegister");
+const authEmail = document.getElementById("authEmail");
+const authPasswordField = document.getElementById("authPasswordField");
+const authPassword = document.getElementById("authPassword");
+const authPassword2 = document.getElementById("authPassword2");
+const authPassword2Field = document.getElementById("authPassword2Field");
+const authForgotLink = document.getElementById("authForgotLink");
+const authBackLink = document.getElementById("authBackLink");
+const authHint = document.getElementById("authHint");
+const authInfo = document.getElementById("authInfo");
+const authError = document.getElementById("authError");
+const authSubmitBtn = document.getElementById("authSubmitBtn");
+
+// mode: "login" | "register" | "forgot" | "reset"
+const Auth = { user: null, mode: "login", resetToken: null };
+
+function renderUserWidget(){
+  if(Auth.user){
+    const since = new Date(Auth.user.createdAt).toLocaleDateString(currentLang);
+    userWidget.innerHTML = `
+      <span class="user-avatar" aria-hidden="true">${escapeHtml(Auth.user.email.charAt(0))}</span>
+      <span class="user-info" title="${escapeHtml(Auth.user.email)}">
+        <span class="user-name">${escapeHtml(Auth.user.email)}</span>
+        <span class="user-state user-state-in"><span class="user-dot"></span>${t("stateIn")}<span class="user-since"> · ${t("memberSince")} ${since}</span></span>
+      </span>
+      <button type="button" class="btn btn-ghost btn-small" data-action="logout">${t("logout")}</button>`;
+  }else{
+    userWidget.innerHTML = `
+      <span class="user-avatar user-avatar-guest" aria-hidden="true">?</span>
+      <span class="user-info">
+        <span class="user-name">${t("guest")}</span>
+        <span class="user-state"><span class="user-dot"></span>${t("stateOut")}</span>
+      </span>
+      <button type="button" class="btn btn-ghost btn-small" data-action="login">${t("login")}</button>
+      <button type="button" class="btn btn-primary btn-small" data-action="register">${t("register")}</button>`;
+  }
+}
+
+async function loadSession(){
+  try{
+    const session = await API.get("/session");
+    Auth.user = session.authenticated ? session.user : null;
+  }catch{
+    Auth.user = null;   // Server nicht erreichbar: als Gast anzeigen, die Hauptmeldung kommt aus init()
+  }
+  renderUserWidget();
+}
+
+function showAuthError(message){
+  authInfo.hidden = true;
+  authError.textContent = message;
+  authError.hidden = false;
+}
+
+function showAuthInfo(message){
+  authError.hidden = true;
+  authInfo.textContent = message;
+  authInfo.hidden = false;
+}
+
+/** Blendet Felder/Beschriftungen je nach Zustand ein bzw. aus - vier Zustaende, ein Formular. */
+function setAuthMode(mode){
+  Auth.mode = mode;
+  const register = mode === "register";
+  const forgot = mode === "forgot";
+  const reset = mode === "reset";
+
+  authTitle.textContent = t(register ? "registerTitle" : forgot ? "forgotTitle" : reset ? "resetTitle" : "loginTitle");
+  authSubmitBtn.textContent = t(register ? "submitRegister" : forgot ? "submitForgot" : reset ? "submitReset" : "submitLogin");
+
+  authTabs.hidden = forgot || reset;
+  authTabLogin.setAttribute("aria-selected", String(mode === "login"));
+  authTabRegister.setAttribute("aria-selected", String(register));
+
+  authEmail.closest(".field").hidden = reset;   // Reset laeuft ueber den Link-Token, keine Adresse noetig
+  authPasswordField.hidden = forgot;
+  authPassword2Field.hidden = !(register || reset);
+  authHint.hidden = !(register || reset);
+
+  authForgotLink.hidden = !(mode === "login");
+  authBackLink.hidden = !(forgot || reset);
+
+  authError.hidden = true;
+  authInfo.hidden = true;
+}
+
+function openAuthDialog(mode){
+  authForm.reset();
+  setAuthMode(mode);
+  authDialog.showModal();
+  (mode === "reset" ? authPassword : authEmail).focus();
+}
+
+userWidget.addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-action]");
+  if(!btn) return;
+  if(btn.dataset.action === "login") openAuthDialog("login");
+  if(btn.dataset.action === "register") openAuthDialog("register");
+  if(btn.dataset.action === "logout"){
+    await guard(async () => {
+      await API.del("/session");
+      Auth.user = null;
+      renderUserWidget();
+    }, { success: t("okLoggedOut") });
+  }
+});
+
+authTabLogin.addEventListener("click", () => setAuthMode("login"));
+authTabRegister.addEventListener("click", () => setAuthMode("register"));
+authForgotLink.addEventListener("click", () => setAuthMode("forgot"));
+authBackLink.addEventListener("click", () => setAuthMode("login"));
+document.getElementById("authCloseBtn").addEventListener("click", () => authDialog.close());
+document.getElementById("authCancelBtn").addEventListener("click", () => authDialog.close());
+// Passwoerter nicht im Formular stehen lassen. Nur wenn der Dialog wirklich zu
+// ist: ein verspaetetes close-Ereignis darf ein schon wieder geoeffnetes
+// Formular nicht leeren.
+authDialog.addEventListener("close", () => { if(!authDialog.open) authForm.reset(); });
+
+authForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const mode = Auth.mode;
+  const email = authEmail.value.trim();
+  const password = authPassword.value;
+
+  if(mode === "forgot"){
+    if(!email){ showAuthError(t("errFillFields")); return; }
+  }else if(mode === "reset"){
+    if(!password){ showAuthError(t("errFillFields")); return; }
+    if(password !== authPassword2.value){ showAuthError(t("errPasswordMismatch")); return; }
+  }else{
+    if(!email || !password){ showAuthError(t("errFillFields")); return; }
+    if(mode === "register" && password !== authPassword2.value){ showAuthError(t("errPasswordMismatch")); return; }
+  }
+
+  authSubmitBtn.disabled = true;
+  authError.hidden = true;
+  try{
+    if(mode === "login"){
+      const data = await API.post("/session", { email, password });
+      Auth.user = data.user;
+      renderUserWidget();
+      authDialog.close();
+      showStatus(t("okLoggedIn", data.user.email), "success");
+    }else if(mode === "register"){
+      const data = await API.post("/users", { email, password });
+      Auth.user = data.user;
+      renderUserWidget();
+      authDialog.close();
+      showStatus(t("okRegistered", data.user.email), "success");
+    }else if(mode === "forgot"){
+      await API.post("/password-reset", { email });
+      showAuthInfo(t("resetSentInfo"));
+    }else if(mode === "reset"){
+      const data = await API.post("/password-reset/confirm", { token: Auth.resetToken, password });
+      Auth.user = data.user;
+      Auth.resetToken = null;
+      renderUserWidget();
+      authDialog.close();
+      showStatus(t("okResetDone"), "success");
+    }
+  }catch(err){
+    showAuthError(authErrorText(err));
+    if(mode !== "forgot"){
+      authPassword.value = "";
+      authPassword2.value = "";
+      authPassword.focus();
+    }
+  }finally{
+    authSubmitBtn.disabled = false;
+  }
+});
+
+/** Kommt der Besucher ueber einen Passwort-Reset-Link (?reset=TOKEN), gleich den Dialog dafuer oeffnen. */
+function checkResetLinkInUrl(){
+  const params = new URLSearchParams(location.search);
+  const token = params.get("reset");
+  if(!token) return;
+  Auth.resetToken = token;
+  openAuthDialog("reset");
+  // Token aus der Adresszeile entfernen - er soll nicht in Verlauf/Lesezeichen haengen bleiben.
+  params.delete("reset");
+  const rest = params.toString();
+  history.replaceState(null, "", location.pathname + (rest ? `?${rest}` : ""));
+}
 
 /* =========================================================================
    Empfehlungen — entstehen erst per Klick auf "Neue Empfehlungen" aus
@@ -779,6 +1145,9 @@ async function offerLegacyImport(){
    Start
    ========================================================================= */
 (async function init(){
+  initLanguage();
+  loadSession();   // parallel: der Benutzerbereich soll nicht auf die Rezeptdaten warten
+  checkResetLinkInUrl();
   const loaded = await guard(() => DB.load());
   if(!loaded){
     // Ohne Serververbindung hat Weiterarbeiten keinen Sinn - die Oberflaeche
