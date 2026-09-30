@@ -30,19 +30,9 @@
 
 <header class="app-header">
   <h1 class="app-title">Kochbuch<span class="app-title-accent">V2</span></h1>
-  <div class="header-right">
-    <!-- Benutzerverwaltung: Benutzer und Zustand, per JS befuellt -->
-    <div id="userWidget" class="user-widget" aria-live="polite"></div>
-    <div id="langSwitch" class="lang-switch" role="group" aria-label="Sprache">
-      <button type="button" class="lang-btn" data-lang="de">DE</button>
-      <button type="button" class="lang-btn" data-lang="fr">FR</button>
-      <button type="button" class="lang-btn" data-lang="it">IT</button>
-      <button type="button" class="lang-btn" data-lang="en">EN</button>
-    </div>
-    <button id="themeToggle" class="btn btn-ghost" type="button" aria-label="Hell/Dunkel umschalten">
-      <span id="themeIcon">🌙</span>
-    </button>
-  </div>
+  <button id="themeToggle" class="btn btn-ghost" type="button" aria-label="Hell/Dunkel umschalten">
+    <span id="themeIcon">🌙</span>
+  </button>
 </header>
 
 <p id="appStatus" class="app-status" role="status" aria-live="polite" hidden></p>
@@ -140,48 +130,6 @@
   </aside>
 
 </main>
-
-<!-- ============ Dialog: Anmelden / Konto eroeffnen / Passwort ============ -->
-<dialog id="authDialog" class="recipe-dialog auth-dialog">
-  <form id="authForm" novalidate>
-    <div class="dialog-head">
-      <h2 id="authTitle" data-i18n="loginTitle">Anmelden</h2>
-      <button type="button" class="btn btn-ghost" id="authCloseBtn" aria-label="Schliessen">✕</button>
-    </div>
-
-    <div class="auth-tabs" role="tablist" id="authTabs">
-      <button type="button" role="tab" id="authTabLogin" class="auth-tab" data-mode="login" data-i18n="loginTab">Anmelden</button>
-      <button type="button" role="tab" id="authTabRegister" class="auth-tab" data-mode="register" data-i18n="registerTab">Konto eröffnen</button>
-    </div>
-
-    <label class="field">
-      <span data-i18n="emailLabel">E-Mail</span>
-      <input type="email" id="authEmail" autocomplete="email" maxlength="200">
-    </label>
-
-    <label class="field" id="authPasswordField">
-      <span data-i18n="passwordLabel">Passwort</span>
-      <input type="password" id="authPassword" maxlength="200">
-    </label>
-
-    <label class="field" id="authPassword2Field" hidden>
-      <span data-i18n="password2Label">Passwort wiederholen</span>
-      <input type="password" id="authPassword2" autocomplete="new-password" maxlength="200">
-    </label>
-
-    <button type="button" id="authForgotLink" class="auth-link" data-i18n="forgotLink">Passwort vergessen?</button>
-    <button type="button" id="authBackLink" class="auth-link" data-i18n="backToLogin" hidden>Zurück zur Anmeldung</button>
-
-    <p id="authHint" class="auth-hint" data-i18n="hintPassword" hidden>Passwort: mindestens 8 Zeichen.</p>
-    <p id="authInfo" class="auth-info" hidden></p>
-    <p id="authError" class="auth-error" role="alert" hidden></p>
-
-    <div class="dialog-actions">
-      <button type="button" id="authCancelBtn" class="btn btn-ghost" data-i18n="cancel">Abbrechen</button>
-      <button type="submit" id="authSubmitBtn" class="btn btn-primary" data-i18n="submitLogin">Anmelden</button>
-    </div>
-  </form>
-</dialog>
 
 <!-- ============ Dialog: Kochbuch-Detail ============ -->
 <dialog id="recipeDialog" class="recipe-dialog">

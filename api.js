@@ -9,7 +9,6 @@
    ========================================================================= */
 
 const db = require("./db");
-const mailer = require("./mailer");
 const { HttpError } = db;
 
 const MAX_BODY_BYTES = 32 * 1024 * 1024; // deckt mehrere Bilder je Rezept ab
@@ -65,72 +64,6 @@ function getQuery(req) {
   return new URL(req.url, "http://internal").searchParams;
 }
 
-/* ------------------------------------------------- Anmeldung: Cookie und Bremse */
-
-const SESSION_COOKIE = "kb_session";
-
-function getCookie(req, name) {
-  for (const part of String(req.headers.cookie || "").split(";")) {
-    const idx = part.indexOf("=");
-    if (idx !== -1 && part.slice(0, idx).trim() === name) return part.slice(idx + 1).trim();
-  }
-  return null;
-}
-
-/**
- * Sitzungs-Cookie: HttpOnly (fuer JavaScript unsichtbar), SameSite=Lax (wird
- * bei fremden Seiten nicht mitgeschickt). Secure nur hinter dem HTTPS-Proxy -
- * bei lokalem http://localhost waere ein Secure-Cookie unbrauchbar.
- */
-function sessionCookie(req, token, maxAgeSeconds) {
-  const secure = req.headers["x-forwarded-proto"] === "https" ? "; Secure" : "";
-  return `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAgeSeconds}${secure}`;
-}
-
-function currentUser(req) {
-  return db.getSessionUser(getCookie(req, SESSION_COOKIE));
-}
-
-/** Nur JSON-Anfragen: ein fremdes HTML-Formular kann diesen Content-Type nicht senden. */
-function requireJson(req) {
-  if (!/^application\/json/i.test(req.headers["content-type"] || "")) {
-    throw new HttpError(415, "Anfrage muss als application/json gesendet werden.");
-  }
-}
-
-/** Hinter dem Proxy ist der letzte X-Forwarded-For-Eintrag der, den unser eigener nginx gesehen hat. */
-function clientIp(req) {
-  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",").map((s) => s.trim()).filter(Boolean);
-  return forwarded.length ? forwarded[forwarded.length - 1] : req.socket.remoteAddress || "unbekannt";
-}
-
-/** Einfache Bremse im Speicher: max Treffer je Schluessel im Zeitfenster, sonst 429. */
-function limiter(max, windowMs) {
-  const hits = new Map();
-  const live = (entry) => entry && Date.now() - entry.first < windowMs;
-  return {
-    check(key) {
-      const entry = hits.get(key);
-      if (live(entry) && entry.count >= max) {
-        throw new HttpError(429, "Zu viele Versuche - bitte in einigen Minuten erneut probieren.", "auth_rate_limited");
-      }
-    },
-    hit(key) {
-      if (hits.size > 5000) for (const [k, e] of hits) if (!live(e)) hits.delete(k);
-      const entry = hits.get(key);
-      if (live(entry)) entry.count++;
-      else hits.set(key, { count: 1, first: Date.now() });
-    },
-    reset(key) { hits.delete(key); },
-  };
-}
-
-const loginByUser = limiter(5, 10 * 60 * 1000);    // 5 Fehlversuche je Konto+IP
-const loginByIp = limiter(20, 10 * 60 * 1000);     // 20 Fehlversuche je IP (gegen Durchprobieren)
-const registerByIp = limiter(5, 60 * 60 * 1000);   // 5 neue Konten je IP und Stunde
-const resetByIp = limiter(5, 60 * 60 * 1000);      // 5 Reset-Anfragen je IP und Stunde
-const resetByEmail = limiter(3, 60 * 60 * 1000);   // 3 Reset-Anfragen je Adresse und Stunde
-
 /* ------------------------------------------------------------- Routen */
 
 /**
@@ -160,89 +93,6 @@ const routes = [
       limit: q.get("limit") || 4,
       exclude: (q.get("exclude") || "").split(",").filter(Boolean),
     }));
-  }],
-
-  /* ---- Benutzer und Anmeldung ---- */
-  // Wer bin ich? Antwortet immer 200 - "nicht angemeldet" ist kein Fehler.
-  ["GET", /^\/api\/session$/, async (req, res) => {
-    const user = currentUser(req);
-    sendJson(res, 200, user ? { authenticated: true, user } : { authenticated: false });
-  }],
-
-  // Konto eroeffnen; das neue Konto ist danach gleich angemeldet.
-  ["POST", /^\/api\/users$/, async (req, res) => {
-    requireJson(req);
-    const ip = clientIp(req);
-    registerByIp.check(ip);
-    registerByIp.hit(ip);
-    const body = await readJson(req);
-    const user = await db.createUser(body.email, body.password);
-    const token = db.createSession(user.id);
-    res.setHeader("Set-Cookie", sessionCookie(req, token, db.SESSION_DAYS * 86400));
-    sendJson(res, 201, { authenticated: true, user });
-  }],
-
-  // Anmelden. Die Fehlermeldung verraet bewusst nicht, ob die Adresse existiert.
-  ["POST", /^\/api\/session$/, async (req, res) => {
-    requireJson(req);
-    const ip = clientIp(req);
-    const body = await readJson(req);
-    const userKey = `${ip}|${String(body.email || "").toLowerCase()}`;
-    loginByUser.check(userKey);
-    loginByIp.check(ip);
-    const user = await db.authenticate(body.email, body.password);
-    if (!user) {
-      loginByUser.hit(userKey);
-      loginByIp.hit(ip);
-      throw new HttpError(401, "E-Mail-Adresse oder Passwort ist falsch.", "auth_invalid_credentials");
-    }
-    loginByUser.reset(userKey);
-    const token = db.createSession(user.id);
-    res.setHeader("Set-Cookie", sessionCookie(req, token, db.SESSION_DAYS * 86400));
-    sendJson(res, 200, { authenticated: true, user });
-  }],
-
-  ["DELETE", /^\/api\/session$/, async (req, res) => {
-    db.deleteSession(getCookie(req, SESSION_COOKIE));
-    res.setHeader("Set-Cookie", sessionCookie(req, "", 0));
-    sendEmpty(res, 204);
-  }],
-
-  // Passwort vergessen: fordert eine Reset-Mail an. Antwortet IMMER gleich,
-  // egal ob es das Konto gibt - sonst liesse sich damit durchprobieren,
-  // welche Adressen registriert sind.
-  ["POST", /^\/api\/password-reset$/, async (req, res) => {
-    requireJson(req);
-    const ip = clientIp(req);
-    resetByIp.check(ip);
-    resetByIp.hit(ip);
-    const body = await readJson(req);
-    const emailKey = String(body.email || "").trim().toLowerCase();
-    if (emailKey) { resetByEmail.check(emailKey); resetByEmail.hit(emailKey); }
-
-    const result = db.requestPasswordReset(body.email);
-    if (result.sent) {
-      const proto = req.headers["x-forwarded-proto"] || "http";
-      const link = `${proto}://${req.headers.host}/?reset=${encodeURIComponent(result.token)}`;
-      await mailer.sendMail({
-        to: result.email,
-        subject: "Kochbuch: Passwort zuruecksetzen",
-        text: `Hallo\n\nUm ein neues Passwort zu vergeben, oeffne diesen Link (` +
-          `gueltig 60 Minuten):\n\n${link}\n\n` +
-          `Falls du das nicht angefordert hast, kannst du diese Mail ignorieren.\n`,
-      });
-    }
-    sendJson(res, 200, { message: "Falls ein Konto zu dieser Adresse existiert, wurde eine E-Mail verschickt." });
-  }],
-
-  // Neues Passwort per Reset-Token setzen; danach gleich angemeldet.
-  ["POST", /^\/api\/password-reset\/confirm$/, async (req, res) => {
-    requireJson(req);
-    const body = await readJson(req);
-    const user = await db.resetPassword(body.token, body.password);
-    const token = db.createSession(user.id);
-    res.setHeader("Set-Cookie", sessionCookie(req, token, db.SESSION_DAYS * 86400));
-    sendJson(res, 200, { authenticated: true, user });
   }],
 
   /* ---- Rezepte ---- */
@@ -364,7 +214,7 @@ async function handle(req, res, pathname) {
     } catch (err) {
       if (res.headersSent) { res.destroy(); return true; }
       if (err instanceof HttpError) {
-        sendJson(res, err.status, err.code ? { error: err.message, code: err.code } : { error: err.message });
+        sendJson(res, err.status, { error: err.message });
       } else {
         console.error(`API-Fehler bei ${req.method} ${pathname}:`, err);
         sendJson(res, 500, { error: "Interner Serverfehler - Details siehe Server-Log." });

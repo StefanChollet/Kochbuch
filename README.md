@@ -17,10 +17,6 @@ Dann http://localhost:3000/ öffnen.
 | Anderer Port | `node server.js 8080` |
 | Andere Datenbankdatei | `KOCHBUCH_DB=test.sqlite node server.js` |
 
-Für echten Mailversand (Passwort-Reset) zusätzlich `SMTP_HOST` setzen, siehe
-[Benutzerverwaltung](#benutzerverwaltung). Ohne das läuft die App unverändert,
-Reset-Links landen dann lesbar im Server-Log statt in einer E-Mail.
-
 **Keine Abhängigkeiten** – kein `npm install`, kein `node_modules`. Das Projekt
 nutzt ausschließlich Node.js-Standardmodule, inklusive des eingebauten
 SQLite-Treibers `node:sqlite`. Voraussetzung ist **Node.js 22 oder neuer**
@@ -32,7 +28,6 @@ SQLite-Treibers `node:sqlite`. Voraussetzung ist **Node.js 22 oder neuer**
 server.js               HTTP-Server: /api an die API, alles andere aus public/
 api.js                  REST-Routen, JSON-Ein-/Ausgabe, Fehlerübersetzung
 db.js                   SQLite-Schema und sämtliche Datenbankzugriffe
-mailer.js               Minimaler SMTP-Client fürs Passwort-Reset (keine Abhängigkeiten)
 public/                 alles, was der Browser bekommt
   kochbuchV2.html
   kochbuchV2.css
@@ -53,9 +48,6 @@ nicht erreichbar.
 | `images` | Bilder als BLOB inkl. MIME-Typ, `recipe_id` → `recipes`, `ON DELETE CASCADE` |
 | `fridge_items` | Kühlschrank-Bestand |
 | `ingredient_catalog` | Vorschlagsliste, Primärschlüssel `COLLATE NOCASE` (»Mehl« = »mehl«) |
-| `users` | Benutzerkonten: E-Mail (eindeutig, `COLLATE NOCASE`), Passwort-Hash (scrypt), Erstellzeit |
-| `sessions` | Angemeldete Sitzungen: SHA-256 des Tokens, `user_id` → `users` (`ON DELETE CASCADE`), Ablaufzeit |
-| `password_resets` | Passwort-Reset-Tokens (SHA-256, 60 Min. gültig, einmal verwendbar), `user_id` → `users` (`ON DELETE CASCADE`) |
 | `meta` | u. a. `schema_version` |
 
 Ein gelöschtes Rezept nimmt seine Zutaten und Bilder per Fremdschlüssel mit.
@@ -111,12 +103,6 @@ Fehler kommen einheitlich als `{ "error": "..." }` mit passendem HTTP-Status
 | `POST` | `/api/catalog` | Vorschlag ergänzen |
 | `DELETE` | `/api/catalog/:name` | Vorschlag entfernen → `204` |
 | `POST` | `/api/import` | Altbestand aus der localStorage-Version übernehmen |
-| `POST` | `/api/users` | Konto per E-Mail eröffnen (danach gleich angemeldet) → `201` |
-| `POST` | `/api/session` | Anmelden → `200` + Cookie |
-| `GET` | `/api/session` | Wer bin ich? `{ "authenticated": true, "user": {...} }` oder `false` |
-| `DELETE` | `/api/session` | Abmelden → `204` |
-| `POST` | `/api/password-reset` | Passwort-Reset per E-Mail anfordern → `200` (immer, s. u.) |
-| `POST` | `/api/password-reset/confirm` | Neues Passwort per Token setzen (danach angemeldet) → `200` |
 
 ### Rezeptübersicht: Suche, Sortierung, Paging
 
@@ -185,66 +171,6 @@ Antwort (gekürzt): `{ "items": [{ "id", "name", "shortDesc", "reason":
 "fridge"|"filler", "matchCount", "totalIngredients", "matched": [...],
 "missing": [...], "thumbnailUrl" }], "basedOnFridge", "fridgeItems",
 "candidates", "search" }`.
-
-### Benutzerverwaltung
-
-Oben rechts steht der Benutzer samt Zustand: **Gast · Abgemeldet** mit den
-Knöpfen „Anmelden" und „Konto eröffnen", oder **E-Mail · Angemeldet · Mitglied
-seit …** mit „Abmelden". Ein Klick öffnet einen Dialog mit vier Zuständen:
-Anmelden, Konto eröffnen, Passwort vergessen, neues Passwort setzen. Daneben
-schaltet ein Sprachwähler (DE/FR/IT/EN) die Texte dieses Bereichs um; die
-Rezeptdaten selbst (Nutzerinhalte) bleiben unübersetzt.
-
-```
-POST /api/users            { "email": "stefan@example.com", "password": "mindestens 8 Zeichen" }
-POST /api/session           { "email": "...", "password": "..." }
-POST /api/password-reset    { "email": "..." }
-POST /api/password-reset/confirm  { "token": "...", "password": "neues-passwort" }
-```
-
-- **Konto = E-Mail-Adresse.** Kein separater Benutzername. Eindeutig ohne
-  Beachtung der Groß-/Kleinschreibung (`409` bei Doppelten). Passwort 8–200
-  Zeichen.
-- **Passwörter** liegen nur als `scrypt`-Hash mit eigenem Salt in der Datenbank.
-- **Sitzung:** Cookie `kb_session` (30 Tage), `HttpOnly` (für JavaScript
-  unsichtbar), `SameSite=Lax`, hinter dem HTTPS-Proxy zusätzlich `Secure`. In
-  der Datenbank steht nur der SHA-256 des Tokens.
-- **Passwort vergessen:** `POST /api/password-reset` antwortet *immer* mit
-  derselben generischen Meldung, unabhängig davon, ob die Adresse existiert
-  (keine Auskunft, welche Adressen registriert sind). Existiert ein Konto,
-  verschickt `mailer.js` eine Mail mit einem Link
-  `https://.../?reset=<Token>` (60 Minuten gültig, einmal verwendbar). Die
-  Seite erkennt diesen Parameter beim Laden automatisch und öffnet den
-  Dialog im Zustand „Neues Passwort setzen". Ein erfolgreicher Reset meldet
-  **alle** bestehenden Sitzungen des Kontos ab (falls das alte Passwort
-  kompromittiert war).
-- **Mailversand:** `mailer.js` ist ein minimaler SMTP-Client ohne
-  Zusatzpakete (STARTTLS auf 587 oder direktes TLS auf 465, AUTH LOGIN).
-  Konfiguration über Umgebungsvariablen:
-
-  | Variable | Bedeutung |
-  |---|---|
-  | `SMTP_HOST` | Server-Adresse. **Leer = kein Versand** — der Reset-Link landet stattdessen lesbar im Server-Log. |
-  | `SMTP_PORT` | Standard `587` (STARTTLS) bzw. `465` bei `SMTP_SECURE=true` |
-  | `SMTP_SECURE` | `true` für direktes TLS (Port 465) |
-  | `SMTP_USER` / `SMTP_PASS` | Zugangsdaten für `AUTH LOGIN` |
-  | `SMTP_FROM` | Absenderadresse, Standard: `SMTP_USER` |
-
-- **Anmeldefehler** nennen bewusst nicht, ob die Adresse existiert (`401`,
-  immer dieselbe Meldung; auch bei unbekannten Adressen wird ein Hash
-  geprüft, damit die Antwortzeit nichts verrät).
-- **Bremsen** (im Speicher, `429`): 5 Fehlversuche je Konto und IP sowie 20 je
-  IP in 10 Minuten beim Anmelden; 5 neue Konten je IP und Stunde; 5
-  Reset-Anfragen je IP sowie 3 je Adresse und Stunde. Die IP ist der letzte
-  `X-Forwarded-For`-Eintrag des eigenen nginx.
-- **CSRF:** `POST` verlangt `Content-Type: application/json` (`415` sonst).
-- **Mehrsprachige Fehler:** Bekannte Fehler tragen zusätzlich zur (deutschen)
-  `message` ein stabiles Feld `code` (z. B. `auth_invalid_credentials"`), das
-  der Client anhand der gewählten Sprache übersetzt.
-
-**Wichtig:** Die Benutzerverwaltung zeigt bisher nur, wer angemeldet ist. Die
-Rezept- und Kühlschrank-Endpunkte sind **nicht** geschützt und ohne Anmeldung
-les- und schreibbar.
 
 ### Rezept anlegen
 

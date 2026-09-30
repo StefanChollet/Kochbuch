@@ -12,7 +12,6 @@
 
 const { DatabaseSync } = require("node:sqlite");
 const crypto = require("node:crypto");
-const { promisify } = require("node:util");
 
 const SCHEMA_VERSION = 1;
 
@@ -25,17 +24,11 @@ const CATEGORY_OPTIONS = [
 ];
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8 MB pro Bild
 
-/**
- * Fehler mit HTTP-Statuscode - die API uebersetzt ihn direkt in die Antwort.
- * "code" ist optional: ein stabiler, uebersetzbarer Bezeichner (z.B.
- * "auth_invalid_credentials") fuer Faelle, die der Client mehrsprachig
- * anzeigen soll. Fehlt er, zeigt der Client die (nur deutsche) message.
- */
+/** Fehler mit HTTP-Statuscode - die API uebersetzt ihn direkt in die Antwort. */
 class HttpError extends Error {
-  constructor(status, message, code) {
+  constructor(status, message) {
     super(message);
     this.status = status;
-    this.code = code;
   }
 }
 
@@ -85,37 +78,6 @@ CREATE TABLE IF NOT EXISTS fridge_items (
 CREATE TABLE IF NOT EXISTS ingredient_catalog (
   name TEXT PRIMARY KEY COLLATE NOCASE
 );
-
--- Benutzerkonten. E-Mail ist die Anmeldekennung (ohne Beachtung der
--- Gross-/Kleinschreibung eindeutig) - kein separater Benutzername, das
--- Passwort-Vergessen braucht ohnehin eine Adresse zum Versenden.
-CREATE TABLE IF NOT EXISTS users (
-  id            TEXT PRIMARY KEY,
-  email         TEXT NOT NULL UNIQUE COLLATE NOCASE,
-  password_hash TEXT NOT NULL,
-  created_at    TEXT NOT NULL
-);
-
--- Angemeldete Sitzungen. Gespeichert wird nur der SHA-256 des Tokens: wer die
--- Datenbank liest, kann daraus keine gueltige Sitzung nachbauen.
-CREATE TABLE IF NOT EXISTS sessions (
-  token_hash TEXT PRIMARY KEY,
-  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  created_at TEXT NOT NULL,
-  expires_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
-
--- Passwort-Vergessen-Tokens. Ebenfalls nur als Hash gespeichert; einmal
--- verwendet (used_at gesetzt) oder abgelaufen sind sie ungueltig.
-CREATE TABLE IF NOT EXISTS password_resets (
-  token_hash TEXT PRIMARY KEY,
-  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  created_at TEXT NOT NULL,
-  expires_at TEXT NOT NULL,
-  used_at    TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id);
 
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
@@ -770,163 +732,6 @@ function getRecommendations(options = {}) {
   };
 }
 
-/* ------------------------------------------------- Benutzer und Sitzungen */
-
-const scrypt = promisify(crypto.scrypt);
-// Einfache, bewusst nicht ueberkorrekte E-Mail-Pruefung (RFC 5322 vollstaendig
-// abzubilden bringt hier nichts - entscheidend ist die Bestaetigung beim
-// tatsaechlichen Mailversand, nicht das Regex).
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const MIN_PASSWORD_LENGTH = 8;
-const MAX_PASSWORD_LENGTH = 200;
-const SESSION_DAYS = 30;
-const RESET_TOKEN_MINUTES = 60;
-
-/** "scrypt$<salt>$<hash>" - Salt pro Passwort zufaellig, Verfahren im Wert vermerkt. */
-async function hashPassword(password) {
-  const salt = crypto.randomBytes(16);
-  const key = await scrypt(password, salt, 64);
-  return `scrypt$${salt.toString("hex")}$${key.toString("hex")}`;
-}
-
-async function verifyPassword(password, stored) {
-  const [scheme, saltHex, hashHex] = String(stored).split("$");
-  if (scheme !== "scrypt" || !saltHex || !hashHex) return false;
-  const expected = Buffer.from(hashHex, "hex");
-  const actual = await scrypt(password, Buffer.from(saltHex, "hex"), expected.length);
-  return crypto.timingSafeEqual(actual, expected);
-}
-
-// Fuer unbekannte E-Mail-Adressen wird trotzdem ein Hash geprueft, damit man
-// an der Antwortzeit nicht erkennt, ob es das Konto gibt.
-let dummyHashPromise = null;
-function dummyHash() {
-  if (!dummyHashPromise) dummyHashPromise = hashPassword(crypto.randomBytes(16).toString("hex"));
-  return dummyHashPromise;
-}
-
-function publicUser(row) {
-  return { id: row.id, email: row.email, createdAt: row.created_at };
-}
-
-function normalizeEmail(email) {
-  if (typeof email !== "string" || !EMAIL_PATTERN.test(email.trim()) || email.length > 200) {
-    throw new HttpError(400, "Bitte eine gueltige E-Mail-Adresse angeben.", "auth_invalid_email");
-  }
-  return email.trim().toLowerCase();
-}
-
-function validatePassword(password) {
-  if (typeof password !== "string" || password.length < MIN_PASSWORD_LENGTH) {
-    throw new HttpError(400, `Passwort: mindestens ${MIN_PASSWORD_LENGTH} Zeichen.`, "auth_password_too_short");
-  }
-  if (password.length > MAX_PASSWORD_LENGTH) {
-    throw new HttpError(400, `Passwort: hoechstens ${MAX_PASSWORD_LENGTH} Zeichen.`, "auth_password_too_long");
-  }
-}
-
-/** Legt ein Konto an. Doppelte Adressen (auch in anderer Schreibweise) -> 409. */
-async function createUser(email, password) {
-  const cleanEmail = normalizeEmail(email);
-  validatePassword(password);
-  const id = makeId();
-  const hash = await hashPassword(password);
-  try {
-    db.prepare("INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)")
-      .run(id, cleanEmail, hash, nowIso());
-  } catch (err) {
-    if (/UNIQUE/i.test(String(err.message))) {
-      throw new HttpError(409, `Fuer "${cleanEmail}" existiert bereits ein Konto.`, "auth_email_taken");
-    }
-    throw err;
-  }
-  return publicUser(db.prepare("SELECT * FROM users WHERE id = ?").get(id));
-}
-
-/** Prueft die Anmeldedaten; liefert den Benutzer oder null (nie einen Hinweis, was falsch war). */
-async function authenticate(email, password) {
-  const row = typeof email === "string"
-    ? db.prepare("SELECT * FROM users WHERE email = ?").get(email.trim().toLowerCase())
-    : null;
-  const ok = await verifyPassword(
-    typeof password === "string" ? password.slice(0, MAX_PASSWORD_LENGTH) : "",
-    row ? row.password_hash : await dummyHash()
-  );
-  return row && ok ? publicUser(row) : null;
-}
-
-function hashToken(token) {
-  return crypto.createHash("sha256").update(token).digest("hex");
-}
-
-/** Neue Sitzung fuer den Benutzer; liefert das Klartext-Token (nur fuers Cookie). */
-function createSession(userId) {
-  const now = Date.now();
-  db.prepare("DELETE FROM sessions WHERE expires_at < ?").run(new Date(now).toISOString());
-  const token = crypto.randomBytes(32).toString("base64url");
-  db.prepare("INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)")
-    .run(hashToken(token), userId, new Date(now).toISOString(), new Date(now + SESSION_DAYS * 86400000).toISOString());
-  return token;
-}
-
-function getSessionUser(token) {
-  if (!token) return null;
-  const row = db.prepare(`
-    SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id
-    WHERE s.token_hash = ? AND s.expires_at > ?
-  `).get(hashToken(token), nowIso());
-  return row ? publicUser(row) : null;
-}
-
-function deleteSession(token) {
-  if (token) db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(hashToken(token));
-}
-
-/**
- * Fordert einen Passwort-Reset an. Liefert IMMER {sent:false} ohne Fehler,
- * wenn es das Konto nicht gibt - die Antwort an den Client darf nicht
- * verraten, ob eine Adresse registriert ist. Nur wenn es einen Treffer gibt,
- * kommt {sent:true, token, email} zurueck; das Verschicken der Mail selbst
- * macht der Aufrufer (api.js), nicht die Datenschicht.
- */
-function requestPasswordReset(email) {
-  const cleanEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
-  const user = EMAIL_PATTERN.test(cleanEmail)
-    ? db.prepare("SELECT * FROM users WHERE email = ?").get(cleanEmail)
-    : null;
-  if (!user) return { sent: false };
-
-  const now = Date.now();
-  db.prepare("DELETE FROM password_resets WHERE expires_at < ?").run(new Date(now).toISOString());
-  const token = crypto.randomBytes(32).toString("base64url");
-  db.prepare("INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)")
-    .run(hashToken(token), user.id, new Date(now).toISOString(), new Date(now + RESET_TOKEN_MINUTES * 60000).toISOString());
-  return { sent: true, token, email: user.email };
-}
-
-/** Setzt das Passwort per Reset-Token neu und meldet den Benutzer ueberall ab (Sicherheit). */
-async function resetPassword(token, newPassword) {
-  if (typeof token !== "string" || !token) {
-    throw new HttpError(400, "Der Link ist ungueltig oder abgelaufen.", "auth_reset_invalid");
-  }
-  validatePassword(newPassword);
-  const row = db.prepare(`
-    SELECT * FROM password_resets WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?
-  `).get(hashToken(token), nowIso());
-  if (!row) {
-    throw new HttpError(400, "Der Link ist ungueltig oder abgelaufen.", "auth_reset_invalid");
-  }
-  const hash = await hashPassword(newPassword);
-  return transaction(() => {
-    db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hash, row.user_id);
-    db.prepare("UPDATE password_resets SET used_at = ? WHERE token_hash = ?").run(nowIso(), row.token_hash);
-    // Alle bestehenden Sitzungen beenden - falls das Passwort geklaut wurde,
-    // soll ein neues Passwort ALLE offenen Sitzungen ungueltig machen.
-    db.prepare("DELETE FROM sessions WHERE user_id = ?").run(row.user_id);
-    return publicUser(db.prepare("SELECT * FROM users WHERE id = ?").get(row.user_id));
-  });
-}
-
 module.exports = {
   HttpError,
   SCHEMA_VERSION,
@@ -953,12 +758,4 @@ module.exports = {
   getState,
   getStats,
   getRecommendations,
-  createUser,
-  authenticate,
-  createSession,
-  getSessionUser,
-  deleteSession,
-  requestPasswordReset,
-  resetPassword,
-  SESSION_DAYS,
 };
