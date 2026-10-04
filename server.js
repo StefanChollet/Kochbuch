@@ -28,7 +28,7 @@ const PORT = Number(process.argv[2]) || Number(process.env.PORT) || 3000;
 const DB_FILE = process.env.KOCHBUCH_DB
   ? path.resolve(process.env.KOCHBUCH_DB)
   : path.join(__dirname, "kochbuch.sqlite");
-const INDEX = "kochbuchV2.html";
+const INDEX = "kochbuch.html";
 
 const MIME = {
   ".html": "text/html; charset=utf-8",

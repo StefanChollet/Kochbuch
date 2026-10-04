@@ -1,7 +1,7 @@
 {
-  "project": "KochbuchV2",
+  "project": "Kochbuch",
   "version": "2.0.0",
-  "entry": "public/kochbuchV2.html",
+  "entry": "public/kochbuch.html",
   "runtime": "Node.js >= 22 (benoetigt das eingebaute Modul node:sqlite)",
   "start": "node server.js",
   "dependencies": "keine - ausschliesslich Node.js-Standardmodule",
@@ -12,9 +12,9 @@
       "db.js"
     ],
     "client": [
-      "public/kochbuchV2.html",
-      "public/kochbuchV2.css",
-      "public/kochbuchV2.js"
+      "public/kochbuch.html",
+      "public/kochbuch.css",
+      "public/kochbuch.js"
     ],
     "docs": [
       "README.md"

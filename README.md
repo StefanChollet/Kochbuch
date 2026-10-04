@@ -1,4 +1,4 @@
-# KochbuchV2
+# Kochbuch
 
 Rezeptverwaltung mit Zutatenlisten, Bildern und Kühlschrank-Bestand.
 Die Daten liegen in einer SQLite-Datenbank auf dem Server, der Browser greift
@@ -29,9 +29,9 @@ server.js               HTTP-Server: /api an die API, alles andere aus public/
 api.js                  REST-Routen, JSON-Ein-/Ausgabe, Fehlerübersetzung
 db.js                   SQLite-Schema und sämtliche Datenbankzugriffe
 public/                 alles, was der Browser bekommt
-  kochbuchV2.html
-  kochbuchV2.css
-  kochbuchV2.js
+  kochbuch.html
+  kochbuch.css
+  kochbuch.js
 kochbuch.sqlite         die Datenbank (wird beim ersten Start angelegt)
 ```
 

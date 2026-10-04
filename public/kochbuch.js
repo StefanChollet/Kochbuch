@@ -172,7 +172,7 @@ async function guard(action, { success } = {}){
     if(success) showStatus(success, "success");
     return true;
   }catch(err){
-    console.error("KochbuchV2:", err);
+    console.error("Kochbuch:", err);
     showStatus(err.message, "error");
     return false;
   }
@@ -188,11 +188,11 @@ const themeIcon = document.getElementById("themeIcon");
 function applyTheme(theme){
   document.documentElement.setAttribute("data-theme", theme);
   themeIcon.textContent = theme === "dark" ? "☀️" : "🌙";
-  window.localStorage.setItem("kochbuchV2_theme", theme);
+  window.localStorage.setItem("kochbuch_theme", theme);
 }
 
 (function initTheme(){
-  const saved = window.localStorage.getItem("kochbuchV2_theme");
+  const saved = window.localStorage.getItem("kochbuch_theme") || window.localStorage.getItem("kochbuchV2_theme");
   const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
   applyTheme(saved || (prefersDark ? "dark" : "light"));
 })();
