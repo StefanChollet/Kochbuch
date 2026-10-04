@@ -43,12 +43,15 @@ nicht erreichbar.
 
 | Tabelle | Inhalt |
 |---|---|
-| `recipes` | Kopfdaten: Name, Kurzbeschreibung, Zubereitungstext, Kategorie (genau eine oder leer), Zeitstempel |
+| `recipes` | Kopfdaten: Name, Kurzbeschreibung, Zubereitungstext, Kategorie (genau eine oder leer), Besitzer (`owner_id` → `users`), Zeitstempel |
 | `ingredients` | Zutaten, `recipe_id` → `recipes`, `ON DELETE CASCADE`, Reihenfolge über `position` |
 | `images` | Bilder als BLOB inkl. MIME-Typ, `recipe_id` → `recipes`, `ON DELETE CASCADE` |
 | `fridge_items` | Kühlschrank-Bestand |
 | `ingredient_catalog` | Vorschlagsliste, Primärschlüssel `COLLATE NOCASE` (»Mehl« = »mehl«) |
-| `meta` | u. a. `schema_version` |
+| `meta` | u. a. `schema_version` (aktuell 2) |
+| `users` | Benutzer: Name (`COLLATE NOCASE`), scrypt-Passworthash, Admin-Flag |
+| `sessions` | Anmeldungen: SHA-256 des Sitzungstokens, Ablaufzeit; `ON DELETE CASCADE` mit dem Benutzer |
+| `recipe_shares` | Freigaben: Rezept × Benutzer, `can_write` 0 = nur lesen, 1 = bearbeiten |
 
 Ein gelöschtes Rezept nimmt seine Zutaten und Bilder per Fremdschlüssel mit.
 `PRAGMA foreign_keys = ON` ist gesetzt, `journal_mode = WAL`.
@@ -85,7 +88,18 @@ Fehler kommen einheitlich als `{ "error": "..." }` mit passendem HTTP-Status
 
 | Methode | Pfad | Zweck |
 |---|---|---|
-| `GET` | `/api/health` | Status, Schema-Version, Bestandszahlen |
+| `GET` | `/api/health` | Status und Schema-Version (ohne Anmeldung) |
+| `GET` | `/api/auth/status` | angemeldeter Benutzer, `setupRequired` (ohne Anmeldung) |
+| `POST` | `/api/auth/setup` | ersten Admin anlegen – nur solange es keinen Benutzer gibt |
+| `POST` | `/api/auth/login` | `{ username, password }` → Sitzungs-Cookie |
+| `POST` | `/api/auth/logout` | Sitzung beenden → `204` |
+| `POST` | `/api/auth/password` | eigenes Passwort ändern `{ currentPassword, newPassword }` |
+| `GET` | `/api/users` | Benutzerliste (Admin: mit Rechten und Rezeptzahl) |
+| `POST` | `/api/users` | Admin: Benutzer anlegen `{ username, password, isAdmin }` |
+| `PATCH` | `/api/users/:id` | Admin: `{ password?, isAdmin? }` |
+| `DELETE` | `/api/users/:id` | Admin: Benutzer löschen, Rezepte gehen an den Admin |
+| `GET` | `/api/recipes/:id/shares` | Besitzer: Freigaben des Rezepts |
+| `PUT` | `/api/recipes/:id/shares` | Besitzer: Freigaben ersetzen `[{ userId, canWrite }]` |
 | `GET` | `/api/state` | Kühlschrank + Katalog in einem Aufruf (Startaufbau) |
 | `GET` | `/api/recipes` | Rezeptübersicht: Suche, Sortierung, Paging |
 | `GET` | `/api/recommendations` | Empfehlungen aus Kühlschrank + Suchfilter |
@@ -117,7 +131,8 @@ Leitung.
 | Parameter | Werte | Standard |
 |---|---|---|
 | `search` | Freitext, geprüft gegen Name, Kurzbeschreibung und Zutatennamen | – (kein Filter) |
-| `sortBy` | `name`, `shortDesc`, `updatedAt` | `name` |
+| `scope` | `all` (eigene + freigegebene), `mine`, `shared` | `all` |
+| `sortBy` | `name`, `shortDesc`, `updatedAt`, `owner` | `name` |
 | `sortDir` | `asc`, `desc` | `asc` |
 | `page` | 1-basiert | `1` |
 | `pageSize` | 1–100 | `20` |
@@ -258,8 +273,25 @@ kopieren, fertig. Im laufenden Betrieb gehören die Dateien `kochbuch.sqlite-wal
 und `kochbuch.sqlite-shm` dazu; beim sauberen Beenden mit `Strg+C` schreibt der
 Server das WAL zurück und räumt sie ab.
 
-## Hinweis zum Betrieb
+## Benutzer und Freigaben
 
-Der Server ist auf die lokale Entwicklung ausgelegt: keine Authentifizierung,
-keine Mandanten, statische Dateien mit `no-store`. Wer ihn über das lokale Netz
-hinaus erreichbar macht, sollte vorher eine Zugriffskontrolle davorsetzen.
+- Ohne Anmeldung liefert die API nur `/api/health` und `/api/auth/*`, alles
+  andere antwortet mit `401`. Die Seite selbst (HTML/CSS/JS) enthält keine Daten.
+- **Ersteinrichtung:** Gibt es noch keinen Benutzer, zeigt die Seite statt der
+  Anmeldung das Formular für den ersten Administrator. Rezepte ohne Besitzer
+  (Bestand von vor Schema 2) gehen an diesen Admin.
+- **Admins** legen Benutzer an, setzen Passwörter neu, vergeben/entziehen
+  Adminrechte und löschen Benutzer. Die Rezepte eines gelöschten Benutzers gehen
+  an den löschenden Admin über. Den letzten Admin und sich selbst kann man nicht
+  herabstufen bzw. löschen.
+- **Rezepte** gehören ihrem Ersteller. Der Besitzer kann sie pro Benutzer
+  freigeben – *nur lesen* oder *lesen und bearbeiten*. Löschen und Freigaben
+  ändern darf nur der Besitzer. Fremde Rezepte zeigen in der Liste, von wem sie
+  stammen. Bilder liefert der Server nur an Benutzer, die das Rezept sehen dürfen.
+- **Kühlschrank und Zutaten-Katalog** sind für alle Benutzer gemeinsam.
+- **Sicherheit:** Passwörter als scrypt-Hash; Sitzungs-Cookie `HttpOnly`,
+  `SameSite=Lax`, hinter HTTPS `Secure`, 30 Tage gültig und bei Nutzung
+  verlängert. In der Datenbank liegt nur der SHA-256 des Tokens. Schreibende
+  Anfragen mit fremdem `Origin` werden abgelehnt. Nach 10 Fehlversuchen je IP
+  ist die Anmeldung 15 Minuten gesperrt. Ein neues Passwort beendet die übrigen
+  Sitzungen des Benutzers.

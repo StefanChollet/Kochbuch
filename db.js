@@ -13,7 +13,8 @@
 const { DatabaseSync } = require("node:sqlite");
 const crypto = require("node:crypto");
 
-const SCHEMA_VERSION = 1;
+// 2: Benutzer, Sitzungen, Rezept-Besitzer und Freigaben
+const SCHEMA_VERSION = 2;
 
 // Feste Auswahl fuer das Feld Kategorie (genau eine je Rezept, oder keine = "").
 // Die Liste liegt bewusst nur hier; der Client bekommt sie ueber /api/state.
@@ -83,6 +84,33 @@ CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- COLLATE NOCASE: "Anna" und "anna" sind derselbe Benutzer.
+CREATE TABLE IF NOT EXISTS users (
+  id            TEXT PRIMARY KEY,
+  username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  password_hash TEXT NOT NULL,
+  is_admin      INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL
+);
+
+-- Gespeichert wird nur der SHA-256 des Tokens, nie das Token selbst.
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
+-- Freigabe eines Rezepts an einen anderen Benutzer: nur lesen oder auch schreiben.
+CREATE TABLE IF NOT EXISTS recipe_shares (
+  recipe_id TEXT NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+  user_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  can_write INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (recipe_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_shares_user ON recipe_shares(user_id);
 `;
 
 function open(file) {
@@ -97,6 +125,12 @@ function open(file) {
   if (!recipeColumns.includes("category")) {
     db.exec("ALTER TABLE recipes ADD COLUMN category TEXT NOT NULL DEFAULT ''");
   }
+  // Schema 2: jedes Rezept gehoert einem Benutzer. Bestand ohne Besitzer
+  // bekommt der erste Administrator (siehe setupFirstAdmin/adoptOrphanRecipes).
+  if (!recipeColumns.includes("owner_id")) {
+    db.exec("ALTER TABLE recipes ADD COLUMN owner_id TEXT REFERENCES users(id)");
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_recipes_owner ON recipes(owner_id)");
 
   const row = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get();
   if (!row) {
@@ -105,7 +139,12 @@ function open(file) {
     throw new Error(
       `Datenbank hat Schema-Version ${row.value}, dieser Server kennt nur ${SCHEMA_VERSION}.`
     );
+  } else if (Number(row.value) < SCHEMA_VERSION) {
+    db.prepare("UPDATE meta SET value = ? WHERE key = 'schema_version'").run(String(SCHEMA_VERSION));
   }
+
+  adoptOrphanRecipes();
+  db.prepare("DELETE FROM sessions WHERE expires_at < ?").run(nowIso());
   return db;
 }
 
@@ -171,6 +210,7 @@ const RECIPE_SORT_COLUMNS = {
   name: "r.name COLLATE NOCASE",
   shortDesc: "r.short_desc COLLATE NOCASE",
   updatedAt: "r.updated_at",
+  owner: "u.username COLLATE NOCASE",
 };
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
@@ -181,35 +221,55 @@ function escapeLike(term) {
 }
 
 /**
- * WHERE-Klausel der Rezeptsuche (Name, Kurzbeschreibung, Zutatennamen) -
- * gemeinsam genutzt von der Uebersicht und den Empfehlungen, damit beide
- * exakt denselben Filter meinen. Tabellenalias im Aufrufer: r.
+ * WHERE-Klausel fuer Rezeptlisten - gemeinsam genutzt von der Uebersicht
+ * und den Empfehlungen, damit beide exakt dieselbe Auswahl meinen.
+ * Sichtbar sind eigene Rezepte und solche, die fuer userId freigegeben sind.
+ * scope: "all" | "mine" | "shared". Die Suche prueft Name, Kurzbeschreibung
+ * und Zutatennamen. Tabellenalias im Aufrufer: r.
  */
-function buildSearchWhere(term) {
-  if (!term) return { where: "", params: [] };
-  const like = `%${escapeLike(term)}%`;
-  return {
-    where: `WHERE (r.name LIKE ? ESCAPE '\\'
+function buildRecipeWhere(userId, { search = "", scope = "all" } = {}) {
+  const shared = "EXISTS (SELECT 1 FROM recipe_shares vs WHERE vs.recipe_id = r.id AND vs.user_id = ?)";
+  const conditions = [];
+  const params = [];
+  if (scope === "mine") {
+    conditions.push("r.owner_id = ?");
+    params.push(userId);
+  } else if (scope === "shared") {
+    conditions.push(shared);
+    params.push(userId);
+  } else {
+    conditions.push(`(r.owner_id = ? OR ${shared})`);
+    params.push(userId, userId);
+  }
+  if (search) {
+    const like = `%${escapeLike(search)}%`;
+    conditions.push(`(r.name LIKE ? ESCAPE '\\'
        OR r.short_desc LIKE ? ESCAPE '\\'
-       OR EXISTS (SELECT 1 FROM ingredients si WHERE si.recipe_id = r.id AND si.name LIKE ? ESCAPE '\\'))`,
-    params: [like, like, like],
-  };
+       OR EXISTS (SELECT 1 FROM ingredients si WHERE si.recipe_id = r.id AND si.name LIKE ? ESCAPE '\\'))`);
+    params.push(like, like, like);
+  }
+  return { where: `WHERE ${conditions.join(" AND ")}`, params };
 }
+
+// Zugriffsrecht des Benutzers (Parameter 1) auf das Rezept r als SQL-Ausdruck.
+const ACCESS_SQL = `CASE WHEN r.owner_id = ? THEN 'owner'
+  WHEN (SELECT can_write FROM recipe_shares a WHERE a.recipe_id = r.id AND a.user_id = ?) = 1 THEN 'write'
+  ELSE 'read' END`;
 
 /**
  * Rezeptuebersicht mit Suche, Sortierung und Seitenteilung - alles direkt
  * in SQL, damit auch bei vielen hundert Rezepten nur eine Seite an Daten
- * ueber die Leitung geht. Die Suche prueft Name, Kurzbeschreibung und
- * Zutatennamen. Bewusst ohne Langtext und ohne Bilddaten.
+ * ueber die Leitung geht. Bewusst ohne Langtext und ohne Bilddaten.
  */
-function listRecipesPage(options = {}) {
+function listRecipesPage(userId, options = {}) {
   const sortBy = RECIPE_SORT_COLUMNS[options.sortBy] ? options.sortBy : "name";
   const sortDir = options.sortDir === "desc" ? "DESC" : "ASC";
   const term = text(options.search, "search", { max: 100 }).trim();
+  const scope = ["mine", "shared"].includes(options.scope) ? options.scope : "all";
   const page = Math.max(1, Math.trunc(Number(options.page)) || 1);
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.trunc(Number(options.pageSize)) || DEFAULT_PAGE_SIZE));
 
-  const { where, params } = buildSearchWhere(term);
+  const { where, params } = buildRecipeWhere(userId, { search: term, scope });
 
   const total = db.prepare(`SELECT COUNT(*) AS n FROM recipes r ${where}`).get(...params).n;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -220,14 +280,18 @@ function listRecipesPage(options = {}) {
 
   const items = db.prepare(`
     SELECT r.id, r.name, r.short_desc AS shortDesc, r.updated_at AS updatedAt,
+           u.username AS ownerName,
+           ${ACCESS_SQL} AS access,
+           (SELECT COUNT(*) FROM recipe_shares x WHERE x.recipe_id = r.id) AS shareCount,
            (SELECT COUNT(*) FROM ingredients i WHERE i.recipe_id = r.id) AS ingredientCount,
            (SELECT COUNT(*) FROM images g      WHERE g.recipe_id = r.id) AS imageCount,
            (SELECT id FROM images g WHERE g.recipe_id = r.id ORDER BY position LIMIT 1) AS firstImageId
     FROM recipes r
+    LEFT JOIN users u ON u.id = r.owner_id
     ${where}
     ORDER BY ${RECIPE_SORT_COLUMNS[sortBy]} ${sortDir}, r.id ${sortDir}
     LIMIT ? OFFSET ?
-  `).all(...params, pageSize, offset);
+  `).all(userId, userId, ...params, pageSize, offset);
 
   // Miniatur-URL fuer die Uebersicht: das erste Bild (nach position) des
   // Rezepts, falls vorhanden. Die Bytes selbst kommen wie ueberall ueber
@@ -235,18 +299,55 @@ function listRecipesPage(options = {}) {
   for (const item of items) {
     item.thumbnailUrl = item.firstImageId ? `/api/images/${item.firstImageId}` : null;
     delete item.firstImageId;
+    // Wem ein fremdes Rezept sonst noch freigegeben ist, geht nur den Besitzer etwas an.
+    if (item.access !== "owner") delete item.shareCount;
   }
 
   return { items, total, page: safePage, pageSize, totalPages };
 }
 
-function getRecipe(id) {
+/**
+ * Zugriffsrecht von userId auf ein Rezept: "owner", "write", "read" oder
+ * null (existiert nicht oder ist nicht sichtbar - fuer den Aufrufer dasselbe,
+ * damit fremde Rezepte nicht einmal ihre Existenz verraten).
+ */
+function recipeAccess(recipeId, userId) {
+  const row = db.prepare(`
+    SELECT r.owner_id AS ownerId, s.can_write AS canWrite
+    FROM recipes r
+    LEFT JOIN recipe_shares s ON s.recipe_id = r.id AND s.user_id = ?
+    WHERE r.id = ?
+  `).get(userId, recipeId);
+  if (!row) return null;
+  if (row.ownerId === userId) return "owner";
+  if (row.canWrite == null) return null;
+  return row.canWrite ? "write" : "read";
+}
+
+/** Wie recipeAccess, wirft aber 404/403, wenn das Recht nicht reicht. */
+function requireRecipeAccess(recipeId, userId, needed) {
+  const access = recipeAccess(recipeId, userId);
+  if (!access) throw new HttpError(404, `Rezept "${recipeId}" nicht gefunden.`);
+  const rank = { read: 1, write: 2, owner: 3 };
+  if (rank[access] < rank[needed]) {
+    throw new HttpError(403, needed === "owner"
+      ? "Das darf nur der Besitzer des Rezepts."
+      : "Dieses Rezept ist für dich nur zum Lesen freigegeben.");
+  }
+  return access;
+}
+
+function getRecipe(id, userId) {
+  const access = recipeAccess(id, userId);
+  if (!access) return null;
   const recipe = db.prepare(`
-    SELECT id, name, short_desc AS shortDesc, long_text AS longText, category,
-           created_at AS createdAt, updated_at AS updatedAt
-    FROM recipes WHERE id = ?
+    SELECT r.id, r.name, r.short_desc AS shortDesc, r.long_text AS longText, r.category,
+           r.created_at AS createdAt, r.updated_at AS updatedAt,
+           r.owner_id AS ownerId, u.username AS ownerName
+    FROM recipes r LEFT JOIN users u ON u.id = r.owner_id
+    WHERE r.id = ?
   `).get(id);
-  if (!recipe) return null;
+  recipe.access = access;
 
   recipe.ingredients = db.prepare(`
     SELECT id, name, amount FROM ingredients WHERE recipe_id = ? ORDER BY position
@@ -340,50 +441,91 @@ function normalizeCategory(value) {
   return category;
 }
 
-function createRecipe(input) {
+function insertRecipe(id, data, ownerId) {
+  const ts = nowIso();
+  db.prepare(`
+    INSERT INTO recipes (id, name, short_desc, long_text, category, owner_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, data.name, data.shortDesc, data.longText, data.category, ownerId, ts, ts);
+}
+
+function createRecipe(input, userId) {
   const data = normalizeRecipeInput(input);
   const id = typeof input.id === "string" && input.id.trim() ? input.id.trim() : makeId();
   return transaction(() => {
     if (db.prepare("SELECT 1 FROM recipes WHERE id = ?").get(id)) {
       throw new HttpError(409, `Es existiert bereits ein Rezept mit der id "${id}".`);
     }
-    const ts = nowIso();
-    db.prepare(`
-      INSERT INTO recipes (id, name, short_desc, long_text, category, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, data.name, data.shortDesc, data.longText, data.category, ts, ts);
+    insertRecipe(id, data, userId);
     writeIngredients(id, data.ingredients);
     writeImages(id, data.images);
     syncCatalogFromIngredients(data.ingredients);
-    return getRecipe(id);
+    return getRecipe(id, userId);
   });
 }
 
-function updateRecipe(id, input) {
+/** Aendern darf der Besitzer und wer eine Schreib-Freigabe hat. */
+function updateRecipe(id, input, userId) {
   const data = normalizeRecipeInput(input);
   return transaction(() => {
-    if (!db.prepare("SELECT 1 FROM recipes WHERE id = ?").get(id)) {
-      throw new HttpError(404, `Rezept "${id}" nicht gefunden.`);
-    }
+    requireRecipeAccess(id, userId, "write");
     db.prepare(`
       UPDATE recipes SET name = ?, short_desc = ?, long_text = ?, category = ?, updated_at = ? WHERE id = ?
     `).run(data.name, data.shortDesc, data.longText, data.category, nowIso(), id);
     writeIngredients(id, data.ingredients);
     writeImages(id, data.images);
     syncCatalogFromIngredients(data.ingredients);
-    return getRecipe(id);
+    return getRecipe(id, userId);
   });
 }
 
-function deleteRecipe(id) {
-  // Zutaten und Bilder verschwinden per ON DELETE CASCADE mit.
-  return db.prepare("DELETE FROM recipes WHERE id = ?").run(id).changes > 0;
+/** Loeschen darf nur der Besitzer - auch eine Schreib-Freigabe reicht dafuer nicht. */
+function deleteRecipe(id, userId) {
+  requireRecipeAccess(id, userId, "owner");
+  // Zutaten, Bilder und Freigaben verschwinden per ON DELETE CASCADE mit.
+  db.prepare("DELETE FROM recipes WHERE id = ?").run(id);
+}
+
+/* ----------------------------------------------------------- Freigaben */
+
+function getShares(recipeId, userId) {
+  requireRecipeAccess(recipeId, userId, "owner");
+  return db.prepare(`
+    SELECT s.user_id AS userId, u.username, s.can_write AS canWrite
+    FROM recipe_shares s JOIN users u ON u.id = s.user_id
+    WHERE s.recipe_id = ?
+    ORDER BY u.username COLLATE NOCASE
+  `).all(recipeId).map((s) => ({ ...s, canWrite: !!s.canWrite }));
+}
+
+/** Ersetzt alle Freigaben eines Rezepts: shares = [{ userId, canWrite }]. */
+function setShares(recipeId, userId, shares) {
+  if (!Array.isArray(shares)) throw new HttpError(400, "Freigaben muessen eine Liste sein.");
+  return transaction(() => {
+    requireRecipeAccess(recipeId, userId, "owner");
+    db.prepare("DELETE FROM recipe_shares WHERE recipe_id = ?").run(recipeId);
+    const insert = db.prepare(
+      "INSERT OR REPLACE INTO recipe_shares (recipe_id, user_id, can_write) VALUES (?, ?, ?)"
+    );
+    for (const share of shares) {
+      const target = share && String(share.userId || "");
+      if (!target || target === userId) continue; // an sich selbst freigeben ist sinnlos
+      if (!db.prepare("SELECT 1 FROM users WHERE id = ?").get(target)) {
+        throw new HttpError(400, `Benutzer "${target}" existiert nicht.`);
+      }
+      insert.run(recipeId, target, share.canWrite ? 1 : 0);
+    }
+    return getShares(recipeId, userId);
+  });
 }
 
 /* -------------------------------------------------------------- Bilder */
 
-function getImage(id) {
-  return db.prepare("SELECT id, name, mime, bytes, data FROM images WHERE id = ?").get(id) || null;
+/** Ein Bild bekommt nur, wer das zugehoerige Rezept sehen darf. */
+function getImage(id, userId) {
+  const image = db.prepare("SELECT id, recipe_id AS recipeId, name, mime, bytes, data FROM images WHERE id = ?").get(id);
+  if (!image || !recipeAccess(image.recipeId, userId)) return null;
+  return image;
 }
 
 /* -------------------------------------------------------- Kuehlschrank */
@@ -454,7 +596,7 @@ function deleteCatalogEntry(name) {
  * Uebernimmt einen kompletten Datenbestand im alten localStorage-Format.
  * Bestehende Datensaetze (gleiche id) werden uebersprungen, nicht ueberschrieben.
  */
-function importState(state) {
+function importState(state, userId) {
   if (!state || typeof state !== "object") throw new HttpError(400, "Import-Daten fehlen.");
   const recipes = Array.isArray(state.recipes) ? state.recipes : [];
   const fridge = Array.isArray(state.fridge) ? state.fridge : [];
@@ -468,11 +610,7 @@ function importState(state) {
       const id = typeof recipe.id === "string" && recipe.id.trim() ? recipe.id.trim() : makeId();
       if (db.prepare("SELECT 1 FROM recipes WHERE id = ?").get(id)) { result.skipped++; continue; }
       const data = normalizeRecipeInput(recipe);
-      const ts = nowIso();
-      db.prepare(`
-        INSERT INTO recipes (id, name, short_desc, long_text, category, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(id, data.name, data.shortDesc, data.longText, data.category, ts, ts);
+      insertRecipe(id, data, userId);
       writeIngredients(id, data.ingredients);
       // Altbestand kennt nur dataUrl-Bilder; ids aus dem Browser gelten hier nicht.
       writeImages(id, data.images.map((img) => ({ name: img && img.name, dataUrl: img && img.dataUrl })));
@@ -516,7 +654,218 @@ function getStats() {
     imageBytes: db.prepare("SELECT COALESCE(SUM(bytes), 0) AS n FROM images").get().n,
     fridgeItems: one("SELECT COUNT(*) AS n FROM fridge_items"),
     catalogEntries: one("SELECT COUNT(*) AS n FROM ingredient_catalog"),
+    users: one("SELECT COUNT(*) AS n FROM users"),
   };
+}
+
+/* ------------------------------------------------------------ Benutzer */
+
+const SESSION_DAYS = 30;
+// Restlaufzeit, unter der eine aktiv genutzte Sitzung wieder auf volle Dauer verlaengert wird.
+const SESSION_RENEW_DAYS = 15;
+const MIN_PASSWORD_LENGTH = 8;
+const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 };
+
+/** Passwort-Hash im Format scrypt$N$r$p$salz$hash (beides Base64). */
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.scryptSync(password, salt, 64, SCRYPT_PARAMS);
+  const { N, r, p } = SCRYPT_PARAMS;
+  return `scrypt$${N}$${r}$${p}$${salt.toString("base64")}$${hash.toString("base64")}`;
+}
+
+function verifyPassword(password, stored) {
+  const [kind, N, r, p, salt, hash] = String(stored).split("$");
+  if (kind !== "scrypt") return false;
+  const expected = Buffer.from(hash, "base64");
+  const actual = crypto.scryptSync(password, Buffer.from(salt, "base64"), expected.length, {
+    N: Number(N), r: Number(r), p: Number(p),
+  });
+  return crypto.timingSafeEqual(actual, expected);
+}
+
+// Fuer unbekannte Benutzernamen wird trotzdem ein Hash geprueft, damit die
+// Antwortzeit nicht verraet, ob es den Namen gibt.
+const DUMMY_HASH = hashPassword(crypto.randomBytes(16).toString("hex"));
+
+function normalizeUsername(value) {
+  const name = text(value, "Benutzername", { max: 40, required: true });
+  if (name.length < 2) throw new HttpError(400, "Der Benutzername braucht mindestens 2 Zeichen.");
+  if (!/^[\p{L}\p{N}._ -]+$/u.test(name)) {
+    throw new HttpError(400, "Der Benutzername darf nur Buchstaben, Ziffern, Leerzeichen sowie . _ - enthalten.");
+  }
+  return name;
+}
+
+function validatePassword(value) {
+  const password = value == null ? "" : String(value);
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    throw new HttpError(400, `Das Passwort braucht mindestens ${MIN_PASSWORD_LENGTH} Zeichen.`);
+  }
+  if (password.length > 200) throw new HttpError(400, "Das Passwort ist zu lang (max. 200 Zeichen).");
+  return password;
+}
+
+function publicUser(row) {
+  return row ? { id: row.id, username: row.username, isAdmin: !!row.isAdmin } : null;
+}
+
+function countUsers() {
+  return db.prepare("SELECT COUNT(*) AS n FROM users").get().n;
+}
+
+function getUser(id) {
+  return publicUser(db.prepare("SELECT id, username, is_admin AS isAdmin FROM users WHERE id = ?").get(id));
+}
+
+/** Liste fuer den Admin (mit Rezeptzahl) bzw. fuer die Freigabe-Auswahl (nur Name). */
+function listUsers({ details = false } = {}) {
+  if (!details) {
+    return db.prepare("SELECT id, username FROM users ORDER BY username COLLATE NOCASE").all();
+  }
+  return db.prepare(`
+    SELECT u.id, u.username, u.is_admin AS isAdmin, u.created_at AS createdAt,
+           (SELECT COUNT(*) FROM recipes r WHERE r.owner_id = u.id) AS recipeCount
+    FROM users u ORDER BY u.username COLLATE NOCASE
+  `).all().map((u) => ({ ...u, isAdmin: !!u.isAdmin }));
+}
+
+function createUser(input) {
+  const username = normalizeUsername(input && input.username);
+  const password = validatePassword(input && input.password);
+  if (db.prepare("SELECT 1 FROM users WHERE username = ?").get(username)) {
+    throw new HttpError(409, `Den Benutzernamen "${username}" gibt es schon.`);
+  }
+  const id = makeId();
+  db.prepare("INSERT INTO users (id, username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?)")
+    .run(id, username, hashPassword(password), input.isAdmin ? 1 : 0, nowIso());
+  return getUser(id);
+}
+
+/** Rezepte ohne Besitzer (Bestand aus der Zeit vor Schema 2) gehen an den aeltesten Admin. */
+function adoptOrphanRecipes() {
+  const admin = db.prepare("SELECT id FROM users WHERE is_admin = 1 ORDER BY created_at LIMIT 1").get();
+  if (!admin) return 0;
+  return db.prepare("UPDATE recipes SET owner_id = ? WHERE owner_id IS NULL").run(admin.id).changes;
+}
+
+/** Ersteinrichtung: nur moeglich, solange es noch gar keinen Benutzer gibt. */
+function setupFirstAdmin(input) {
+  return transaction(() => {
+    if (countUsers() > 0) throw new HttpError(409, "Die Ersteinrichtung ist bereits erledigt.");
+    const user = createUser({ ...input, isAdmin: true });
+    adoptOrphanRecipes();
+    return user;
+  });
+}
+
+function countAdmins() {
+  return db.prepare("SELECT COUNT(*) AS n FROM users WHERE is_admin = 1").get().n;
+}
+
+/** Admin aendert einen Benutzer: { password?, isAdmin? }. */
+function updateUser(id, changes, actingUserId) {
+  if (!changes || typeof changes !== "object") throw new HttpError(400, "Keine Aenderungen uebergeben.");
+  return transaction(() => {
+    const user = getUser(id);
+    if (!user) throw new HttpError(404, "Benutzer nicht gefunden.");
+    if ("isAdmin" in changes && !changes.isAdmin && user.isAdmin) {
+      if (id === actingUserId) throw new HttpError(400, "Du kannst dir die Adminrechte nicht selbst entziehen.");
+      if (countAdmins() <= 1) throw new HttpError(400, "Es muss mindestens einen Administrator geben.");
+    }
+    if ("isAdmin" in changes) {
+      db.prepare("UPDATE users SET is_admin = ? WHERE id = ?").run(changes.isAdmin ? 1 : 0, id);
+    }
+    if ("password" in changes) {
+      db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(validatePassword(changes.password)), id);
+      // Neues Passwort: alle bestehenden Anmeldungen dieses Benutzers beenden.
+      db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
+    }
+    return getUser(id);
+  });
+}
+
+/**
+ * Loescht einen Benutzer. Seine Rezepte gehen an den loeschenden Admin ueber,
+ * damit nichts verloren geht. Freigaben an den Geloeschten und seine
+ * Sitzungen verschwinden per CASCADE.
+ */
+function deleteUser(id, actingUserId) {
+  return transaction(() => {
+    const user = getUser(id);
+    if (!user) throw new HttpError(404, "Benutzer nicht gefunden.");
+    if (id === actingUserId) throw new HttpError(400, "Du kannst dich nicht selbst löschen.");
+    const moved = db.prepare("UPDATE recipes SET owner_id = ? WHERE owner_id = ?").run(actingUserId, id).changes;
+    // Freigaben an den neuen Besitzer selbst sind jetzt sinnlos.
+    db.prepare(`
+      DELETE FROM recipe_shares
+      WHERE user_id = ? AND recipe_id IN (SELECT id FROM recipes WHERE owner_id = ?)
+    `).run(actingUserId, actingUserId);
+    db.prepare("DELETE FROM users WHERE id = ?").run(id);
+    return { deleted: user.username, recipesMovedTo: actingUserId, recipesMoved: moved };
+  });
+}
+
+/** Prueft Benutzername + Passwort; liefert den Benutzer oder null. */
+function authenticate(username, password) {
+  const row = db.prepare("SELECT id, username, is_admin AS isAdmin, password_hash AS hash FROM users WHERE username = ?")
+    .get(String(username || "").trim());
+  const ok = verifyPassword(String(password || ""), row ? row.hash : DUMMY_HASH);
+  return ok && row ? publicUser(row) : null;
+}
+
+function changeOwnPassword(userId, currentPassword, newPassword, keepTokenHash) {
+  const row = db.prepare("SELECT password_hash AS hash FROM users WHERE id = ?").get(userId);
+  if (!row || !verifyPassword(String(currentPassword || ""), row.hash)) {
+    throw new HttpError(400, "Das bisherige Passwort stimmt nicht.");
+  }
+  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(validatePassword(newPassword)), userId);
+  // Andere Geraete abmelden, die aktuelle Sitzung bleibt.
+  db.prepare("DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?").run(userId, keepTokenHash || "");
+}
+
+/* ------------------------------------------------------------ Sitzungen */
+
+function hashToken(token) {
+  return crypto.createHash("sha256").update(String(token)).digest("hex");
+}
+
+function sessionExpiry() {
+  return new Date(Date.now() + SESSION_DAYS * 86400000).toISOString();
+}
+
+/** Legt eine Sitzung an und liefert das Token (nur hier im Klartext). */
+function createSession(userId) {
+  const token = crypto.randomBytes(32).toString("base64url");
+  db.prepare("DELETE FROM sessions WHERE expires_at < ?").run(nowIso());
+  db.prepare("INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)")
+    .run(hashToken(token), userId, nowIso(), sessionExpiry());
+  return token;
+}
+
+/** Benutzer zur Sitzung oder null; verlaengert aktiv genutzte Sitzungen. */
+function getSessionUser(token) {
+  if (!token) return null;
+  const tokenHash = hashToken(token);
+  const row = db.prepare(`
+    SELECT s.expires_at AS expiresAt, u.id, u.username, u.is_admin AS isAdmin
+    FROM sessions s JOIN users u ON u.id = s.user_id
+    WHERE s.token_hash = ?
+  `).get(tokenHash);
+  if (!row) return null;
+  const remaining = Date.parse(row.expiresAt) - Date.now();
+  if (remaining <= 0) {
+    db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(tokenHash);
+    return null;
+  }
+  if (remaining < SESSION_RENEW_DAYS * 86400000) {
+    db.prepare("UPDATE sessions SET expires_at = ? WHERE token_hash = ?").run(sessionExpiry(), tokenHash);
+  }
+  return { ...publicUser(row), tokenHash };
+}
+
+function deleteSession(token) {
+  if (token) db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(hashToken(token));
 }
 
 /* ---------------------------------------------------------- Empfehlungen */
@@ -610,7 +959,7 @@ function weightedSample(entries, n) {
  *  6. Reichen die Treffer nicht fuer limit, wird aus den uebrigen
  *     Kandidaten des Filters zufaellig aufgefuellt (reason "filler").
  */
-function getRecommendations(options = {}) {
+function getRecommendations(userId, options = {}) {
   const limit = Math.min(
     MAX_RECOMMENDATION_LIMIT,
     Math.max(1, Math.trunc(Number(options.limit)) || DEFAULT_RECOMMENDATION_LIMIT)
@@ -629,10 +978,12 @@ function getRecommendations(options = {}) {
     .filter(Boolean);
 
   // Kandidaten laut Suchfilter samt Zutaten
-  const { where, params } = buildSearchWhere(term);
+  const { where, params } = buildRecipeWhere(userId, { search: term });
   const rows = db.prepare(`
-    SELECT r.id, r.name, r.short_desc AS shortDesc, ing.name AS ingredientName
+    SELECT r.id, r.name, r.short_desc AS shortDesc, r.owner_id AS ownerId,
+           u.username AS ownerName, ing.name AS ingredientName
     FROM recipes r
+    LEFT JOIN users u ON u.id = r.owner_id
     LEFT JOIN ingredients ing ON ing.recipe_id = r.id
     ${where}
     ORDER BY r.id, ing.position
@@ -642,7 +993,10 @@ function getRecommendations(options = {}) {
   for (const row of rows) {
     let entry = byRecipe.get(row.id);
     if (!entry) {
-      entry = { id: row.id, name: row.name, shortDesc: row.shortDesc, ingredients: [] };
+      entry = {
+        id: row.id, name: row.name, shortDesc: row.shortDesc,
+        ownerName: row.ownerId === userId ? null : row.ownerName, ingredients: [],
+      };
       byRecipe.set(row.id, entry);
     }
     if (row.ingredientName) entry.ingredients.push(row.ingredientName);
@@ -673,7 +1027,7 @@ function getRecommendations(options = {}) {
       ? Math.max(0.01, 0.55 * coverage + 0.45 * usage - 0.03 * missing.length)
       : 0;
     return {
-      id: r.id, name: r.name, shortDesc: r.shortDesc,
+      id: r.id, name: r.name, shortDesc: r.shortDesc, ownerName: r.ownerName,
       matched, missing, totalIngredients: total, score,
     };
   });
@@ -718,6 +1072,7 @@ function getRecommendations(options = {}) {
       id: r.id,
       name: r.name,
       shortDesc: r.shortDesc,
+      ownerName: r.ownerName, // null bei eigenen Rezepten
       reason: r.reason,
       matchCount: r.matched.length,
       totalIngredients: r.totalIngredients,
@@ -745,7 +1100,22 @@ module.exports = {
   createRecipe,
   updateRecipe,
   deleteRecipe,
+  getShares,
+  setShares,
   getImage,
+  SESSION_DAYS,
+  countUsers,
+  getUser,
+  listUsers,
+  createUser,
+  setupFirstAdmin,
+  updateUser,
+  deleteUser,
+  authenticate,
+  changeOwnPassword,
+  createSession,
+  getSessionUser,
+  deleteSession,
   listFridge,
   addFridgeItem,
   updateFridgeItem,

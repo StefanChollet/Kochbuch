@@ -24,6 +24,12 @@ const API = {
     const isJson = (res.headers.get("content-type") || "").includes("application/json");
     const payload = isJson ? await res.json() : await res.text();
 
+    // Sitzung abgelaufen oder abgemeldet: zurueck zur Anmeldung. Login und
+    // Passwortwechsel melden falsche Passwoerter selbst (eigener Fehlertext).
+    if(res.status === 401 && !path.startsWith("/auth/")){
+      showAuthScreen(false);
+    }
+
     if(!res.ok){
       throw new Error((payload && payload.error) || `Serverfehler (HTTP ${res.status}).`);
     }
@@ -82,6 +88,7 @@ const DB = {
   async refreshRecipes(query){
     const params = new URLSearchParams();
     if(query.search) params.set("search", query.search);
+    if(query.scope && query.scope !== "all") params.set("scope", query.scope);
     params.set("sortBy", query.sortBy || "name");
     params.set("sortDir", query.sortDir || "asc");
     params.set("page", String(query.page || 1));
@@ -147,19 +154,32 @@ function truncate(str, max){
 const statusBar = document.getElementById("appStatus");
 let statusTimer = null;
 
+/**
+ * Ein offener modaler Dialog verdeckt die Statuszeile - darum erscheint die
+ * Meldung zusaetzlich in seiner eigenen Zeile (.dialog-status), falls er eine hat.
+ */
+function statusTargets(){
+  const inDialog = document.querySelector("dialog[open] .dialog-status");
+  return inDialog ? [statusBar, inDialog] : [statusBar];
+}
+
 function showStatus(message, kind = "info"){
   clearTimeout(statusTimer);
-  statusBar.textContent = message;
-  statusBar.dataset.kind = kind;
-  statusBar.hidden = false;
+  const targets = statusTargets();
+  for(const el of targets){
+    el.textContent = message;
+    el.dataset.kind = kind;
+    el.hidden = false;
+  }
   if(kind !== "error"){
-    statusTimer = setTimeout(() => { statusBar.hidden = true; }, 3000);
+    statusTimer = setTimeout(() => targets.forEach(el => { el.hidden = true; }), 3000);
   }
 }
 
 function clearStatus(){
   clearTimeout(statusTimer);
   statusBar.hidden = true;
+  document.querySelectorAll(".dialog-status").forEach(el => { el.hidden = true; });
 }
 
 /**
@@ -236,6 +256,7 @@ function renderRecommendations(data){
         ? `<img class="recommendation-thumb" src="${r.thumbnailUrl}" alt="" loading="lazy">`
         : `<div class="recommendation-thumb recommendation-thumb-placeholder" aria-hidden="true">🍽️</div>`}
       <span class="recommendation-name">${escapeHtml(r.name)}</span>
+      ${r.ownerName ? `<span class="recommendation-owner">von ${escapeHtml(r.ownerName)}</span>` : ""}
       <span class="recommendation-desc">${truncate(r.shortDesc, 70)}</span>
       ${r.reason === "fridge"
         ? `<span class="recommendation-badge">${r.matchCount}/${r.totalIngredients} Zutaten im Kühlschrank</span>
@@ -281,8 +302,9 @@ const recipePrevPageBtn = document.getElementById("recipePrevPageBtn");
 const recipeNextPageBtn = document.getElementById("recipeNextPageBtn");
 const recipeLastPageBtn = document.getElementById("recipeLastPageBtn");
 const recipeResetFiltersBtn = document.getElementById("recipeResetFiltersBtn");
+const recipeScopeSelect = document.getElementById("recipeScopeSelect");
 
-const DEFAULT_RECIPE_QUERY = { search: "", sortBy: "name", sortDir: "asc", page: 1, pageSize: 20 };
+const DEFAULT_RECIPE_QUERY = { search: "", scope: "all", sortBy: "name", sortDir: "asc", page: 1, pageSize: 20 };
 const recipeQuery = { ...DEFAULT_RECIPE_QUERY };
 
 /** Holt die zu recipeQuery passende Seite vom Server und zeichnet neu. */
@@ -309,6 +331,29 @@ function imageIndicator(imageCount){
   return `<svg class="recipe-img-icon ${has ? "has-image" : "no-image"}" width="16" height="16" role="img" aria-label="${label}"><title>${label}</title><use href="#${has ? "kochbild" : "kochbild-none"}"/></svg>`;
 }
 
+/** Spalte "Von": eigene Rezepte (ggf. mit Anzahl Freigaben) oder Besitzer + Recht. */
+function ownerCell(recipe){
+  if(recipe.access === "owner"){
+    return `<span class="owner-self">Ich</span>` + (recipe.shareCount > 0
+      ? `<span class="share-badge" title="Für ${recipe.shareCount} Benutzer freigegeben">🔗 ${recipe.shareCount}</span>`
+      : "");
+  }
+  return escapeHtml(recipe.ownerName || "?") + (recipe.access === "write"
+    ? `<span class="share-badge share-badge-write">bearbeiten</span>`
+    : `<span class="share-badge">nur lesen</span>`);
+}
+
+/** Aktionen je nach Recht: Besitzer alles, Schreib-Freigabe nur bearbeiten, sonst ansehen. */
+function recipeActions(recipe){
+  const btn = (action, icon, label) =>
+    `<button class="btn btn-icon" data-action="${action}" data-id="${recipe.id}" title="${label}" aria-label="${label}">${icon}</button>`;
+  if(recipe.access === "owner"){
+    return btn("edit", "✏️", "Bearbeiten") + btn("share", "🔗", "Freigeben") + btn("delete", "🗑️", "Löschen");
+  }
+  if(recipe.access === "write") return btn("edit", "✏️", "Bearbeiten");
+  return btn("edit", "👁️", "Ansehen");
+}
+
 function renderRecipeTable(){
   const { items, total, page, totalPages } = DB.recipesPage;
   const hasSearch = recipeQuery.search.trim().length > 0;
@@ -317,17 +362,17 @@ function renderRecipeTable(){
   recipeEmptyState.hidden = items.length > 0;
   recipeEmptyState.textContent = hasSearch
     ? `Keine Rezepte gefunden für "${recipeQuery.search.trim()}".`
-    : 'Noch keine Rezepte vorhanden. Leg mit "Rezept erstellen" los.';
+    : recipeQuery.scope === "shared"
+      ? "Für dich sind noch keine Rezepte freigegeben."
+      : 'Noch keine Rezepte vorhanden. Leg mit "Rezept erstellen" los.';
 
   items.forEach(recipe => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td class="recipe-name-cell">${imageIndicator(recipe.imageCount)}${escapeHtml(recipe.name)}</td>
       <td>${truncate(recipe.shortDesc, 100)}</td>
-      <td class="menu-cell">
-        <button class="btn btn-icon" data-action="edit" data-id="${recipe.id}" title="Bearbeiten" aria-label="Bearbeiten">✏️</button>
-        <button class="btn btn-icon" data-action="delete" data-id="${recipe.id}" title="Löschen" aria-label="Löschen">🗑️</button>
-      </td>
+      <td class="owner-cell">${ownerCell(recipe)}</td>
+      <td class="menu-cell">${recipeActions(recipe)}</td>
     `;
     recipeTableBody.appendChild(tr);
   });
@@ -355,6 +400,12 @@ recipeTableBody.addEventListener("click", async (e) => {
       openRecipeDialog(recipe);
     });
     btn.disabled = false;
+    return;
+  }
+
+  if(btn.dataset.action === "share"){
+    const recipe = DB.recipesPage.items.find(r => r.id === id);
+    await openShareDialog(id, recipe ? recipe.name : "");
     return;
   }
 
@@ -387,6 +438,13 @@ recipeSearchInput.addEventListener("keydown", (e) => {
   loadRecipes();
 });
 
+/* ---- Auswahl: alle / meine / freigegebene ---- */
+recipeScopeSelect.addEventListener("change", () => {
+  recipeQuery.scope = recipeScopeSelect.value;
+  recipeQuery.page = 1;
+  loadRecipes();
+});
+
 /* ---- Sortierung ---- */
 recipeSortSelect.addEventListener("change", () => {
   const [sortBy, sortDir] = recipeSortSelect.value.split("-");
@@ -412,6 +470,7 @@ recipeResetFiltersBtn.addEventListener("click", () => {
   clearTimeout(recipeSearchTimer);
   Object.assign(recipeQuery, DEFAULT_RECIPE_QUERY);
   recipeSearchInput.value = "";
+  recipeScopeSelect.value = "all";
   recipeSortSelect.value = "name-asc";
   recipePageSizeSelect.value = "20";
   loadRecipes();
@@ -443,6 +502,8 @@ function fillCategorySelect(){
     DB.data.categoryOptions.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
 }
 
+const recipeOwnerInfo = document.getElementById("recipeOwnerInfo");
+let recipeReadOnly = false;    // fremdes Rezept, nur zum Lesen freigegeben
 let workingIngredients = [];   // [{key, name, amount}]
 let workingImages = [];        // gespeichert: {key, id, name, url} | neu: {key, name, dataUrl, isNew}
 
@@ -456,8 +517,8 @@ function renderIngredientList(){
   ingredientEmptyState.hidden = workingIngredients.length > 0;
   ingredientList.innerHTML = workingIngredients.map(ing => `
     <li class="ingredient-row" data-key="${ing.key}">
-      <input type="text" class="ingredient-edit-name" value="${escapeHtml(ing.name)}">
-      <input type="text" class="ingredient-edit-amount ingredient-amount" value="${escapeHtml(ing.amount)}">
+      <input type="text" class="ingredient-edit-name" value="${escapeHtml(ing.name)}"${recipeReadOnly ? " disabled" : ""}>
+      <input type="text" class="ingredient-edit-amount ingredient-amount" value="${escapeHtml(ing.amount)}"${recipeReadOnly ? " disabled" : ""}>
       <button type="button" class="btn btn-icon" data-action="remove-ingredient" aria-label="Zutat entfernen">✕</button>
     </li>
   `).join("");
@@ -564,9 +625,29 @@ imageInput.addEventListener("change", () => {
   imageInput.value = "";
 });
 
+/** Fremde Rezepte: Herkunft anzeigen; bei Nur-lesen-Freigabe alle Felder sperren. */
+function applyRecipeAccess(recipe){
+  recipeReadOnly = !!recipe && recipe.access === "read";
+  recipeForm.classList.toggle("is-readonly", recipeReadOnly);
+  recipeForm.querySelectorAll("input, textarea, select").forEach(el => {
+    if(el.type !== "hidden") el.disabled = recipeReadOnly;
+  });
+  cancelRecipeBtn.textContent = recipeReadOnly ? "Schliessen" : "Abbrechen";
+
+  if(recipe && recipe.access !== "owner"){
+    recipeOwnerInfo.textContent = recipe.access === "write"
+      ? `Rezept von ${recipe.ownerName} – für dich zum Bearbeiten freigegeben.`
+      : `Rezept von ${recipe.ownerName} – für dich nur zum Lesen freigegeben.`;
+    recipeOwnerInfo.hidden = false;
+  }else{
+    recipeOwnerInfo.hidden = true;
+  }
+}
+
 function openRecipeDialog(recipe){
   refreshIngredientCatalogDatalist();
   fillCategorySelect();
+  applyRecipeAccess(recipe);
   if(recipe){
     recipeCategorySelect.value = recipe.category || "";
     recipeIdInput.value = recipe.id;
@@ -584,7 +665,8 @@ function openRecipeDialog(recipe){
   renderIngredientList();
   renderImageList();
   recipeDialog.showModal();
-  recipeNameInput.focus();
+  if(recipeReadOnly) cancelRecipeBtn.focus();
+  else recipeNameInput.focus();
 }
 
 function closeRecipeDialog(){
@@ -593,11 +675,13 @@ function closeRecipeDialog(){
 }
 
 document.getElementById("createRecipeBtn").addEventListener("click", () => openRecipeDialog(null));
+const cancelRecipeBtn = document.getElementById("cancelRecipeBtn");
 document.getElementById("closeDialogBtn").addEventListener("click", closeRecipeDialog);
-document.getElementById("cancelRecipeBtn").addEventListener("click", closeRecipeDialog);
+cancelRecipeBtn.addEventListener("click", closeRecipeDialog);
 
 recipeForm.addEventListener("submit", async (e) => {
   e.preventDefault();
+  if(recipeReadOnly) return;
   if(!recipeNameInput.value.trim()){
     recipeNameInput.focus();
     return;
@@ -776,17 +860,312 @@ async function offerLegacyImport(){
 }
 
 /* =========================================================================
-   Start
+   Freigaben — der Besitzer legt pro Benutzer fest: keine, lesen, bearbeiten.
    ========================================================================= */
-(async function init(){
-  const loaded = await guard(() => DB.load());
-  if(!loaded){
-    // Ohne Serververbindung hat Weiterarbeiten keinen Sinn - die Oberflaeche
-    // bleibt leer und die Fehlermeldung stehen.
+const shareDialog = document.getElementById("shareDialog");
+const shareForm = document.getElementById("shareForm");
+const shareList = document.getElementById("shareList");
+const shareEmptyState = document.getElementById("shareEmptyState");
+const shareRecipeName = document.getElementById("shareRecipeName");
+let shareRecipeId = null;
+
+async function openShareDialog(recipeId, recipeName){
+  await guard(async () => {
+    const [users, shares] = await Promise.all([
+      API.get("/users"),
+      API.get(`/recipes/${enc(recipeId)}/shares`)
+    ]);
+    const byUser = new Map(shares.map(s => [s.userId, s.canWrite ? "write" : "read"]));
+    const others = users.filter(u => u.id !== currentUser.id);
+
+    shareRecipeId = recipeId;
+    shareRecipeName.textContent = `„${recipeName}" – wer darf es sehen oder bearbeiten?`;
+    shareEmptyState.hidden = others.length > 0;
+    shareList.innerHTML = others.map(u => {
+      const value = byUser.get(u.id) || "";
+      const opt = (v, label) => `<option value="${v}"${v === value ? " selected" : ""}>${label}</option>`;
+      return `
+        <li class="share-row">
+          <span>${escapeHtml(u.username)}</span>
+          <select data-user-id="${u.id}" aria-label="Freigabe für ${escapeHtml(u.username)}">
+            ${opt("", "Keine Freigabe")}${opt("read", "Nur lesen")}${opt("write", "Lesen und bearbeiten")}
+          </select>
+        </li>`;
+    }).join("");
+    shareDialog.showModal();
+  });
+}
+
+shareForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const shares = [...shareList.querySelectorAll("select[data-user-id]")]
+    .filter(sel => sel.value)
+    .map(sel => ({ userId: sel.dataset.userId, canWrite: sel.value === "write" }));
+  const ok = await guard(async () => {
+    await API.put(`/recipes/${enc(shareRecipeId)}/shares`, shares);
+    await loadRecipes();
+  }, { success: "Freigaben gespeichert." });
+  if(ok) shareDialog.close();
+});
+
+// Alle kleinen Dialoge: Buttons mit data-close schliessen ihren Dialog.
+document.querySelectorAll("dialog [data-close]").forEach(btn => {
+  btn.addEventListener("click", () => btn.closest("dialog").close());
+});
+// Eine alte Meldung soll beim naechsten Oeffnen nicht mehr dastehen.
+document.querySelectorAll("dialog").forEach(dialog => {
+  dialog.addEventListener("close", () => {
+    dialog.querySelectorAll(".dialog-status").forEach(el => { el.hidden = true; });
+  });
+});
+
+/* =========================================================================
+   Benutzerverwaltung — nur fuer Admins sichtbar.
+   ========================================================================= */
+const usersDialog = document.getElementById("usersDialog");
+const usersTableBody = document.getElementById("usersTableBody");
+const newUserForm = document.getElementById("newUserForm");
+let userList = [];
+
+async function loadUsers(){
+  userList = await API.get("/users");
+  renderUsers();
+}
+
+function renderUsers(){
+  usersTableBody.innerHTML = userList.map(u => {
+    const self = u.id === currentUser.id;
+    return `
+      <tr data-id="${u.id}">
+        <td>${escapeHtml(u.username)}${self ? ' <span class="owner-self">(ich)</span>' : ""}</td>
+        <td><input type="checkbox" data-action="toggle-admin" ${u.isAdmin ? "checked" : ""} ${self ? "disabled" : ""} aria-label="Admin"></td>
+        <td>${u.recipeCount}</td>
+        <td class="menu-cell">
+          <button type="button" class="btn btn-ghost btn-small" data-action="password">Passwort setzen</button>
+          ${self ? "" : `<button type="button" class="btn btn-icon" data-action="delete-user" title="Löschen" aria-label="Löschen">🗑️</button>`}
+        </td>
+      </tr>`;
+  }).join("");
+}
+
+usersTableBody.addEventListener("change", async (e) => {
+  if(e.target.dataset.action !== "toggle-admin") return;
+  const id = e.target.closest("tr").dataset.id;
+  const ok = await guard(() => API.patch(`/users/${enc(id)}`, { isAdmin: e.target.checked }),
+    { success: "Rechte geändert." });
+  if(!ok) e.target.checked = !e.target.checked;
+});
+
+usersTableBody.addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-action]");
+  if(!btn) return;
+  const row = btn.closest("tr");
+  const user = userList.find(u => u.id === row.dataset.id);
+  const cell = btn.closest(".menu-cell");
+
+  if(btn.dataset.action === "password"){
+    // Passwortfeld direkt in der Zeile statt window.prompt (das zeigt Klartext).
+    cell.innerHTML = `
+      <input type="password" placeholder="Neues Passwort" autocomplete="new-password" maxlength="200">
+      <button type="button" class="btn btn-primary btn-small" data-action="password-save">OK</button>
+      <button type="button" class="btn btn-ghost btn-small" data-action="password-cancel">Abbrechen</button>`;
+    cell.querySelector("input").focus();
     return;
   }
+  if(btn.dataset.action === "password-cancel"){
+    renderUsers();
+    return;
+  }
+  if(btn.dataset.action === "password-save"){
+    const password = cell.querySelector("input").value;
+    const ok = await guard(() => API.patch(`/users/${enc(user.id)}`, { password }),
+      { success: `Neues Passwort für ${user.username} gesetzt.` });
+    if(ok) renderUsers();
+    return;
+  }
+  if(btn.dataset.action === "delete-user"){
+    const ok = window.confirm(
+      `Benutzer "${user.username}" löschen?\n\n` +
+      (user.recipeCount > 0 ? `Seine ${user.recipeCount} Rezept(e) gehen an dich über.` : "Er hat keine eigenen Rezepte.")
+    );
+    if(!ok) return;
+    await guard(async () => {
+      await API.del(`/users/${enc(user.id)}`);
+      await loadUsers();
+      await loadRecipes();
+    }, { success: `Benutzer ${user.username} gelöscht.` });
+  }
+});
+
+newUserForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const username = document.getElementById("newUserName").value.trim();
+  await guard(async () => {
+    await API.post("/users", {
+      username,
+      password: document.getElementById("newUserPassword").value,
+      isAdmin: document.getElementById("newUserAdmin").checked
+    });
+    newUserForm.reset();
+    await loadUsers();
+  }, { success: `Benutzer ${username} angelegt.` });
+});
+
+document.getElementById("usersBtn").addEventListener("click", async () => {
+  await guard(async () => {
+    await loadUsers();
+    usersDialog.showModal();
+  });
+});
+
+/* =========================================================================
+   Eigenes Passwort aendern
+   ========================================================================= */
+const passwordDialog = document.getElementById("passwordDialog");
+const passwordForm = document.getElementById("passwordForm");
+const passwordError = document.getElementById("passwordError");
+
+document.getElementById("passwordBtn").addEventListener("click", () => {
+  passwordForm.reset();
+  passwordError.hidden = true;
+  passwordDialog.showModal();
+});
+
+passwordForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const newPassword = document.getElementById("newPassword").value;
+  if(newPassword !== document.getElementById("newPasswordRepeat").value){
+    passwordError.textContent = "Die beiden neuen Passwörter stimmen nicht überein.";
+    passwordError.hidden = false;
+    return;
+  }
+  try{
+    await API.post("/auth/password", {
+      currentPassword: document.getElementById("currentPassword").value,
+      newPassword
+    });
+    passwordDialog.close();
+    showStatus("Passwort geändert.", "success");
+  }catch(err){
+    passwordError.textContent = err.message;
+    passwordError.hidden = false;
+  }
+});
+
+/* =========================================================================
+   Anmeldung — ohne Sitzung sieht man nur das Anmeldeformular. Gibt es noch
+   gar keinen Benutzer, legt dasselbe Formular den ersten Admin an.
+   ========================================================================= */
+const authScreen = document.getElementById("authScreen");
+const authForm = document.getElementById("authForm");
+const authHeading = document.getElementById("authHeading");
+const authHint = document.getElementById("authHint");
+const authUsername = document.getElementById("authUsername");
+const authPassword = document.getElementById("authPassword");
+const authPasswordRepeat = document.getElementById("authPasswordRepeat");
+const authPasswordRepeatField = document.getElementById("authPasswordRepeatField");
+const authError = document.getElementById("authError");
+const authSubmitBtn = document.getElementById("authSubmitBtn");
+const appMain = document.getElementById("appMain");
+const userBar = document.getElementById("userBar");
+const currentUserName = document.getElementById("currentUserName");
+const usersBtn = document.getElementById("usersBtn");
+
+let currentUser = null;
+let setupMode = false;
+
+function showAuthScreen(setupRequired){
+  currentUser = null;
+  setupMode = setupRequired;
+  document.querySelectorAll("dialog[open]").forEach(d => d.close());
+  appMain.hidden = true;
+  userBar.hidden = true;
+  authScreen.hidden = false;
+  clearStatus();
+
+  authHeading.textContent = setupMode ? "Ersteinrichtung" : "Anmelden";
+  authHint.textContent = setupMode
+    ? "Es gibt noch keinen Benutzer. Lege jetzt den Administrator an – die vorhandenen Rezepte gehören danach diesem Konto."
+    : "Bitte mit Benutzername und Passwort anmelden.";
+  authPasswordRepeatField.hidden = !setupMode;
+  authPasswordRepeat.required = setupMode;
+  authPassword.autocomplete = setupMode ? "new-password" : "current-password";
+  authSubmitBtn.textContent = setupMode ? "Administrator anlegen" : "Anmelden";
+  authError.hidden = true;
+  authPassword.value = "";
+  authPasswordRepeat.value = "";
+  authUsername.focus();
+}
+
+authForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  authError.hidden = true;
+  if(setupMode && authPassword.value !== authPasswordRepeat.value){
+    authError.textContent = "Die beiden Passwörter stimmen nicht überein.";
+    authError.hidden = false;
+    return;
+  }
+  authSubmitBtn.disabled = true;
+  try{
+    const { user } = await API.post(setupMode ? "/auth/setup" : "/auth/login", {
+      username: authUsername.value.trim(),
+      password: authPassword.value
+    });
+    authForm.reset();
+    await startApp(user);
+  }catch(err){
+    authError.textContent = err.message;
+    authError.hidden = false;
+  }finally{
+    authSubmitBtn.disabled = false;
+  }
+});
+
+document.getElementById("logoutBtn").addEventListener("click", async () => {
+  await guard(() => API.post("/auth/logout"));
+  recommendationsRow.innerHTML = "";
+  lastRecommendationIds = [];
+  showAuthScreen(false);
+});
+
+/** Nach erfolgreicher Anmeldung: Kopfzeile setzen und Daten laden. */
+async function startApp(user){
+  currentUser = user;
+  currentUserName.innerHTML = escapeHtml(user.username) +
+    (user.isAdmin ? '<span class="user-role">Admin</span>' : "");
+  usersBtn.hidden = !user.isAdmin;
+  userBar.hidden = false;
+  authScreen.hidden = true;
+  appMain.hidden = false;
+
+  // Ansicht eines vorher angemeldeten Benutzers nicht stehen lassen.
+  Object.assign(recipeQuery, DEFAULT_RECIPE_QUERY);
+  recipeSearchInput.value = "";
+  recipeScopeSelect.value = "all";
+  recipeSortSelect.value = "name-asc";
+  recipePageSizeSelect.value = "20";
+
+  const loaded = await guard(() => DB.load());
+  if(!loaded) return;
   await loadRecipes();
   clearStatus();
   renderFridgeList();
   await offerLegacyImport();
+}
+
+/* =========================================================================
+   Start
+   ========================================================================= */
+(async function init(){
+  let status;
+  try{
+    status = await API.get("/auth/status");
+  }catch(err){
+    // Ohne Serververbindung hat Weiterarbeiten keinen Sinn - die
+    // Fehlermeldung bleibt stehen.
+    showStatus(err.message, "error");
+    return;
+  }
+  if(status.user) await startApp(status.user);
+  else showAuthScreen(status.setupRequired);
 })();
