@@ -147,20 +147,42 @@ function truncate(str, max){
 const statusBar = document.getElementById("appStatus");
 let statusTimer = null;
 
+/**
+ * Ein offener modaler Dialog verdeckt die Statuszeile - darum erscheint die
+ * Meldung zusaetzlich in seiner eigenen Zeile (.dialog-status), falls er eine hat.
+ */
+function statusTargets(){
+  const inDialog = document.querySelector("dialog[open] .dialog-status");
+  return inDialog ? [statusBar, inDialog] : [statusBar];
+}
+
 function showStatus(message, kind = "info"){
   clearTimeout(statusTimer);
-  statusBar.textContent = message;
-  statusBar.dataset.kind = kind;
-  statusBar.hidden = false;
+  const targets = statusTargets();
+  for(const el of targets){
+    el.textContent = message;
+    el.dataset.kind = kind;
+    el.hidden = false;
+  }
   if(kind !== "error"){
-    statusTimer = setTimeout(() => { statusBar.hidden = true; }, 3000);
+    statusTimer = setTimeout(() => targets.forEach(el => { el.hidden = true; }), 3000);
   }
 }
 
 function clearStatus(){
   clearTimeout(statusTimer);
   statusBar.hidden = true;
+  document.querySelectorAll(".dialog-status").forEach(el => { el.hidden = true; });
 }
+
+// Eine alte Meldung soll beim naechsten Oeffnen eines Dialogs nicht mehr dastehen.
+document.querySelectorAll("dialog").forEach(dialog => {
+  dialog.addEventListener("close", () => {
+    // Ist der Dialog inzwischen schon wieder offen, gehoert die Meldung zum neuen Durchgang.
+    if(dialog.open) return;
+    dialog.querySelectorAll(".dialog-status").forEach(el => { el.hidden = true; });
+  });
+});
 
 /**
  * Fuehrt eine Server-Aktion aus und zeigt Fehler an, statt sie zu verschlucken.
@@ -565,6 +587,9 @@ imageInput.addEventListener("change", () => {
 });
 
 function openRecipeDialog(recipe){
+  // Alte Meldung sofort weg - das close-Ereignis vom letzten Schliessen
+  // kommt asynchron und koennte sonst eine neue Meldung wieder ausblenden.
+  recipeDialog.querySelector(".dialog-status").hidden = true;
   refreshIngredientCatalogDatalist();
   fillCategorySelect();
   if(recipe){

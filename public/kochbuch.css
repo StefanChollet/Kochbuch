@@ -536,3 +536,13 @@ input[type="search"]::-webkit-search-cancel-button{ cursor:pointer; }
   line-height:1;
   cursor:pointer;
 }
+
+/* Meldungszeile innerhalb eines Dialogs (die Statuszeile oben ist dann verdeckt) */
+.dialog-status{
+  border-radius: 6px;
+  border-bottom: none;
+  padding: .55rem .8rem;
+}
+
+/* hidden muss immer gewinnen - sonst setzt sich z.B. .field{display:flex} durch */
+[hidden]{ display:none !important; }
