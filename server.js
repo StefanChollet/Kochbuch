@@ -149,11 +149,7 @@ server.listen(PORT, () => {
     `Bestand:   ${stats.recipes} Rezepte, ${stats.images} Bilder ` +
     `(${(stats.imageBytes / 1024 / 1024).toFixed(2)} MB), ${stats.fridgeItems} Kuehlschrank-Eintraege`
   );
-  console.log(`Benutzer:  ${stats.users}`);
   if (!dbExisted) console.log("Hinweis:   Datenbank wurde neu angelegt.");
-  if (stats.users === 0) {
-    console.log("Hinweis:   Noch kein Benutzer - beim ersten Aufruf im Browser wird der Administrator angelegt.");
-  }
   console.log("Beenden mit Strg+C");
 });
 

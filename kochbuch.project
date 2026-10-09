@@ -25,16 +25,13 @@
     "driver": "node:sqlite (in Node.js eingebaut, keine native Kompilierung)",
     "file": "kochbuch.sqlite (ueberschreibbar mit der Umgebungsvariable KOCHBUCH_DB)",
     "journalMode": "WAL",
-    "schemaVersion": 2,
+    "schemaVersion": 1,
     "tables": [
-      "recipes (owner_id FK -> users)",
+      "recipes",
       "ingredients (FK -> recipes, ON DELETE CASCADE)",
       "images (FK -> recipes, ON DELETE CASCADE, Bilddaten als BLOB)",
       "fridge_items",
       "ingredient_catalog (PK COLLATE NOCASE)",
-      "users (username UNIQUE COLLATE NOCASE, scrypt-Hash, is_admin)",
-      "sessions (FK -> users, ON DELETE CASCADE, nur SHA-256 des Tokens)",
-      "recipe_shares (FK -> recipes und users, can_write)",
       "meta"
     ],
     "note": "Die Datenhaltung liegt vollstaendig auf dem Server. Der Browser spricht ueber die REST-API unter /api mit der Datenbank; im localStorage bleibt nur die Theme-Einstellung. Bilder liegen als BLOB in der Tabelle images und werden einzeln ueber GET /api/images/:id ausgeliefert - nicht mehr als Base64 im Datensatz."
@@ -44,23 +41,12 @@
     "doc": "README.md",
     "endpoints": [
       "GET    /api/health",
-      "GET    /api/auth/status",
-      "POST   /api/auth/setup",
-      "POST   /api/auth/login",
-      "POST   /api/auth/logout",
-      "POST   /api/auth/password",
-      "GET    /api/users",
-      "POST   /api/users",
-      "PATCH  /api/users/:id",
-      "DELETE /api/users/:id",
       "GET    /api/state",
       "GET    /api/recipes",
       "POST   /api/recipes",
       "GET    /api/recipes/:id",
       "PUT    /api/recipes/:id",
       "DELETE /api/recipes/:id",
-      "GET    /api/recipes/:id/shares",
-      "PUT    /api/recipes/:id/shares",
       "GET    /api/images/:id",
       "GET    /api/fridge",
       "POST   /api/fridge",
@@ -73,7 +59,7 @@
       "POST   /api/import"
     ]
   },
-  "description": "Kochbuch-WebApp mit Benutzerverwaltung: eigene Rezepte je Benutzer, Freigaben (lesen/bearbeiten), Zutatenlisten, Bilder, gemeinsamer Kuehlschrank. Daten in SQLite auf dem Server, Zugriff ueber eine REST-API mit Sitzungs-Cookie.",
+  "description": "Schlanke Kochbuch-WebApp: Rezeptverwaltung mit Zutatenlisten, Bildupload und Kuehlschrank-Tracking. Daten in SQLite auf dem Server, Zugriff ueber eine REST-API.",
   "createdAt": "2026-09-07",
-  "updatedAt": "2026-10-04"
+  "updatedAt": "2026-09-11"
 }

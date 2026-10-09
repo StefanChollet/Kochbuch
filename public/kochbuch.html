@@ -30,45 +30,12 @@
 
 <header class="app-header">
   <h1 class="app-title">Kochbuch</h1>
-  <div class="header-right">
-    <!-- Angemeldeter Benutzer, per JS befuellt und erst nach dem Login sichtbar -->
-    <div id="userBar" class="user-bar" hidden>
-      <span class="user-name" id="currentUserName"></span>
-      <button id="usersBtn" class="btn btn-ghost btn-small" type="button" hidden>Benutzer</button>
-      <button id="passwordBtn" class="btn btn-ghost btn-small" type="button">Passwort</button>
-      <button id="logoutBtn" class="btn btn-ghost btn-small" type="button">Abmelden</button>
-    </div>
-    <button id="themeToggle" class="btn btn-ghost" type="button" aria-label="Hell/Dunkel umschalten">
-      <span id="themeIcon">🌙</span>
-    </button>
-  </div>
+  <button id="themeToggle" class="btn btn-ghost" type="button" aria-label="Hell/Dunkel umschalten">
+    <span id="themeIcon">🌙</span>
+  </button>
 </header>
 
 <p id="appStatus" class="app-status" role="status" aria-live="polite" hidden></p>
-
-<!-- ============ Anmeldung / Ersteinrichtung ============ -->
-<section id="authScreen" class="auth-screen" hidden>
-  <form id="authForm" class="panel auth-panel">
-    <h2 id="authHeading">Anmelden</h2>
-    <p id="authHint" class="panel-sub"></p>
-    <label class="field">
-      <span>Benutzername</span>
-      <input type="text" id="authUsername" autocomplete="username" required maxlength="40">
-    </label>
-    <label class="field">
-      <span>Passwort</span>
-      <input type="password" id="authPassword" autocomplete="current-password" required maxlength="200">
-    </label>
-    <label class="field" id="authPasswordRepeatField" hidden>
-      <span>Passwort wiederholen</span>
-      <input type="password" id="authPasswordRepeat" autocomplete="new-password" maxlength="200">
-    </label>
-    <p id="authError" class="form-error" hidden></p>
-    <button type="submit" id="authSubmitBtn" class="btn btn-primary">Anmelden</button>
-  </form>
-</section>
-
-<div id="appMain" hidden>
 
 <!-- ============ Empfehlungen ============ -->
 <section class="panel panel-recommendations" aria-labelledby="recommendationsHeading">
@@ -93,14 +60,6 @@
       <div class="recipe-search-wrap">
         <input type="search" id="recipeSearchInput" placeholder="Rezept oder Zutat suchen…" aria-label="Rezepte durchsuchen">
       </div>
-      <div class="recipe-scope-wrap">
-        <label for="recipeScopeSelect" class="sr-only">Welche Rezepte</label>
-        <select id="recipeScopeSelect">
-          <option value="all">Alle Rezepte</option>
-          <option value="mine">Meine Rezepte</option>
-          <option value="shared">Für mich freigegeben</option>
-        </select>
-      </div>
       <div class="recipe-sort-wrap">
         <label for="recipeSortSelect">Sortieren</label>
         <select id="recipeSortSelect">
@@ -110,7 +69,6 @@
           <option value="shortDesc-desc">Beschreibung (Z–A)</option>
           <option value="updatedAt-desc">Zuletzt geändert (neueste zuerst)</option>
           <option value="updatedAt-asc">Zuletzt geändert (älteste zuerst)</option>
-          <option value="owner-asc">Von (A–Z)</option>
         </select>
       </div>
       <button type="button" id="recipeResetFiltersBtn" class="btn btn-ghost btn-small" title="Suche und Sortierung zurücksetzen">Zurücksetzen</button>
@@ -122,7 +80,6 @@
           <tr>
             <th>Rezeptname</th>
             <th>Kurze Beschreibung</th>
-            <th class="col-owner">Von</th>
             <th class="col-menu">Menu</th>
           </tr>
         </thead>
@@ -174,8 +131,6 @@
 
 </main>
 
-</div><!-- /appMain -->
-
 <!-- ============ Dialog: Kochbuch-Detail ============ -->
 <dialog id="recipeDialog" class="recipe-dialog">
   <form id="recipeForm" method="dialog">
@@ -185,9 +140,6 @@
     </div>
 
     <input type="hidden" id="recipeId">
-
-    <!-- Bei fremden Rezepten: von wem, und ob nur lesend -->
-    <p id="recipeOwnerInfo" class="recipe-owner-info" hidden></p>
 
     <label class="field">
       <span>Rezeptname</span>
@@ -230,8 +182,6 @@
       <div id="imageList" class="image-list"></div>
     </fieldset>
 
-    <p class="app-status dialog-status" role="status" aria-live="polite" hidden></p>
-
     <div class="dialog-actions">
       <button type="button" id="cancelRecipeBtn" class="btn btn-ghost">Abbrechen</button>
       <button type="submit" id="saveRecipeBtn" class="btn btn-primary">Speichern</button>
@@ -246,80 +196,6 @@
     <button type="button" class="image-lightbox-close" id="imageLightboxClose" aria-label="Vergrößerte Ansicht schließen">✕</button>
     <img id="imageLightboxImg" src="" alt="">
   </div>
-</dialog>
-
-<!-- ============ Dialog: Rezept freigeben ============ -->
-<dialog id="shareDialog" class="recipe-dialog small-dialog">
-  <form id="shareForm" method="dialog">
-    <div class="dialog-head">
-      <h2>Rezept freigeben</h2>
-      <button type="button" class="btn btn-ghost" data-close aria-label="Schliessen">✕</button>
-    </div>
-    <p class="panel-sub" id="shareRecipeName"></p>
-    <ul id="shareList" class="share-list"></ul>
-    <p id="shareEmptyState" class="empty-state" hidden>Es gibt noch keine anderen Benutzer.</p>
-    <p class="app-status dialog-status" role="status" aria-live="polite" hidden></p>
-    <div class="dialog-actions">
-      <button type="button" class="btn btn-ghost" data-close>Abbrechen</button>
-      <button type="submit" id="saveShareBtn" class="btn btn-primary">Speichern</button>
-    </div>
-  </form>
-</dialog>
-
-<!-- ============ Dialog: Benutzerverwaltung (nur Admin) ============ -->
-<dialog id="usersDialog" class="recipe-dialog">
-  <div class="dialog-body">
-    <div class="dialog-head">
-      <h2>Benutzer</h2>
-      <button type="button" class="btn btn-ghost" data-close aria-label="Schliessen">✕</button>
-    </div>
-    <p class="app-status dialog-status" role="status" aria-live="polite" hidden></p>
-    <table class="recipe-table users-table">
-      <thead>
-        <tr><th>Name</th><th>Admin</th><th>Rezepte</th><th class="col-menu">Menu</th></tr>
-      </thead>
-      <tbody id="usersTableBody"></tbody>
-    </table>
-
-    <form id="newUserForm">
-      <fieldset class="field-group">
-        <legend>Neuen Benutzer anlegen</legend>
-        <div class="new-user-row">
-          <input type="text" id="newUserName" placeholder="Benutzername" required maxlength="40" autocomplete="off">
-          <input type="password" id="newUserPassword" placeholder="Passwort (mind. 8 Zeichen)" required maxlength="200" autocomplete="new-password">
-          <label class="checkbox-label"><input type="checkbox" id="newUserAdmin"> Admin</label>
-          <button type="submit" class="btn btn-primary btn-small">Anlegen</button>
-        </div>
-      </fieldset>
-    </form>
-  </div>
-</dialog>
-
-<!-- ============ Dialog: eigenes Passwort aendern ============ -->
-<dialog id="passwordDialog" class="recipe-dialog small-dialog">
-  <form id="passwordForm" method="dialog">
-    <div class="dialog-head">
-      <h2>Passwort ändern</h2>
-      <button type="button" class="btn btn-ghost" data-close aria-label="Schliessen">✕</button>
-    </div>
-    <label class="field">
-      <span>Bisheriges Passwort</span>
-      <input type="password" id="currentPassword" required autocomplete="current-password" maxlength="200">
-    </label>
-    <label class="field">
-      <span>Neues Passwort (mind. 8 Zeichen)</span>
-      <input type="password" id="newPassword" required autocomplete="new-password" maxlength="200">
-    </label>
-    <label class="field">
-      <span>Neues Passwort wiederholen</span>
-      <input type="password" id="newPasswordRepeat" required autocomplete="new-password" maxlength="200">
-    </label>
-    <p id="passwordError" class="form-error" hidden></p>
-    <div class="dialog-actions">
-      <button type="button" class="btn btn-ghost" data-close>Abbrechen</button>
-      <button type="submit" class="btn btn-primary">Speichern</button>
-    </div>
-  </form>
 </dialog>
 
 <script src="kochbuch.js"></script>
