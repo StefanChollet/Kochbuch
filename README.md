@@ -43,12 +43,14 @@ nicht erreichbar.
 
 | Tabelle | Inhalt |
 |---|---|
-| `recipes` | Kopfdaten: Name, Kurzbeschreibung, Zubereitungstext, Kategorie (genau eine oder leer), Zeitstempel |
+| `recipes` | Kopfdaten: Name, Kurzbeschreibung, Zubereitungstext, Kategorie (genau eine oder leer), Ersteller (`created_by` → `accounts`, `ON DELETE SET NULL`), Zeitstempel |
 | `ingredients` | Zutaten, `recipe_id` → `recipes`, `ON DELETE CASCADE`, Reihenfolge über `position` |
 | `images` | Bilder als BLOB inkl. MIME-Typ, `recipe_id` → `recipes`, `ON DELETE CASCADE` |
 | `fridge_items` | Kühlschrank-Bestand |
 | `ingredient_catalog` | Vorschlagsliste, Primärschlüssel `COLLATE NOCASE` (»Mehl« = »mehl«) |
-| `meta` | u. a. `schema_version` |
+| `meta` | u. a. `schema_version` (aktuell 2) |
+| `accounts` | Benutzer: id (0 = Admin), Name (`COLLATE NOCASE`), scrypt-Passworthash, Rolle `admin`/`rw`/`r` |
+| `account_sessions` | Anmeldungen: SHA-256 des Sitzungstokens, Ablaufzeit; `ON DELETE CASCADE` mit dem Benutzer |
 
 Ein gelöschtes Rezept nimmt seine Zutaten und Bilder per Fremdschlüssel mit.
 `PRAGMA foreign_keys = ON` ist gesetzt, `journal_mode = WAL`.
@@ -85,7 +87,15 @@ Fehler kommen einheitlich als `{ "error": "..." }` mit passendem HTTP-Status
 
 | Methode | Pfad | Zweck |
 |---|---|---|
-| `GET` | `/api/health` | Status, Schema-Version, Bestandszahlen |
+| `GET` | `/api/health` | Status und Schema-Version (ohne Anmeldung) |
+| `GET` | `/api/auth/status` | angemeldeter Benutzer `{ id, username, role, canWrite }` oder `null` |
+| `POST` | `/api/auth/login` | `{ username, password }` → Sitzungs-Cookie |
+| `POST` | `/api/auth/logout` | Sitzung beenden → `204` |
+| `POST` | `/api/auth/password` | eigenes Passwort ändern `{ currentPassword, newPassword }` (alle Rollen) |
+| `GET` | `/api/users` | Benutzerliste mit Rolle und Rezeptzahl (Schreibrecht) |
+| `POST` | `/api/users` | Benutzer anlegen `{ username, password, role: "rw" \| "r" }` (Schreibrecht) |
+| `PATCH` | `/api/users/:id` | `{ username?, role?, password? }` – nicht für den Admin (Schreibrecht) |
+| `DELETE` | `/api/users/:id` | Benutzer löschen – nicht den Admin, nicht sich selbst (Schreibrecht) |
 | `GET` | `/api/state` | Kühlschrank + Katalog in einem Aufruf (Startaufbau) |
 | `GET` | `/api/recipes` | Rezeptübersicht: Suche, Sortierung, Paging |
 | `GET` | `/api/recommendations` | Empfehlungen aus Kühlschrank + Suchfilter |
@@ -117,7 +127,7 @@ Leitung.
 | Parameter | Werte | Standard |
 |---|---|---|
 | `search` | Freitext, geprüft gegen Name, Kurzbeschreibung und Zutatennamen | – (kein Filter) |
-| `sortBy` | `name`, `shortDesc`, `updatedAt` | `name` |
+| `sortBy` | `name`, `shortDesc`, `updatedAt`, `createdBy` | `name` |
 | `sortDir` | `asc`, `desc` | `asc` |
 | `page` | 1-basiert | `1` |
 | `pageSize` | 1–100 | `20` |
@@ -258,8 +268,27 @@ kopieren, fertig. Im laufenden Betrieb gehören die Dateien `kochbuch.sqlite-wal
 und `kochbuch.sqlite-shm` dazu; beim sauberen Beenden mit `Strg+C` schreibt der
 Server das WAL zurück und räumt sie ab.
 
-## Hinweis zum Betrieb
+## Benutzer und Rechte
 
-Der Server ist auf die lokale Entwicklung ausgelegt: keine Authentifizierung,
-keine Mandanten, statische Dateien mit `no-store`. Wer ihn über das lokale Netz
-hinaus erreichbar macht, sollte vorher eine Zugriffskontrolle davorsetzen.
+| Rolle | Wer | Darf |
+|---|---|---|
+| `admin` | genau ein Benutzer, fest `id 0`, Name `admin` | alles; kann über die Verwaltung weder angelegt, verändert noch gelöscht werden |
+| `rw` – Lesen + Schreiben | beliebig viele | Rezepte anlegen, bearbeiten, löschen; Kühlschrank und Katalog; Benutzerverwaltung |
+| `r` – Nur lesen | beliebig viele | Rezepte, Details und Kühlschrank nur ansehen |
+
+- Ohne Anmeldung liefert die API nur `/api/health` und `/api/auth/*`, alles
+  andere antwortet mit `401`. Schreibende Anfragen ohne Schreibrecht → `403`.
+- Kopfzeile: Benutzername, Rechte-Anzeige (Admin / Lesen + Schreiben / Nur
+  lesen), Menü *Benutzerverwaltung* (nur Admin und `rw`), *Passwort*, *Abmelden*.
+- Benutzerverwaltung: anlegen, umbenennen, Rechte ändern, Passwort setzen,
+  löschen. Die eigenen Rechte und das eigene Konto lassen sich dort nicht ändern
+  bzw. löschen. Rezepte eines gelöschten Benutzers bleiben erhalten.
+- Jeder (auch der Admin) kann das **eigene** Passwort ändern.
+- **Admin-Startpasswort:** wird beim ersten Start angelegt – aus
+  `KOCHBUCH_ADMIN_PASSWORD`, sonst zufällig und einmalig im Server-Log. Der
+  Rezeptbestand von vor Schema 2 gilt als vom Admin erstellt.
+- **Sicherheit:** Passwörter als scrypt-Hash; Sitzungs-Cookie `HttpOnly`,
+  `SameSite=Lax`, hinter HTTPS `Secure`, 30 Tage gültig und bei Nutzung
+  verlängert. In der Datenbank liegt nur der SHA-256 des Tokens. Schreibende
+  Anfragen mit fremdem `Origin` werden abgelehnt. Nach 10 Fehlversuchen je IP
+  ist die Anmeldung 15 Minuten gesperrt.

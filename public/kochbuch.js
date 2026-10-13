@@ -24,6 +24,12 @@ const API = {
     const isJson = (res.headers.get("content-type") || "").includes("application/json");
     const payload = isJson ? await res.json() : await res.text();
 
+    // Sitzung abgelaufen oder abgemeldet: zurueck zur Anmeldung. Login und
+    // Passwortwechsel melden falsche Passwoerter selbst (eigener Fehlertext).
+    if(res.status === 401 && !path.startsWith("/auth/")){
+      showAuthScreen();
+    }
+
     if(!res.ok){
       throw new Error((payload && payload.error) || `Serverfehler (HTTP ${res.status}).`);
     }
@@ -331,6 +337,15 @@ function imageIndicator(imageCount){
   return `<svg class="recipe-img-icon ${has ? "has-image" : "no-image"}" width="16" height="16" role="img" aria-label="${label}"><title>${label}</title><use href="#${has ? "kochbild" : "kochbild-none"}"/></svg>`;
 }
 
+/** Aktionen je nach Rechten: Schreiben = bearbeiten + loeschen, Nur lesen = ansehen. */
+function recipeActions(recipe){
+  const btn = (action, icon, label) =>
+    `<button class="btn btn-icon" data-action="${action}" data-id="${recipe.id}" title="${label}" aria-label="${label}">${icon}</button>`;
+  return canWrite()
+    ? btn("edit", "✏️", "Bearbeiten") + btn("delete", "🗑️", "Löschen")
+    : btn("edit", "👁️", "Ansehen");
+}
+
 function renderRecipeTable(){
   const { items, total, page, totalPages } = DB.recipesPage;
   const hasSearch = recipeQuery.search.trim().length > 0;
@@ -339,17 +354,17 @@ function renderRecipeTable(){
   recipeEmptyState.hidden = items.length > 0;
   recipeEmptyState.textContent = hasSearch
     ? `Keine Rezepte gefunden für "${recipeQuery.search.trim()}".`
-    : 'Noch keine Rezepte vorhanden. Leg mit "Rezept erstellen" los.';
+    : canWrite()
+      ? 'Noch keine Rezepte vorhanden. Leg mit "Rezept erstellen" los.'
+      : "Noch keine Rezepte vorhanden.";
 
   items.forEach(recipe => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td class="recipe-name-cell">${imageIndicator(recipe.imageCount)}${escapeHtml(recipe.name)}</td>
       <td>${truncate(recipe.shortDesc, 100)}</td>
-      <td class="menu-cell">
-        <button class="btn btn-icon" data-action="edit" data-id="${recipe.id}" title="Bearbeiten" aria-label="Bearbeiten">✏️</button>
-        <button class="btn btn-icon" data-action="delete" data-id="${recipe.id}" title="Löschen" aria-label="Löschen">🗑️</button>
-      </td>
+      <td class="owner-cell">${escapeHtml(recipe.createdByName || "–")}</td>
+      <td class="menu-cell">${recipeActions(recipe)}</td>
     `;
     recipeTableBody.appendChild(tr);
   });
@@ -465,6 +480,9 @@ function fillCategorySelect(){
     DB.data.categoryOptions.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
 }
 
+const recipeOwnerInfo = document.getElementById("recipeOwnerInfo");
+const cancelRecipeBtn = document.getElementById("cancelRecipeBtn");
+let recipeReadOnly = false;    // Benutzer mit Nur-lesen-Rechten
 let workingIngredients = [];   // [{key, name, amount}]
 let workingImages = [];        // gespeichert: {key, id, name, url} | neu: {key, name, dataUrl, isNew}
 
@@ -478,8 +496,8 @@ function renderIngredientList(){
   ingredientEmptyState.hidden = workingIngredients.length > 0;
   ingredientList.innerHTML = workingIngredients.map(ing => `
     <li class="ingredient-row" data-key="${ing.key}">
-      <input type="text" class="ingredient-edit-name" value="${escapeHtml(ing.name)}">
-      <input type="text" class="ingredient-edit-amount ingredient-amount" value="${escapeHtml(ing.amount)}">
+      <input type="text" class="ingredient-edit-name" value="${escapeHtml(ing.name)}"${recipeReadOnly ? " disabled" : ""}>
+      <input type="text" class="ingredient-edit-amount ingredient-amount" value="${escapeHtml(ing.amount)}"${recipeReadOnly ? " disabled" : ""}>
       <button type="button" class="btn btn-icon" data-action="remove-ingredient" aria-label="Zutat entfernen">✕</button>
     </li>
   `).join("");
@@ -586,12 +604,31 @@ imageInput.addEventListener("change", () => {
   imageInput.value = "";
 });
 
+/** Nur-lesen-Benutzer: alle Felder sperren. Bei bestehenden Rezepten den Ersteller zeigen. */
+function applyRecipeAccess(recipe){
+  recipeReadOnly = !canWrite();
+  recipeForm.classList.toggle("is-readonly", recipeReadOnly);
+  recipeForm.querySelectorAll("input, textarea, select").forEach(el => {
+    if(el.type !== "hidden") el.disabled = recipeReadOnly;
+  });
+  cancelRecipeBtn.textContent = recipeReadOnly ? "Schliessen" : "Abbrechen";
+
+  if(recipe){
+    recipeOwnerInfo.textContent = `Erstellt von ${recipe.createdByName || "unbekannt"}` +
+      (recipeReadOnly ? " – du hast nur Leserechte." : ".");
+    recipeOwnerInfo.hidden = false;
+  }else{
+    recipeOwnerInfo.hidden = true;
+  }
+}
+
 function openRecipeDialog(recipe){
   // Alte Meldung sofort weg - das close-Ereignis vom letzten Schliessen
   // kommt asynchron und koennte sonst eine neue Meldung wieder ausblenden.
   recipeDialog.querySelector(".dialog-status").hidden = true;
   refreshIngredientCatalogDatalist();
   fillCategorySelect();
+  applyRecipeAccess(recipe);
   if(recipe){
     recipeCategorySelect.value = recipe.category || "";
     recipeIdInput.value = recipe.id;
@@ -609,7 +646,8 @@ function openRecipeDialog(recipe){
   renderIngredientList();
   renderImageList();
   recipeDialog.showModal();
-  recipeNameInput.focus();
+  if(recipeReadOnly) cancelRecipeBtn.focus();
+  else recipeNameInput.focus();
 }
 
 function closeRecipeDialog(){
@@ -619,10 +657,11 @@ function closeRecipeDialog(){
 
 document.getElementById("createRecipeBtn").addEventListener("click", () => openRecipeDialog(null));
 document.getElementById("closeDialogBtn").addEventListener("click", closeRecipeDialog);
-document.getElementById("cancelRecipeBtn").addEventListener("click", closeRecipeDialog);
+cancelRecipeBtn.addEventListener("click", closeRecipeDialog);
 
 recipeForm.addEventListener("submit", async (e) => {
   e.preventDefault();
+  if(recipeReadOnly) return;
   if(!recipeNameInput.value.trim()){
     recipeNameInput.focus();
     return;
@@ -669,12 +708,14 @@ const clearFridgeBtn = document.getElementById("clearFridgeBtn");
 function renderFridgeList(){
   const items = DB.data.fridge;
   fridgeEmptyState.hidden = items.length > 0;
+  // Nur-lesen: Felder gesperrt, kein Loeschen.
+  const locked = canWrite() ? "" : " disabled";
   fridgeListEl.innerHTML = items.map(item => `
     <li class="fridge-item" data-id="${item.id}">
-      <input type="text" class="fridge-edit-name" value="${escapeHtml(item.name)}">
-      <input type="text" class="fridge-edit-amount fridge-item-amount" value="${escapeHtml(item.amount || "")}">
+      <input type="text" class="fridge-edit-name" value="${escapeHtml(item.name)}"${locked}>
+      <input type="text" class="fridge-edit-amount fridge-item-amount" value="${escapeHtml(item.amount || "")}"${locked}>
       <span class="fridge-item-actions">
-        <button type="button" class="btn btn-icon" data-action="delete-fridge" aria-label="Löschen">🗑️</button>
+        ${locked ? "" : `<button type="button" class="btn btn-icon" data-action="delete-fridge" aria-label="Löschen">🗑️</button>`}
       </span>
     </li>
   `).join("");
@@ -762,7 +803,7 @@ const LEGACY_KEY = "kochbuchV2_db";
 const LEGACY_DONE_KEY = "kochbuchV2_migrated";
 
 async function offerLegacyImport(){
-  if(window.localStorage.getItem(LEGACY_DONE_KEY)) return false;
+  if(!canWrite() || window.localStorage.getItem(LEGACY_DONE_KEY)) return false;
 
   let legacy;
   try{
@@ -800,18 +841,295 @@ async function offerLegacyImport(){
   });
 }
 
+// Kleine Dialoge: Buttons mit data-close schliessen ihren Dialog.
+document.querySelectorAll("dialog [data-close]").forEach(btn => {
+  btn.addEventListener("click", () => btn.closest("dialog").close());
+});
+
 /* =========================================================================
-   Start
+   Benutzer und Rechte
+   - admin (id 0): fest, einmalig, nicht aenderbar und nicht loeschbar
+   - rw: lesen und schreiben, inkl. Benutzerverwaltung
+   - r:  nur lesen
+   Der Server prueft jedes Recht selbst; hier geht es nur um die Anzeige.
    ========================================================================= */
-(async function init(){
-  const loaded = await guard(() => DB.load());
-  if(!loaded){
-    // Ohne Serververbindung hat Weiterarbeiten keinen Sinn - die Oberflaeche
-    // bleibt leer und die Fehlermeldung stehen.
+const ROLE_LABELS = { admin: "Admin", rw: "Lesen + Schreiben", r: "Nur lesen" };
+let currentUser = null;
+
+function canWrite(){
+  return !!currentUser && currentUser.canWrite;
+}
+
+/* ---- Benutzerverwaltung (nur Admin und Lesen + Schreiben) ---- */
+const usersDialog = document.getElementById("usersDialog");
+const usersTableBody = document.getElementById("usersTableBody");
+const newUserForm = document.getElementById("newUserForm");
+let userList = [];
+
+async function loadUsers(){
+  userList = await API.get("/users");
+  renderUsers();
+}
+
+function renderUsers(){
+  usersTableBody.innerHTML = userList.map(u => {
+    const self = u.id === currentUser.id;
+    const me = self ? ' <span class="owner-cell">(ich)</span>' : "";
+    if(u.role === "admin"){
+      // Der Admin ist fest: keine Bedienelemente.
+      return `
+        <tr data-id="${u.id}">
+          <td>${u.id}</td>
+          <td>${escapeHtml(u.username)}${me}</td>
+          <td><span class="role-badge role-admin">${ROLE_LABELS.admin}</span></td>
+          <td>${u.recipeCount}</td>
+          <td><span class="fixed-note">fest – nicht änderbar</span></td>
+        </tr>`;
+    }
+    const opt = (v) => `<option value="${v}"${u.role === v ? " selected" : ""}>${ROLE_LABELS[v]}</option>`;
+    return `
+      <tr data-id="${u.id}">
+        <td>${u.id}</td>
+        <td>${escapeHtml(u.username)}${me}</td>
+        <td>
+          <select data-action="role" aria-label="Rechte von ${escapeHtml(u.username)}"${self ? " disabled title=\"Eigene Rechte kann man nicht selbst ändern\"" : ""}>
+            ${opt("rw")}${opt("r")}
+          </select>
+        </td>
+        <td>${u.recipeCount}</td>
+        <td class="menu-cell">
+          <button type="button" class="btn btn-icon" data-action="rename" title="Umbenennen" aria-label="Umbenennen">✏️</button>
+          <button type="button" class="btn btn-ghost btn-small" data-action="password">Passwort setzen</button>
+          ${self ? "" : `<button type="button" class="btn btn-icon" data-action="delete-user" title="Löschen" aria-label="Löschen">🗑️</button>`}
+        </td>
+      </tr>`;
+  }).join("");
+}
+
+usersTableBody.addEventListener("change", async (e) => {
+  if(e.target.dataset.action !== "role") return;
+  const select = e.target;
+  const user = userList.find(u => String(u.id) === select.closest("tr").dataset.id);
+  const ok = await guard(async () => {
+    await API.patch(`/users/${enc(user.id)}`, { role: select.value });
+    await loadUsers();
+  }, { success: `Rechte von ${user.username}: ${ROLE_LABELS[select.value]}.` });
+  if(!ok) select.value = user.role;
+});
+
+/** Ersetzt die Menu-Zelle einer Zeile durch ein kleines Eingabefeld mit OK/Abbrechen. */
+function inlineEdit(cell, { type, value = "", placeholder, saveAction }){
+  cell.innerHTML = `
+    <input type="${type}" placeholder="${placeholder}" maxlength="${type === "password" ? 200 : 40}"
+           autocomplete="${type === "password" ? "new-password" : "off"}" value="${escapeHtml(value)}">
+    <button type="button" class="btn btn-primary btn-small" data-action="${saveAction}">OK</button>
+    <button type="button" class="btn btn-ghost btn-small" data-action="edit-cancel">Abbrechen</button>`;
+  const input = cell.querySelector("input");
+  input.focus();
+  input.select();
+  input.addEventListener("keydown", (e) => {
+    if(e.key === "Enter"){ e.preventDefault(); cell.querySelector(`[data-action="${saveAction}"]`).click(); }
+  });
+}
+
+usersTableBody.addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-action]");
+  if(!btn) return;
+  const row = btn.closest("tr");
+  const user = userList.find(u => String(u.id) === row.dataset.id);
+  const cell = btn.closest(".menu-cell");
+
+  switch(btn.dataset.action){
+    case "password":
+      // Passwortfeld direkt in der Zeile statt window.prompt (das zeigt Klartext).
+      inlineEdit(cell, { type: "password", placeholder: "Neues Passwort", saveAction: "password-save" });
+      return;
+    case "rename":
+      inlineEdit(cell, { type: "text", value: user.username, placeholder: "Benutzername", saveAction: "rename-save" });
+      return;
+    case "edit-cancel":
+      renderUsers();
+      return;
+    case "password-save": {
+      const password = cell.querySelector("input").value;
+      const ok = await guard(() => API.patch(`/users/${enc(user.id)}`, { password }),
+        { success: `Neues Passwort für ${user.username} gesetzt.` });
+      if(ok) renderUsers();
+      return;
+    }
+    case "rename-save": {
+      const username = cell.querySelector("input").value.trim();
+      await guard(async () => {
+        const updated = await API.patch(`/users/${enc(user.id)}`, { username });
+        if(updated.id === currentUser.id) setCurrentUser({ ...currentUser, username: updated.username });
+        await loadUsers();
+        await loadRecipes();
+      }, { success: `Benutzer umbenannt in ${username}.` });
+      return;
+    }
+    case "delete-user": {
+      const ok = window.confirm(
+        `Benutzer "${user.username}" löschen?\n\n` +
+        (user.recipeCount > 0 ? `Seine ${user.recipeCount} Rezept(e) bleiben erhalten.` : "Er hat keine Rezepte erstellt.")
+      );
+      if(!ok) return;
+      await guard(async () => {
+        await API.del(`/users/${enc(user.id)}`);
+        await loadUsers();
+        await loadRecipes();
+      }, { success: `Benutzer ${user.username} gelöscht.` });
+    }
+  }
+});
+
+newUserForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const username = document.getElementById("newUserName").value.trim();
+  const role = document.getElementById("newUserRole").value;
+  await guard(async () => {
+    await API.post("/users", { username, password: document.getElementById("newUserPassword").value, role });
+    newUserForm.reset();
+    await loadUsers();
+  }, { success: `Benutzer ${username} angelegt (${ROLE_LABELS[role]}).` });
+});
+
+document.getElementById("usersBtn").addEventListener("click", async () => {
+  await guard(async () => {
+    await loadUsers();
+    usersDialog.showModal();
+  });
+});
+
+/* ---- Eigenes Passwort aendern (jeder Benutzer, auch der Admin) ---- */
+const passwordDialog = document.getElementById("passwordDialog");
+const passwordForm = document.getElementById("passwordForm");
+const passwordError = document.getElementById("passwordError");
+
+document.getElementById("passwordBtn").addEventListener("click", () => {
+  passwordForm.reset();
+  passwordError.hidden = true;
+  passwordDialog.showModal();
+});
+
+passwordForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const newPassword = document.getElementById("newPassword").value;
+  if(newPassword !== document.getElementById("newPasswordRepeat").value){
+    passwordError.textContent = "Die beiden neuen Passwörter stimmen nicht überein.";
+    passwordError.hidden = false;
     return;
   }
+  try{
+    await API.post("/auth/password", {
+      currentPassword: document.getElementById("currentPassword").value,
+      newPassword
+    });
+    passwordDialog.close();
+    showStatus("Passwort geändert.", "success");
+  }catch(err){
+    passwordError.textContent = err.message;
+    passwordError.hidden = false;
+  }
+});
+
+/* =========================================================================
+   Anmeldung — ohne Sitzung sieht man nur das Anmeldeformular.
+   ========================================================================= */
+const authScreen = document.getElementById("authScreen");
+const authForm = document.getElementById("authForm");
+const authUsername = document.getElementById("authUsername");
+const authPassword = document.getElementById("authPassword");
+const authError = document.getElementById("authError");
+const authSubmitBtn = document.getElementById("authSubmitBtn");
+const appMain = document.getElementById("appMain");
+const userBar = document.getElementById("userBar");
+const currentUserName = document.getElementById("currentUserName");
+const currentUserRole = document.getElementById("currentUserRole");
+const usersBtn = document.getElementById("usersBtn");
+
+/** Kopfzeile: Benutzername, Rechte-Anzeige und Menu passend zur Rolle. */
+function setCurrentUser(user){
+  currentUser = user;
+  currentUserName.textContent = user.username;
+  currentUserRole.textContent = ROLE_LABELS[user.role] || user.role;
+  currentUserRole.className = `role-badge role-${user.role}`;
+  currentUserRole.title = user.canWrite ? "Darf lesen und schreiben" : "Darf nur lesen";
+  usersBtn.hidden = !user.canWrite;
+  document.body.classList.toggle("is-readonly", !user.canWrite);
+}
+
+function showAuthScreen(){
+  currentUser = null;
+  document.querySelectorAll("dialog[open]").forEach(d => d.close());
+  appMain.hidden = true;
+  userBar.hidden = true;
+  authScreen.hidden = false;
+  clearStatus();
+  authError.hidden = true;
+  authPassword.value = "";
+  authUsername.focus();
+}
+
+authForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  authError.hidden = true;
+  authSubmitBtn.disabled = true;
+  try{
+    const { user } = await API.post("/auth/login", {
+      username: authUsername.value.trim(),
+      password: authPassword.value
+    });
+    authForm.reset();
+    await startApp(user);
+  }catch(err){
+    authError.textContent = err.message;
+    authError.hidden = false;
+  }finally{
+    authSubmitBtn.disabled = false;
+  }
+});
+
+document.getElementById("logoutBtn").addEventListener("click", async () => {
+  await guard(() => API.post("/auth/logout"));
+  recommendationsRow.innerHTML = "";
+  lastRecommendationIds = [];
+  showAuthScreen();
+});
+
+/** Nach erfolgreicher Anmeldung: Kopfzeile setzen und Daten laden. */
+async function startApp(user){
+  setCurrentUser(user);
+  userBar.hidden = false;
+  authScreen.hidden = true;
+  appMain.hidden = false;
+
+  // Ansicht eines vorher angemeldeten Benutzers nicht stehen lassen.
+  Object.assign(recipeQuery, DEFAULT_RECIPE_QUERY);
+  recipeSearchInput.value = "";
+  recipeSortSelect.value = "name-asc";
+  recipePageSizeSelect.value = "20";
+
+  const loaded = await guard(() => DB.load());
+  if(!loaded) return;
   await loadRecipes();
   clearStatus();
   renderFridgeList();
   await offerLegacyImport();
+}
+
+/* =========================================================================
+   Start
+   ========================================================================= */
+(async function init(){
+  let status;
+  try{
+    status = await API.get("/auth/status");
+  }catch(err){
+    // Ohne Serververbindung hat Weiterarbeiten keinen Sinn - die
+    // Fehlermeldung bleibt stehen.
+    showStatus(err.message, "error");
+    return;
+  }
+  if(status.user) await startApp(status.user);
+  else showAuthScreen();
 })();

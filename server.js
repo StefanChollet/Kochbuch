@@ -13,6 +13,9 @@
           node server.js 8080     (anderer Port)
   Umgebung:
           KOCHBUCH_DB=pfad.sqlite node server.js
+          KOCHBUCH_ADMIN_PASSWORD=...  Startpasswort des Admins, nur beim
+                                       allerersten Start (sonst zufaellig,
+                                       steht dann einmalig im Log)
 */
 
 const http = require("node:http");
@@ -133,9 +136,10 @@ server.on("error", (err) => {
 
 // Vor dem Oeffnen pruefen - db.open() legt die Datei sonst selbst an.
 const dbExisted = fs.existsSync(DB_FILE);
+let generatedAdminPassword = null;
 
 try {
-  db.open(DB_FILE);
+  ({ generatedAdminPassword } = db.open(DB_FILE, { adminPassword: process.env.KOCHBUCH_ADMIN_PASSWORD }));
 } catch (err) {
   console.error("Datenbank konnte nicht geoeffnet werden:", err.message);
   process.exit(1);
@@ -149,7 +153,12 @@ server.listen(PORT, () => {
     `Bestand:   ${stats.recipes} Rezepte, ${stats.images} Bilder ` +
     `(${(stats.imageBytes / 1024 / 1024).toFixed(2)} MB), ${stats.fridgeItems} Kuehlschrank-Eintraege`
   );
+  console.log(`Benutzer:  ${stats.accounts} (inkl. admin)`);
   if (!dbExisted) console.log("Hinweis:   Datenbank wurde neu angelegt.");
+  if (generatedAdminPassword && !process.env.KOCHBUCH_ADMIN_PASSWORD) {
+    console.log(`Hinweis:   Admin angelegt - Benutzer "admin", Startpasswort: ${generatedAdminPassword}`);
+    console.log("           Bitte nach der ersten Anmeldung unter \"Passwort\" ändern.");
+  }
   console.log("Beenden mit Strg+C");
 });
 

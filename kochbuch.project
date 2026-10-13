@@ -25,14 +25,16 @@
     "driver": "node:sqlite (in Node.js eingebaut, keine native Kompilierung)",
     "file": "kochbuch.sqlite (ueberschreibbar mit der Umgebungsvariable KOCHBUCH_DB)",
     "journalMode": "WAL",
-    "schemaVersion": 1,
+    "schemaVersion": 2,
     "tables": [
       "recipes",
       "ingredients (FK -> recipes, ON DELETE CASCADE)",
       "images (FK -> recipes, ON DELETE CASCADE, Bilddaten als BLOB)",
       "fridge_items",
       "ingredient_catalog (PK COLLATE NOCASE)",
-      "meta"
+      "meta",
+      "accounts (Rollen admin/rw/r, Admin fest id 0)",
+      "account_sessions (FK -> accounts, ON DELETE CASCADE)"
     ],
     "note": "Die Datenhaltung liegt vollstaendig auf dem Server. Der Browser spricht ueber die REST-API unter /api mit der Datenbank; im localStorage bleibt nur die Theme-Einstellung. Bilder liegen als BLOB in der Tabelle images und werden einzeln ueber GET /api/images/:id ausgeliefert - nicht mehr als Base64 im Datensatz."
   },
@@ -41,6 +43,14 @@
     "doc": "README.md",
     "endpoints": [
       "GET    /api/health",
+      "GET    /api/auth/status",
+      "POST   /api/auth/login",
+      "POST   /api/auth/logout",
+      "POST   /api/auth/password",
+      "GET    /api/users",
+      "POST   /api/users",
+      "PATCH  /api/users/:id",
+      "DELETE /api/users/:id",
       "GET    /api/state",
       "GET    /api/recipes",
       "POST   /api/recipes",
@@ -61,5 +71,5 @@
   },
   "description": "Schlanke Kochbuch-WebApp: Rezeptverwaltung mit Zutatenlisten, Bildupload und Kuehlschrank-Tracking. Daten in SQLite auf dem Server, Zugriff ueber eine REST-API.",
   "createdAt": "2026-09-07",
-  "updatedAt": "2026-09-11"
+  "updatedAt": "2026-10-13"
 }

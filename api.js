@@ -6,12 +6,23 @@
    Alle Routen liegen unter /api. Antworten sind JSON (UTF-8), ausser der
    Bild-Auslieferung, die die Bytes direkt mit ihrem MIME-Typ schickt.
    Fehler kommen einheitlich als { "error": "..." } mit passendem Status.
+
+   Anmeldung: Sitzungs-Cookie (HttpOnly, SameSite=Lax). Ohne gueltige
+   Sitzung sind nur /api/health und /api/auth/* erreichbar, alles andere
+   antwortet mit 401. Lesen duerfen alle Angemeldeten; Schreiben (Rezepte,
+   Kuehlschrank, Katalog, Benutzerverwaltung) nur Admin und Rolle "rw".
    ========================================================================= */
 
 const db = require("./db");
 const { HttpError } = db;
 
 const MAX_BODY_BYTES = 32 * 1024 * 1024; // deckt mehrere Bilder je Rezept ab
+const SESSION_COOKIE = "kochbuch_session";
+
+// Schutz gegen Passwort-Raten: hoechstens so viele Fehlversuche je IP im Zeitfenster.
+const LOGIN_MAX_FAILURES = 10;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const loginFailures = new Map(); // ip -> { count, since }
 
 /* ------------------------------------------------------------- Helfer */
 
@@ -64,20 +75,147 @@ function getQuery(req) {
   return new URL(req.url, "http://internal").searchParams;
 }
 
+/* -------------------------------------------------------- Sitzungen */
+
+function readCookie(req, name) {
+  const header = req.headers.cookie || "";
+  for (const part of header.split(";")) {
+    const idx = part.indexOf("=");
+    if (idx === -1) continue;
+    if (part.slice(0, idx).trim() === name) return decodeURIComponent(part.slice(idx + 1).trim());
+  }
+  return null;
+}
+
+/** Hinter dem nginx-Proxy kommt HTTPS als X-Forwarded-Proto an. */
+function isHttps(req) {
+  return req.headers["x-forwarded-proto"] === "https";
+}
+
+function setSessionCookie(req, res, token) {
+  const parts = [
+    `${SESSION_COOKIE}=${token}`, "Path=/", "HttpOnly", "SameSite=Lax",
+    `Max-Age=${db.SESSION_DAYS * 86400}`,
+  ];
+  if (isHttps(req)) parts.push("Secure");
+  res.setHeader("Set-Cookie", parts.join("; "));
+}
+
+function clearSessionCookie(req, res) {
+  const parts = [`${SESSION_COOKIE}=`, "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=0"];
+  if (isHttps(req)) parts.push("Secure");
+  res.setHeader("Set-Cookie", parts.join("; "));
+}
+
+function clientIp(req) {
+  return req.headers["x-real-ip"] || req.socket.remoteAddress || "?";
+}
+
+function checkLoginRateLimit(ip) {
+  const entry = loginFailures.get(ip);
+  if (!entry) return;
+  if (Date.now() - entry.since > LOGIN_WINDOW_MS) { loginFailures.delete(ip); return; }
+  if (entry.count >= LOGIN_MAX_FAILURES) {
+    throw new HttpError(429, "Zu viele Fehlversuche. Bitte in 15 Minuten nochmal versuchen.");
+  }
+}
+
+function recordLoginFailure(ip) {
+  const entry = loginFailures.get(ip);
+  if (!entry || Date.now() - entry.since > LOGIN_WINDOW_MS) {
+    loginFailures.set(ip, { count: 1, since: Date.now() });
+  } else {
+    entry.count++;
+  }
+}
+
+/**
+ * Schreibende Anfragen von fremden Seiten abweisen: Schickt der Browser
+ * einen Origin mit, muss er zum eigenen Host passen. (Zusaetzlich zu
+ * SameSite=Lax am Cookie.)
+ */
+function checkOrigin(req) {
+  if (req.method === "GET" || req.method === "HEAD") return;
+  const origin = req.headers.origin;
+  if (!origin) return;
+  const host = req.headers["x-forwarded-host"] || req.headers.host;
+  let originHost;
+  try { originHost = new URL(origin).host; } catch { originHost = null; }
+  if (originHost !== host) throw new HttpError(403, "Anfrage von fremder Herkunft abgelehnt.");
+}
+
+/** Was der Client ueber den angemeldeten Benutzer wissen muss. */
+function describeAccount(account) {
+  return { id: account.id, username: account.username, role: account.role, canWrite: db.canWrite(account) };
+}
+
 /* ------------------------------------------------------------- Routen */
 
 /**
- * Jede Route: [Methode, Pfad-Regex, Handler].
- * Die Gruppen der Regex landen als Parameter im Handler.
+ * Jede Route: [Methode, Pfad-Regex, Handler, Zugriff].
+ * Zugriff: "public" (ohne Anmeldung), "read" (jeder Angemeldete, Standard)
+ * oder "write" (Admin und Rolle "rw").
+ * Handler bekommen (req, res, ctx, ...Regex-Gruppen); ctx.account ist der
+ * angemeldete Benutzer, ctx.token das Sitzungstoken.
  */
 const routes = [
   ["GET", /^\/api\/health$/, async (req, res) => {
-    sendJson(res, 200, {
-      status: "ok",
-      schemaVersion: db.SCHEMA_VERSION,
-      stats: db.getStats(),
-    });
+    sendJson(res, 200, { status: "ok", schemaVersion: db.SCHEMA_VERSION });
+  }, "public"],
+
+  /* ---- Anmeldung ---- */
+  ["GET", /^\/api\/auth\/status$/, async (req, res, ctx) => {
+    sendJson(res, 200, { user: ctx.account ? describeAccount(ctx.account) : null });
+  }, "public"],
+
+  ["POST", /^\/api\/auth\/login$/, async (req, res) => {
+    const ip = clientIp(req);
+    checkLoginRateLimit(ip);
+    const body = await readJson(req);
+    const account = db.authenticate(body.username, body.password);
+    if (!account) {
+      recordLoginFailure(ip);
+      throw new HttpError(401, "Benutzername oder Passwort stimmt nicht.");
+    }
+    loginFailures.delete(ip);
+    setSessionCookie(req, res, db.createSession(account.id));
+    sendJson(res, 200, { user: describeAccount(account) });
+  }, "public"],
+
+  ["POST", /^\/api\/auth\/logout$/, async (req, res, ctx) => {
+    db.deleteSession(ctx.token);
+    clearSessionCookie(req, res);
+    sendEmpty(res, 204);
+  }, "public"],
+
+  // Eigenes Passwort - darf jeder Angemeldete, auch mit Nur-lesen-Rechten.
+  ["POST", /^\/api\/auth\/password$/, async (req, res, ctx) => {
+    const body = await readJson(req);
+    db.changeOwnPassword(ctx.account.id, body.currentPassword, body.newPassword, ctx.account.tokenHash);
+    sendEmpty(res, 204);
   }],
+
+  /* ---- Benutzerverwaltung (Admin und "rw") ---- */
+  ["GET", /^\/api\/users$/, async (req, res) => {
+    sendJson(res, 200, db.listAccounts());
+  }, "write"],
+
+  ["POST", /^\/api\/users$/, async (req, res) => {
+    const body = await readJson(req);
+    sendJson(res, 201, db.createAccount({ username: body.username, password: body.password, role: body.role }));
+  }, "write"],
+
+  // Body: { username?, role?, password? } - der Admin (id 0) ist gesperrt.
+  ["PATCH", /^\/api\/users\/([^/]+)$/, async (req, res, ctx, id) => {
+    const body = await readJson(req);
+    const changes = {};
+    for (const key of ["username", "role", "password"]) if (key in body) changes[key] = body[key];
+    sendJson(res, 200, db.updateAccount(id, changes, ctx.account.id));
+  }, "write"],
+
+  ["DELETE", /^\/api\/users\/([^/]+)$/, async (req, res, ctx, id) => {
+    sendJson(res, 200, db.deleteAccount(id, ctx.account.id));
+  }, "write"],
 
   // Alles fuer den Startaufbau in einem Rutsch.
   ["GET", /^\/api\/state$/, async (req, res) => {
@@ -108,34 +246,35 @@ const routes = [
     }));
   }],
 
-  ["POST", /^\/api\/recipes$/, async (req, res) => {
-    const recipe = db.createRecipe(await readJson(req));
+  ["POST", /^\/api\/recipes$/, async (req, res, ctx) => {
+    const recipe = db.createRecipe(await readJson(req), ctx.account.id);
     res.setHeader("Location", `/api/recipes/${recipe.id}`);
     sendJson(res, 201, recipe);
-  }],
+  }, "write"],
 
-  ["GET", /^\/api\/recipes\/([^/]+)$/, async (req, res, id) => {
+  ["GET", /^\/api\/recipes\/([^/]+)$/, async (req, res, ctx, id) => {
     const recipe = db.getRecipe(id);
     if (!recipe) throw new HttpError(404, `Rezept "${id}" nicht gefunden.`);
     sendJson(res, 200, recipe);
   }],
 
-  ["PUT", /^\/api\/recipes\/([^/]+)$/, async (req, res, id) => {
+  ["PUT", /^\/api\/recipes\/([^/]+)$/, async (req, res, ctx, id) => {
     sendJson(res, 200, db.updateRecipe(id, await readJson(req)));
-  }],
+  }, "write"],
 
-  ["DELETE", /^\/api\/recipes\/([^/]+)$/, async (req, res, id) => {
+  ["DELETE", /^\/api\/recipes\/([^/]+)$/, async (req, res, ctx, id) => {
     if (!db.deleteRecipe(id)) throw new HttpError(404, `Rezept "${id}" nicht gefunden.`);
     sendEmpty(res, 204);
-  }],
+  }, "write"],
 
   /* ---- Bilder ---- */
-  ["GET", /^\/api\/images\/([^/]+)$/, async (req, res, id) => {
+  ["GET", /^\/api\/images\/([^/]+)$/, async (req, res, ctx, id) => {
     const image = db.getImage(id);
     if (!image) throw new HttpError(404, `Bild "${id}" nicht gefunden.`);
 
     // Bilddaten sind unveraenderlich: neue Bytes bekommen immer eine neue id.
-    // Darum darf der Browser sie dauerhaft cachen.
+    // Darum darf der Browser sie dauerhaft cachen - aber nur privat, nicht
+    // in geteilten Caches, weil Bilder nur fuer Angemeldete sind.
     const etag = `"${image.id}"`;
     if (req.headers["if-none-match"] === etag) {
       res.writeHead(304, { ETag: etag });
@@ -146,7 +285,7 @@ const routes = [
     res.writeHead(200, {
       "Content-Type": image.mime,
       "Content-Length": buf.length,
-      "Cache-Control": "public, max-age=31536000, immutable",
+      "Cache-Control": "private, max-age=31536000, immutable",
       ETag: etag,
     });
     res.end(buf);
@@ -159,20 +298,20 @@ const routes = [
 
   ["POST", /^\/api\/fridge$/, async (req, res) => {
     sendJson(res, 201, db.addFridgeItem(await readJson(req)));
-  }],
+  }, "write"],
 
   ["DELETE", /^\/api\/fridge$/, async (req, res) => {
     sendJson(res, 200, { deleted: db.clearFridge() });
-  }],
+  }, "write"],
 
-  ["PATCH", /^\/api\/fridge\/([^/]+)$/, async (req, res, id) => {
+  ["PATCH", /^\/api\/fridge\/([^/]+)$/, async (req, res, ctx, id) => {
     sendJson(res, 200, db.updateFridgeItem(id, await readJson(req)));
-  }],
+  }, "write"],
 
-  ["DELETE", /^\/api\/fridge\/([^/]+)$/, async (req, res, id) => {
+  ["DELETE", /^\/api\/fridge\/([^/]+)$/, async (req, res, ctx, id) => {
     if (!db.deleteFridgeItem(id)) throw new HttpError(404, `Eintrag "${id}" nicht gefunden.`);
     sendEmpty(res, 204);
-  }],
+  }, "write"],
 
   /* ---- Zutaten-Katalog ---- */
   ["GET", /^\/api\/catalog$/, async (req, res) => {
@@ -182,17 +321,17 @@ const routes = [
   ["POST", /^\/api\/catalog$/, async (req, res) => {
     const body = await readJson(req);
     sendJson(res, 201, { name: db.addCatalogEntry(body && body.name) });
-  }],
+  }, "write"],
 
-  ["DELETE", /^\/api\/catalog\/([^/]+)$/, async (req, res, name) => {
+  ["DELETE", /^\/api\/catalog\/([^/]+)$/, async (req, res, ctx, name) => {
     if (!db.deleteCatalogEntry(name)) throw new HttpError(404, `Katalogeintrag "${name}" nicht gefunden.`);
     sendEmpty(res, 204);
-  }],
+  }, "write"],
 
   /* ---- Import aus dem alten localStorage-Bestand ---- */
-  ["POST", /^\/api\/import$/, async (req, res) => {
-    sendJson(res, 200, db.importState(await readJson(req)));
-  }],
+  ["POST", /^\/api\/import$/, async (req, res, ctx) => {
+    sendJson(res, 200, db.importState(await readJson(req), ctx.account.id));
+  }, "write"],
 ];
 
 /**
@@ -203,14 +342,21 @@ async function handle(req, res, pathname) {
   if (!pathname.startsWith("/api/") && pathname !== "/api") return false;
 
   const allowedForPath = new Set();
-  for (const [method, pattern, handler] of routes) {
+  for (const [method, pattern, handler, access = "read"] of routes) {
     const match = pattern.exec(pathname);
     if (!match) continue;
     allowedForPath.add(method);
     if (req.method !== method) continue;
 
     try {
-      await handler(req, res, ...match.slice(1).map(decodeURIComponent));
+      checkOrigin(req);
+      const token = readCookie(req, SESSION_COOKIE);
+      const account = db.getSessionAccount(token);
+      if (access !== "public" && !account) throw new HttpError(401, "Bitte anmelden.");
+      if (access === "write" && !db.canWrite(account)) {
+        throw new HttpError(403, "Dafür fehlen die Rechte – dieser Benutzer darf nur lesen.");
+      }
+      await handler(req, res, { account, token }, ...match.slice(1).map(decodeURIComponent));
     } catch (err) {
       if (res.headersSent) { res.destroy(); return true; }
       if (err instanceof HttpError) {

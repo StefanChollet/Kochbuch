@@ -13,7 +13,8 @@
 const { DatabaseSync } = require("node:sqlite");
 const crypto = require("node:crypto");
 
-const SCHEMA_VERSION = 1;
+// 2: Benutzer (accounts) mit Rollen, Sitzungen, recipes.created_by
+const SCHEMA_VERSION = 2;
 
 // Feste Auswahl fuer das Feld Kategorie (genau eine je Rezept, oder keine = "").
 // Die Liste liegt bewusst nur hier; der Client bekommt sie ueber /api/state.
@@ -83,9 +84,36 @@ CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- Benutzer. Rolle: 'admin' (genau einer, fest id 0), 'rw' (lesen + schreiben),
+-- 'r' (nur lesen). Der CHECK erzwingt: id 0 <=> admin.
+-- (Eigener Tabellenname: eine alte, nicht mehr genutzte Tabelle "users"
+-- kann in bestehenden Datenbanken noch liegen.)
+CREATE TABLE IF NOT EXISTS accounts (
+  id            INTEGER PRIMARY KEY,
+  username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  password_hash TEXT NOT NULL,
+  role          TEXT NOT NULL CHECK (role IN ('admin', 'rw', 'r')),
+  created_at    TEXT NOT NULL,
+  CHECK ((id = 0) = (role = 'admin'))
+);
+
+-- Gespeichert wird nur der SHA-256 des Tokens, nie das Token selbst.
+CREATE TABLE IF NOT EXISTS account_sessions (
+  token_hash TEXT PRIMARY KEY,
+  account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_account_sessions_account ON account_sessions(account_id);
 `;
 
-function open(file) {
+/**
+ * Oeffnet die Datenbank und bringt das Schema auf Stand. Fehlt der Admin,
+ * wird er angelegt; generatedAdminPassword ist dann sein Startpasswort
+ * (zufaellig, falls options.adminPassword fehlt), sonst null.
+ */
+function open(file, options = {}) {
   db = new DatabaseSync(file);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA foreign_keys = ON");
@@ -97,6 +125,15 @@ function open(file) {
   if (!recipeColumns.includes("category")) {
     db.exec("ALTER TABLE recipes ADD COLUMN category TEXT NOT NULL DEFAULT ''");
   }
+  // Den festen Admin zuerst - der Rezeptbestand unten verweist auf ihn.
+  const generatedAdminPassword = ensureAdmin(options.adminPassword);
+
+  // Schema 2: wer ein Rezept angelegt hat (nur zur Anzeige). Der Bestand
+  // von vorher bekommt den Admin.
+  if (!recipeColumns.includes("created_by")) {
+    db.exec("ALTER TABLE recipes ADD COLUMN created_by INTEGER REFERENCES accounts(id) ON DELETE SET NULL");
+    db.exec("UPDATE recipes SET created_by = 0");
+  }
 
   const row = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get();
   if (!row) {
@@ -105,8 +142,11 @@ function open(file) {
     throw new Error(
       `Datenbank hat Schema-Version ${row.value}, dieser Server kennt nur ${SCHEMA_VERSION}.`
     );
+  } else if (Number(row.value) < SCHEMA_VERSION) {
+    db.prepare("UPDATE meta SET value = ? WHERE key = 'schema_version'").run(String(SCHEMA_VERSION));
   }
-  return db;
+  db.prepare("DELETE FROM account_sessions WHERE expires_at < ?").run(nowIso());
+  return { generatedAdminPassword };
 }
 
 function close() {
@@ -171,6 +211,7 @@ const RECIPE_SORT_COLUMNS = {
   name: "r.name COLLATE NOCASE",
   shortDesc: "r.short_desc COLLATE NOCASE",
   updatedAt: "r.updated_at",
+  createdBy: "a.username COLLATE NOCASE",
 };
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
@@ -220,10 +261,12 @@ function listRecipesPage(options = {}) {
 
   const items = db.prepare(`
     SELECT r.id, r.name, r.short_desc AS shortDesc, r.updated_at AS updatedAt,
+           a.username AS createdByName,
            (SELECT COUNT(*) FROM ingredients i WHERE i.recipe_id = r.id) AS ingredientCount,
            (SELECT COUNT(*) FROM images g      WHERE g.recipe_id = r.id) AS imageCount,
            (SELECT id FROM images g WHERE g.recipe_id = r.id ORDER BY position LIMIT 1) AS firstImageId
     FROM recipes r
+    LEFT JOIN accounts a ON a.id = r.created_by
     ${where}
     ORDER BY ${RECIPE_SORT_COLUMNS[sortBy]} ${sortDir}, r.id ${sortDir}
     LIMIT ? OFFSET ?
@@ -242,9 +285,11 @@ function listRecipesPage(options = {}) {
 
 function getRecipe(id) {
   const recipe = db.prepare(`
-    SELECT id, name, short_desc AS shortDesc, long_text AS longText, category,
-           created_at AS createdAt, updated_at AS updatedAt
-    FROM recipes WHERE id = ?
+    SELECT r.id, r.name, r.short_desc AS shortDesc, r.long_text AS longText, r.category,
+           r.created_at AS createdAt, r.updated_at AS updatedAt,
+           r.created_by AS createdBy, a.username AS createdByName
+    FROM recipes r LEFT JOIN accounts a ON a.id = r.created_by
+    WHERE r.id = ?
   `).get(id);
   if (!recipe) return null;
 
@@ -340,18 +385,22 @@ function normalizeCategory(value) {
   return category;
 }
 
-function createRecipe(input) {
+function insertRecipe(id, data, accountId) {
+  const ts = nowIso();
+  db.prepare(`
+    INSERT INTO recipes (id, name, short_desc, long_text, category, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, data.name, data.shortDesc, data.longText, data.category, accountId, ts, ts);
+}
+
+function createRecipe(input, accountId) {
   const data = normalizeRecipeInput(input);
   const id = typeof input.id === "string" && input.id.trim() ? input.id.trim() : makeId();
   return transaction(() => {
     if (db.prepare("SELECT 1 FROM recipes WHERE id = ?").get(id)) {
       throw new HttpError(409, `Es existiert bereits ein Rezept mit der id "${id}".`);
     }
-    const ts = nowIso();
-    db.prepare(`
-      INSERT INTO recipes (id, name, short_desc, long_text, category, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, data.name, data.shortDesc, data.longText, data.category, ts, ts);
+    insertRecipe(id, data, accountId);
     writeIngredients(id, data.ingredients);
     writeImages(id, data.images);
     syncCatalogFromIngredients(data.ingredients);
@@ -454,7 +503,7 @@ function deleteCatalogEntry(name) {
  * Uebernimmt einen kompletten Datenbestand im alten localStorage-Format.
  * Bestehende Datensaetze (gleiche id) werden uebersprungen, nicht ueberschrieben.
  */
-function importState(state) {
+function importState(state, accountId) {
   if (!state || typeof state !== "object") throw new HttpError(400, "Import-Daten fehlen.");
   const recipes = Array.isArray(state.recipes) ? state.recipes : [];
   const fridge = Array.isArray(state.fridge) ? state.fridge : [];
@@ -468,11 +517,7 @@ function importState(state) {
       const id = typeof recipe.id === "string" && recipe.id.trim() ? recipe.id.trim() : makeId();
       if (db.prepare("SELECT 1 FROM recipes WHERE id = ?").get(id)) { result.skipped++; continue; }
       const data = normalizeRecipeInput(recipe);
-      const ts = nowIso();
-      db.prepare(`
-        INSERT INTO recipes (id, name, short_desc, long_text, category, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(id, data.name, data.shortDesc, data.longText, data.category, ts, ts);
+      insertRecipe(id, data, accountId);
       writeIngredients(id, data.ingredients);
       // Altbestand kennt nur dataUrl-Bilder; ids aus dem Browser gelten hier nicht.
       writeImages(id, data.images.map((img) => ({ name: img && img.name, dataUrl: img && img.dataUrl })));
@@ -516,7 +561,232 @@ function getStats() {
     imageBytes: db.prepare("SELECT COALESCE(SUM(bytes), 0) AS n FROM images").get().n,
     fridgeItems: one("SELECT COUNT(*) AS n FROM fridge_items"),
     catalogEntries: one("SELECT COUNT(*) AS n FROM ingredient_catalog"),
+    accounts: one("SELECT COUNT(*) AS n FROM accounts"),
   };
+}
+
+/* ------------------------------------------------------------ Benutzer */
+
+// Rollen: "admin" (genau einer, fest id 0, unveraenderlich), "rw" (lesen und
+// schreiben, inkl. Benutzerverwaltung), "r" (nur lesen).
+const ADMIN_ID = 0;
+const ADMIN_USERNAME = "admin";
+const SESSION_DAYS = 30;
+// Restlaufzeit, unter der eine aktiv genutzte Sitzung wieder auf volle Dauer verlaengert wird.
+const SESSION_RENEW_DAYS = 15;
+const MIN_PASSWORD_LENGTH = 8;
+const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 };
+
+/** Passwort-Hash im Format scrypt$N$r$p$salz$hash (beides Base64). */
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.scryptSync(password, salt, 64, SCRYPT_PARAMS);
+  const { N, r, p } = SCRYPT_PARAMS;
+  return `scrypt$${N}$${r}$${p}$${salt.toString("base64")}$${hash.toString("base64")}`;
+}
+
+function verifyPassword(password, stored) {
+  const [kind, N, r, p, salt, hash] = String(stored).split("$");
+  if (kind !== "scrypt") return false;
+  const expected = Buffer.from(hash, "base64");
+  const actual = crypto.scryptSync(password, Buffer.from(salt, "base64"), expected.length, {
+    N: Number(N), r: Number(r), p: Number(p),
+  });
+  return crypto.timingSafeEqual(actual, expected);
+}
+
+// Fuer unbekannte Benutzernamen wird trotzdem ein Hash geprueft, damit die
+// Antwortzeit nicht verraet, ob es den Namen gibt.
+const DUMMY_HASH = hashPassword(crypto.randomBytes(16).toString("hex"));
+
+function normalizeUsername(value) {
+  const name = text(value, "Benutzername", { max: 40, required: true });
+  if (name.length < 2) throw new HttpError(400, "Der Benutzername braucht mindestens 2 Zeichen.");
+  if (!/^[\p{L}\p{N}._ -]+$/u.test(name)) {
+    throw new HttpError(400, "Der Benutzername darf nur Buchstaben, Ziffern, Leerzeichen sowie . _ - enthalten.");
+  }
+  return name;
+}
+
+function validatePassword(value) {
+  const password = value == null ? "" : String(value);
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    throw new HttpError(400, `Das Passwort braucht mindestens ${MIN_PASSWORD_LENGTH} Zeichen.`);
+  }
+  if (password.length > 200) throw new HttpError(400, "Das Passwort ist zu lang (max. 200 Zeichen).");
+  return password;
+}
+
+/** Rollen, die die Benutzerverwaltung vergeben darf - "admin" gibt es nur einmal, fest. */
+function normalizeRole(value) {
+  if (value !== "rw" && value !== "r") {
+    throw new HttpError(400, 'Rolle muss "rw" (lesen und schreiben) oder "r" (nur lesen) sein.');
+  }
+  return value;
+}
+
+function publicAccount(row) {
+  return row ? { id: row.id, username: row.username, role: row.role } : null;
+}
+
+/** Schreiben duerfen Admin und "rw" - Rezepte, Kuehlschrank, Katalog und Benutzerverwaltung. */
+function canWrite(account) {
+  return !!account && (account.role === "admin" || account.role === "rw");
+}
+
+function getAccount(id) {
+  return publicAccount(db.prepare("SELECT id, username, role FROM accounts WHERE id = ?").get(Number(id)));
+}
+
+/**
+ * Legt den festen Admin (id 0) an, falls er fehlt. Startpasswort: das
+ * uebergebene, sonst zufaellig. Liefert es nur beim Anlegen zurueck.
+ */
+function ensureAdmin(initialPassword) {
+  if (db.prepare("SELECT 1 FROM accounts WHERE id = ?").get(ADMIN_ID)) return null;
+  const password = initialPassword
+    ? validatePassword(initialPassword)
+    : crypto.randomBytes(12).toString("base64url");
+  db.prepare("INSERT INTO accounts (id, username, password_hash, role, created_at) VALUES (?, ?, ?, 'admin', ?)")
+    .run(ADMIN_ID, ADMIN_USERNAME, hashPassword(password), nowIso());
+  return password;
+}
+
+function listAccounts() {
+  return db.prepare(`
+    SELECT a.id, a.username, a.role, a.created_at AS createdAt,
+           (SELECT COUNT(*) FROM recipes r WHERE r.created_by = a.id) AS recipeCount
+    FROM accounts a ORDER BY a.id = 0 DESC, a.username COLLATE NOCASE
+  `).all();
+}
+
+/** Der Admin ist fest: er laesst sich ueber die Verwaltung weder aendern noch loeschen. */
+function requireEditableAccount(id) {
+  const account = getAccount(id);
+  if (!account) throw new HttpError(404, "Benutzer nicht gefunden.");
+  if (account.id === ADMIN_ID) {
+    throw new HttpError(403, "Der Admin ist fest und kann nicht verändert oder gelöscht werden.");
+  }
+  return account;
+}
+
+function createAccount(input) {
+  const username = normalizeUsername(input && input.username);
+  const password = validatePassword(input && input.password);
+  const role = normalizeRole(input && input.role);
+  return transaction(() => {
+    if (db.prepare("SELECT 1 FROM accounts WHERE username = ?").get(username)) {
+      throw new HttpError(409, `Den Benutzernamen "${username}" gibt es schon.`);
+    }
+    // id 0 gehoert dem Admin, alle anderen zaehlen ab 1 hoch.
+    const id = db.prepare("SELECT MAX(COALESCE(MAX(id), 0) + 1, 1) AS n FROM accounts").get().n;
+    db.prepare("INSERT INTO accounts (id, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(id, username, hashPassword(password), role, nowIso());
+    return getAccount(id);
+  });
+}
+
+/** Aendert einen Benutzer: { username?, role?, password? }. */
+function updateAccount(id, changes, actingId) {
+  if (!changes || typeof changes !== "object") throw new HttpError(400, "Keine Aenderungen uebergeben.");
+  return transaction(() => {
+    const account = requireEditableAccount(id);
+    if ("username" in changes) {
+      const username = normalizeUsername(changes.username);
+      const clash = db.prepare("SELECT id FROM accounts WHERE username = ?").get(username);
+      if (clash && clash.id !== account.id) {
+        throw new HttpError(409, `Den Benutzernamen "${username}" gibt es schon.`);
+      }
+      db.prepare("UPDATE accounts SET username = ? WHERE id = ?").run(username, account.id);
+    }
+    if ("role" in changes) {
+      const role = normalizeRole(changes.role);
+      if (account.id === actingId && role !== account.role) {
+        throw new HttpError(400, "Die eigenen Rechte kann man nicht selbst ändern.");
+      }
+      db.prepare("UPDATE accounts SET role = ? WHERE id = ?").run(role, account.id);
+    }
+    if ("password" in changes) {
+      db.prepare("UPDATE accounts SET password_hash = ? WHERE id = ?")
+        .run(hashPassword(validatePassword(changes.password)), account.id);
+      // Neues Passwort: alle bestehenden Anmeldungen dieses Benutzers beenden.
+      db.prepare("DELETE FROM account_sessions WHERE account_id = ?").run(account.id);
+    }
+    return getAccount(account.id);
+  });
+}
+
+/** Loescht einen Benutzer. Seine Rezepte bleiben, nur "erstellt von" wird leer. */
+function deleteAccount(id, actingId) {
+  const account = requireEditableAccount(id);
+  if (account.id === actingId) throw new HttpError(400, "Man kann sich nicht selbst löschen.");
+  db.prepare("DELETE FROM accounts WHERE id = ?").run(account.id);
+  return { deleted: account.username };
+}
+
+/** Prueft Benutzername + Passwort; liefert den Benutzer oder null. */
+function authenticate(username, password) {
+  const row = db.prepare("SELECT id, username, role, password_hash AS hash FROM accounts WHERE username = ?")
+    .get(String(username || "").trim());
+  const ok = verifyPassword(String(password || ""), row ? row.hash : DUMMY_HASH);
+  return ok && row ? publicAccount(row) : null;
+}
+
+/** Eigenes Passwort aendern - das darf jeder, auch der Admin. */
+function changeOwnPassword(accountId, currentPassword, newPassword, keepTokenHash) {
+  const row = db.prepare("SELECT password_hash AS hash FROM accounts WHERE id = ?").get(accountId);
+  if (!row || !verifyPassword(String(currentPassword || ""), row.hash)) {
+    throw new HttpError(400, "Das bisherige Passwort stimmt nicht.");
+  }
+  db.prepare("UPDATE accounts SET password_hash = ? WHERE id = ?")
+    .run(hashPassword(validatePassword(newPassword)), accountId);
+  // Andere Geraete abmelden, die aktuelle Sitzung bleibt.
+  db.prepare("DELETE FROM account_sessions WHERE account_id = ? AND token_hash <> ?")
+    .run(accountId, keepTokenHash || "");
+}
+
+/* ------------------------------------------------------------ Sitzungen */
+
+function hashToken(token) {
+  return crypto.createHash("sha256").update(String(token)).digest("hex");
+}
+
+function sessionExpiry() {
+  return new Date(Date.now() + SESSION_DAYS * 86400000).toISOString();
+}
+
+/** Legt eine Sitzung an und liefert das Token (nur hier im Klartext). */
+function createSession(accountId) {
+  const token = crypto.randomBytes(32).toString("base64url");
+  db.prepare("DELETE FROM account_sessions WHERE expires_at < ?").run(nowIso());
+  db.prepare("INSERT INTO account_sessions (token_hash, account_id, created_at, expires_at) VALUES (?, ?, ?, ?)")
+    .run(hashToken(token), accountId, nowIso(), sessionExpiry());
+  return token;
+}
+
+/** Benutzer zur Sitzung oder null; verlaengert aktiv genutzte Sitzungen. */
+function getSessionAccount(token) {
+  if (!token) return null;
+  const tokenHash = hashToken(token);
+  const row = db.prepare(`
+    SELECT s.expires_at AS expiresAt, a.id, a.username, a.role
+    FROM account_sessions s JOIN accounts a ON a.id = s.account_id
+    WHERE s.token_hash = ?
+  `).get(tokenHash);
+  if (!row) return null;
+  const remaining = Date.parse(row.expiresAt) - Date.now();
+  if (remaining <= 0) {
+    db.prepare("DELETE FROM account_sessions WHERE token_hash = ?").run(tokenHash);
+    return null;
+  }
+  if (remaining < SESSION_RENEW_DAYS * 86400000) {
+    db.prepare("UPDATE account_sessions SET expires_at = ? WHERE token_hash = ?").run(sessionExpiry(), tokenHash);
+  }
+  return { ...publicAccount(row), tokenHash };
+}
+
+function deleteSession(token) {
+  if (token) db.prepare("DELETE FROM account_sessions WHERE token_hash = ?").run(hashToken(token));
 }
 
 /* ---------------------------------------------------------- Empfehlungen */
@@ -758,4 +1028,17 @@ module.exports = {
   getState,
   getStats,
   getRecommendations,
+  ADMIN_ID,
+  SESSION_DAYS,
+  canWrite,
+  getAccount,
+  listAccounts,
+  createAccount,
+  updateAccount,
+  deleteAccount,
+  authenticate,
+  changeOwnPassword,
+  createSession,
+  getSessionAccount,
+  deleteSession,
 };
