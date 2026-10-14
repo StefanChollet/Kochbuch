@@ -272,7 +272,7 @@ Server das WAL zurück und räumt sie ab.
 
 | Rolle | Wer | Darf |
 |---|---|---|
-| `admin` | genau ein Benutzer, fest `id 0`, Name `admin` | alles; kann über die Verwaltung weder angelegt, verändert noch gelöscht werden |
+| `admin` | genau ein Benutzer, fest `id 0`, Name `stefan` (Konstante `ADMIN_USERNAME` in `db.js`) | alles; kann über die Verwaltung weder angelegt, verändert noch gelöscht werden |
 | `rw` – Lesen + Schreiben | beliebig viele | Rezepte anlegen, bearbeiten, löschen; Kühlschrank und Katalog; Benutzerverwaltung |
 | `r` – Nur lesen | beliebig viele | Rezepte, Details und Kühlschrank nur ansehen |
 

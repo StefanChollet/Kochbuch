@@ -570,7 +570,8 @@ function getStats() {
 // Rollen: "admin" (genau einer, fest id 0, unveraenderlich), "rw" (lesen und
 // schreiben, inkl. Benutzerverwaltung), "r" (nur lesen).
 const ADMIN_ID = 0;
-const ADMIN_USERNAME = "admin";
+// Name des festen Admins - eine Aenderung hier benennt ihn beim naechsten Start um.
+const ADMIN_USERNAME = "stefan";
 const SESSION_DAYS = 30;
 // Restlaufzeit, unter der eine aktiv genutzte Sitzung wieder auf volle Dauer verlaengert wird.
 const SESSION_RENEW_DAYS = 15;
@@ -643,7 +644,15 @@ function getAccount(id) {
  * uebergebene, sonst zufaellig. Liefert es nur beim Anlegen zurueck.
  */
 function ensureAdmin(initialPassword) {
-  if (db.prepare("SELECT 1 FROM accounts WHERE id = ?").get(ADMIN_ID)) return null;
+  const existing = db.prepare("SELECT username FROM accounts WHERE id = ?").get(ADMIN_ID);
+  if (existing) {
+    if (existing.username !== ADMIN_USERNAME) {
+      const clash = db.prepare("SELECT id FROM accounts WHERE username = ? AND id <> ?").get(ADMIN_USERNAME, ADMIN_ID);
+      if (clash) throw new Error(`Admin-Name "${ADMIN_USERNAME}" ist schon an Benutzer ${clash.id} vergeben.`);
+      db.prepare("UPDATE accounts SET username = ? WHERE id = ?").run(ADMIN_USERNAME, ADMIN_ID);
+    }
+    return null;
+  }
   const password = initialPassword
     ? validatePassword(initialPassword)
     : crypto.randomBytes(12).toString("base64url");
@@ -1029,6 +1038,7 @@ module.exports = {
   getStats,
   getRecommendations,
   ADMIN_ID,
+  ADMIN_USERNAME,
   SESSION_DAYS,
   canWrite,
   getAccount,

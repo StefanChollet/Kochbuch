@@ -156,7 +156,7 @@ server.listen(PORT, () => {
   console.log(`Benutzer:  ${stats.accounts} (inkl. admin)`);
   if (!dbExisted) console.log("Hinweis:   Datenbank wurde neu angelegt.");
   if (generatedAdminPassword && !process.env.KOCHBUCH_ADMIN_PASSWORD) {
-    console.log(`Hinweis:   Admin angelegt - Benutzer "admin", Startpasswort: ${generatedAdminPassword}`);
+    console.log(`Hinweis:   Admin angelegt - Benutzer "${db.ADMIN_USERNAME}", Startpasswort: ${generatedAdminPassword}`);
     console.log("           Bitte nach der ersten Anmeldung unter \"Passwort\" ändern.");
   }
   console.log("Beenden mit Strg+C");
