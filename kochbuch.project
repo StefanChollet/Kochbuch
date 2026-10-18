@@ -11,6 +11,9 @@
       "api.js",
       "db.js"
     ],
+    "tools": [
+      "testdaten.js"
+    ],
     "client": [
       "public/kochbuch.html",
       "public/kochbuch.css",
@@ -71,5 +74,5 @@
   },
   "description": "Schlanke Kochbuch-WebApp: Rezeptverwaltung mit Zutatenlisten, Bildupload und Kuehlschrank-Tracking. Daten in SQLite auf dem Server, Zugriff ueber eine REST-API.",
   "createdAt": "2026-09-07",
-  "updatedAt": "2026-10-13"
+  "updatedAt": "2026-10-18"
 }

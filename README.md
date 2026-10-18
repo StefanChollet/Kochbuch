@@ -246,6 +246,24 @@ Nur mitgeschickte Felder werden geändert. Ein leerer `name` wird abgelehnt.
 | Zutat: `name` / `amount` | 60 / 30 |
 | Kühlschrank: `name` / `amount` | 60 / 20 |
 
+## Testdaten
+
+```bash
+node testdaten.js               # 100 Rezepte + 20 Testbenutzer anlegen
+node testdaten.js --entfernen   # Testdaten wieder entfernen
+node testdaten.js --rezepte 300 --benutzer 50
+```
+
+Vorher den Server mit `Strg+C` beenden. Das Skript füllt Übersicht (Suche,
+Sortierung, Paging), Detaildialog (Kategorie, Zutaten, Zubereitung, 0–3
+SVG-Bilder) und Benutzerverwaltung (Rollen `rw`/`r`, Rezepte je Benutzer).
+Zeitstempel sind über das letzte Jahr verteilt; einige Randfälle (ohne
+Kategorie, Sonderzeichen, maximale Feldlängen, nur Name) sind dabei.
+Testrezepte haben ids mit `test-`, Testbenutzer werden in `meta`
+(`testdata_accounts`) vermerkt – ein erneuter Lauf ersetzt nur diese, echte
+Daten bleiben unberührt. Passwort aller Testbenutzer: `test1234`.
+Die Zutatennamen bleiben nach dem Entfernen im Zutaten-Katalog.
+
 ## Übernahme alter Browser-Daten
 
 Die erste Fassung hielt alles im `localStorage`. Liegt dort noch etwas und ist
