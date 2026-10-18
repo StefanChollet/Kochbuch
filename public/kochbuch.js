@@ -1205,6 +1205,22 @@ async function startApp(user){
   clearStatus();
   renderFridgeList();
   await offerLegacyImport();
+  await openRecipeFromUrl();
+}
+
+/**
+ * /?recipe=<id> oeffnet gleich das Rezept im Detaildialog - so fuehrt
+ * "Zurueck zum Rezept" aus der Kochansicht wieder an die richtige Stelle.
+ * Der Parameter wird danach aus der Adresse entfernt (Neuladen = normale Liste).
+ */
+async function openRecipeFromUrl(){
+  const params = new URLSearchParams(window.location.search);
+  const id = params.get("recipe");
+  if(!id) return;
+  params.delete("recipe");
+  const rest = params.toString();
+  window.history.replaceState(null, "", window.location.pathname + (rest ? `?${rest}` : ""));
+  await guard(async () => openRecipeDialog(await DB.getRecipe(id)));
 }
 
 /* =========================================================================

@@ -50,6 +50,7 @@ function splitSteps(text){
 }
 
 function render(recipe){
+  currentRecipeId = recipe.id;
   document.title = `${recipe.name} – Kochansicht`;
   document.getElementById("viewTitle").textContent = recipe.name;
 
@@ -115,6 +116,20 @@ document.addEventListener("visibilitychange", () => {
 });
 
 document.getElementById("printBtn").addEventListener("click", () => window.print());
+
+/* ---- Zurueck zum Rezept ----
+   Vom Rezeptdialog aus geoeffnet ist die Ansicht ein eigener Tab: den
+   schliessen, dahinter ist das Rezept im Kochbuch noch offen. Laesst der
+   Browser das Schliessen nicht zu (Ansicht per Link/Lesezeichen geoeffnet),
+   stattdessen das Kochbuch mit genau diesem Rezept im Detaildialog laden. */
+let currentRecipeId = null;
+
+document.getElementById("backBtn").addEventListener("click", () => {
+  const fallback = currentRecipeId ? `/?recipe=${encodeURIComponent(currentRecipeId)}` : "/";
+  window.close();
+  // Ist der Tab noch da, hat der Browser das Schliessen verweigert.
+  setTimeout(() => { if(!window.closed) window.location.replace(fallback); }, 150);
+});
 
 /* ---- Start ---- */
 (async function init(){

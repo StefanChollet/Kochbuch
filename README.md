@@ -301,6 +301,11 @@ eigene, rein lesende Seite zum Nachkochen: große Schrift, Zutaten zum
 Abhaken, nummerierte Schritte (eine Zeile im Zubereitungstext = ein Schritt),
 Bilder, *Bildschirm anlassen* (Screen Wake Lock) und *Drucken*.
 
+**← Zurück zum Rezept** schliesst die Kochansicht; dahinter ist das Rezept im
+Kochbuch-Tab noch offen. Lässt der Browser das Schliessen nicht zu (Ansicht per
+Link geöffnet), lädt der Button stattdessen `/?recipe=<id>` – das Kochbuch
+öffnet dann genau dieses Rezept im Detaildialog.
+
 - Adresse: `/kochansicht.html?code=<Code>`. Der Code ist bei jedem Klick neu,
   24–30 Zeichen lang (`A–Z a–z 0–9`, Länge und Zeichen per `crypto.randomInt`).
 - Einsehbar nur **angemeldet und mit gültigem Code**. Ohne Anmeldung zeigt die
