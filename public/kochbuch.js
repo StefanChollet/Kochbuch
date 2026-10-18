@@ -52,9 +52,9 @@ const enc = encodeURIComponent;
    ========================================================================= */
 const DB = {
   data: { fridge: [], ingredientCatalog: [], categoryOptions: [] },
-  // Aktuell angezeigte Seite der Rezeptuebersicht (Suche/Sortierung/Paging
-  // laufen serverseitig in SQL - siehe refreshRecipes()).
-  recipesPage: { items: [], total: 0, page: 1, pageSize: 20, totalPages: 1 },
+  // Bisher geladener Teil der Rezeptuebersicht (Suche/Sortierung/Seiten laufen
+  // serverseitig in SQL). items = alle schon geladenen Seiten, page = die letzte davon.
+  recipesPage: { items: [], total: 0, page: 0, pageSize: 25, totalPages: 1 },
 
   async load(){
     this.data = await API.get("/state");
@@ -85,15 +85,15 @@ const DB = {
     if(exclude.length) params.set("exclude", exclude.join(","));
     return API.get(`/recommendations?${params.toString()}`);
   },
-  async refreshRecipes(query){
+  /** Eine Seite der Uebersicht - aendert DB.recipesPage nicht, das macht der Aufrufer. */
+  async fetchRecipesPage(query, page, pageSize){
     const params = new URLSearchParams();
     if(query.search) params.set("search", query.search);
     params.set("sortBy", query.sortBy || "name");
     params.set("sortDir", query.sortDir || "asc");
-    params.set("page", String(query.page || 1));
-    params.set("pageSize", String(query.pageSize || 20));
-    this.recipesPage = await API.get(`/recipes?${params.toString()}`);
-    return this.recipesPage;
+    params.set("page", String(page));
+    params.set("pageSize", String(pageSize));
+    return API.get(`/recipes?${params.toString()}`);
   },
 
   // ---- Zutaten-Katalog ----
@@ -293,37 +293,103 @@ recommendationsRow.addEventListener("click", async (e) => {
 });
 
 /* =========================================================================
-   Rezept-Uebersicht (Tabelle) — mit Suche, Sortierung und Paging.
-   Suche/Sortierung/Paging laufen serverseitig; recipeQuery haelt den
-   aktuell angezeigten Zustand, loadRecipes() holt dazu die passende Seite.
+   Rezept-Uebersicht (Tabelle) — mit Suche, Sortierung und Lazy Loading.
+   Suche/Sortierung laufen serverseitig; recipeQuery haelt den aktuellen
+   Filter. Zuerst kommt eine Portion Rezepte, jede weitere laedt nach, sobald
+   das Listenende (#recipeLoadMore) in Sicht scrollt.
    ========================================================================= */
 const recipeTableBody = document.getElementById("recipeTableBody");
 const recipeEmptyState = document.getElementById("recipeEmptyState");
 const recipeSearchInput = document.getElementById("recipeSearchInput");
 const recipeSortSelect = document.getElementById("recipeSortSelect");
-const recipePageSizeSelect = document.getElementById("recipePageSizeSelect");
 const recipePagerInfo = document.getElementById("recipePagerInfo");
-const recipePageIndicator = document.getElementById("recipePageIndicator");
-const recipeFirstPageBtn = document.getElementById("recipeFirstPageBtn");
-const recipePrevPageBtn = document.getElementById("recipePrevPageBtn");
-const recipeNextPageBtn = document.getElementById("recipeNextPageBtn");
-const recipeLastPageBtn = document.getElementById("recipeLastPageBtn");
+const recipeTableScroll = document.getElementById("recipeTableScroll");
+const recipeLoadMore = document.getElementById("recipeLoadMore");
 const recipeResetFiltersBtn = document.getElementById("recipeResetFiltersBtn");
 
-const DEFAULT_RECIPE_QUERY = { search: "", sortBy: "name", sortDir: "asc", page: 1, pageSize: 20 };
+const RECIPE_BATCH_SIZE = 25;
+// So nah (px) am Listenende wird schon nachgeladen, damit kein Warten sichtbar wird.
+const RECIPE_PRELOAD_PX = 300;
+const DEFAULT_RECIPE_QUERY = { search: "", sortBy: "name", sortDir: "asc" };
 const recipeQuery = { ...DEFAULT_RECIPE_QUERY };
 
-/** Holt die zu recipeQuery passende Seite vom Server und zeichnet neu. */
-async function loadRecipes(){
-  const ok = await guard(() => DB.refreshRecipes(recipeQuery));
-  if(ok){
-    // Der Server kann die Seite begrenzt haben (z.B. nach einem Loeschen,
-    // das die letzte Seite leert) - recipeQuery synchron halten, sonst
-    // rechnen "Weiter"/"Zurueck" mit einer veralteten Seitenzahl.
-    recipeQuery.page = DB.recipesPage.page;
-  }
+// Jede neue Suche/Sortierung bekommt eine Nummer; Antworten zu einer
+// veralteten Nummer werden verworfen (sonst mischen sich alte Treffer ein).
+let recipeLoadGeneration = 0;
+let recipeLoading = false;
+
+/**
+ * Laedt die Liste neu. Standard: von vorn, erste Portion, nach oben gescrollt.
+ * keepLoaded: so viele Rezepte wie bisher geladen neu holen und die
+ * Scrollposition halten - fuer Aenderungen (speichern, loeschen) mitten in der Liste.
+ */
+async function loadRecipes({ keepLoaded = false } = {}){
+  const generation = ++recipeLoadGeneration;
+  const pages = keepLoaded ? Math.max(1, DB.recipesPage.page) : 1;
+  const scrollTop = keepLoaded ? recipeTableScroll.scrollTop : 0;
+  recipeLoading = true;
+  updateRecipeFooter();
+
+  let result = null;
+  const ok = await guard(async () => {
+    let items = [];
+    let last = null;
+    for(let page = 1; page <= pages; page++){
+      const next = await DB.fetchRecipesPage(recipeQuery, page, RECIPE_BATCH_SIZE);
+      if(generation !== recipeLoadGeneration) return;
+      // Der Server liefert bei zu hoher Seitenzahl die letzte - die haben wir schon.
+      if(next.page !== page) break;
+      items = items.concat(next.items);
+      last = next;
+      if(page >= next.totalPages) break;
+    }
+    result = { ...last, items };
+  });
+  if(generation !== recipeLoadGeneration) return;
+
+  recipeLoading = false;
+  if(ok && result) DB.recipesPage = result;
   renderRecipeTable();
+  recipeTableScroll.scrollTop = scrollTop;
+  if(ok) fillRecipeViewport();
 }
+
+/** Naechste Portion anhaengen - ausgeloest vom Scrollen ans Listenende. */
+async function loadMoreRecipes(){
+  const { page, totalPages } = DB.recipesPage;
+  if(recipeLoading || page === 0 || page >= totalPages) return;
+  const generation = recipeLoadGeneration;
+  recipeLoading = true;
+  updateRecipeFooter();
+
+  let added = [];
+  const ok = await guard(async () => {
+    const next = await DB.fetchRecipesPage(recipeQuery, page + 1, RECIPE_BATCH_SIZE);
+    if(generation !== recipeLoadGeneration || next.page !== page + 1) return;
+    // Wurde zwischendurch etwas angelegt, verschiebt sich die Liste um einen
+    // Platz - schon angezeigte Rezepte darum nicht doppelt aufnehmen.
+    const known = new Set(DB.recipesPage.items.map(r => r.id));
+    added = next.items.filter(r => !known.has(r.id));
+    DB.recipesPage = { ...next, items: DB.recipesPage.items.concat(added) };
+  });
+  if(generation !== recipeLoadGeneration) return;
+
+  recipeLoading = false;
+  added.forEach(appendRecipeRow);
+  updateRecipeFooter();
+  if(ok) fillRecipeViewport();
+}
+
+/** Ist die Liste kuerzer als ihr Kasten, gibt es nichts zu scrollen - dann gleich weiterladen. */
+function fillRecipeViewport(){
+  const el = recipeTableScroll;
+  if(el.offsetParent === null) return; // Liste gerade nicht sichtbar
+  if(el.scrollHeight - el.scrollTop - el.clientHeight < RECIPE_PRELOAD_PX) loadMoreRecipes();
+}
+
+new IntersectionObserver((entries) => {
+  if(entries.some(e => e.isIntersecting)) loadMoreRecipes();
+}, { root: recipeTableScroll, rootMargin: `0px 0px ${RECIPE_PRELOAD_PX}px 0px` }).observe(recipeLoadMore);
 
 /**
  * Festes 16x16-Kochbild-Symbol pro Zeile - immer dasselbe Bild, es zeigt nur,
@@ -346,38 +412,47 @@ function recipeActions(recipe){
     : btn("edit", "👁️", "Ansehen");
 }
 
+function appendRecipeRow(recipe){
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td class="recipe-name-cell">${imageIndicator(recipe.imageCount)}${escapeHtml(recipe.name)}</td>
+    <td>${truncate(recipe.shortDesc, 100)}</td>
+    <td class="owner-cell">${escapeHtml(recipe.createdByName || "–")}</td>
+    <td class="menu-cell">${recipeActions(recipe)}</td>
+  `;
+  recipeTableBody.appendChild(tr);
+}
+
 function renderRecipeTable(){
-  const { items, total, page, totalPages } = DB.recipesPage;
+  const { items } = DB.recipesPage;
   const hasSearch = recipeQuery.search.trim().length > 0;
 
   recipeTableBody.innerHTML = "";
-  recipeEmptyState.hidden = items.length > 0;
+  recipeEmptyState.hidden = items.length > 0 || recipeLoading;
   recipeEmptyState.textContent = hasSearch
     ? `Keine Rezepte gefunden für "${recipeQuery.search.trim()}".`
     : canWrite()
       ? 'Noch keine Rezepte vorhanden. Leg mit "Rezept erstellen" los.'
       : "Noch keine Rezepte vorhanden.";
 
-  items.forEach(recipe => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td class="recipe-name-cell">${imageIndicator(recipe.imageCount)}${escapeHtml(recipe.name)}</td>
-      <td>${truncate(recipe.shortDesc, 100)}</td>
-      <td class="owner-cell">${escapeHtml(recipe.createdByName || "–")}</td>
-      <td class="menu-cell">${recipeActions(recipe)}</td>
-    `;
-    recipeTableBody.appendChild(tr);
-  });
+  items.forEach(appendRecipeRow);
+  updateRecipeFooter();
+}
 
-  const pageSize = recipeQuery.pageSize;
+/** Zeile unter der Liste ("x von y geladen") und Hinweis am Listenende. */
+function updateRecipeFooter(){
+  const { items, total, page, totalPages } = DB.recipesPage;
   recipePagerInfo.textContent = total === 0
-    ? "Keine Rezepte"
-    : `Rezept ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} von ${total}`;
-  recipePageIndicator.textContent = `Seite ${page} von ${totalPages}`;
-  recipeFirstPageBtn.disabled = page <= 1;
-  recipePrevPageBtn.disabled = page <= 1;
-  recipeNextPageBtn.disabled = page >= totalPages;
-  recipeLastPageBtn.disabled = page >= totalPages;
+    ? (recipeLoading ? "" : "Keine Rezepte")
+    : items.length >= total
+      ? `Alle ${total} Rezepte geladen`
+      : `${items.length} von ${total} Rezepten geladen – weiterscrollen für mehr`;
+
+  const more = page > 0 && page < totalPages;
+  recipeLoadMore.textContent = recipeLoading
+    ? "Rezepte werden geladen…"
+    : more ? "Weitere Rezepte…" : "";
+  recipeLoadMore.hidden = !recipeLoading && !more;
 }
 
 recipeTableBody.addEventListener("click", async (e) => {
@@ -401,7 +476,7 @@ recipeTableBody.addEventListener("click", async (e) => {
     if(!ok) return;
     await guard(async () => {
       await DB.deleteRecipe(id);
-      await loadRecipes();
+      await loadRecipes({ keepLoaded: true });
     }, { success: "Rezept gelöscht." });
   }
 });
@@ -412,7 +487,6 @@ recipeSearchInput.addEventListener("input", () => {
   clearTimeout(recipeSearchTimer);
   recipeSearchTimer = setTimeout(() => {
     recipeQuery.search = recipeSearchInput.value;
-    recipeQuery.page = 1;
     loadRecipes();
   }, 300);
 });
@@ -420,7 +494,6 @@ recipeSearchInput.addEventListener("keydown", (e) => {
   if(e.key !== "Enter") return;
   clearTimeout(recipeSearchTimer);
   recipeQuery.search = recipeSearchInput.value;
-  recipeQuery.page = 1;
   loadRecipes();
 });
 
@@ -429,20 +502,8 @@ recipeSortSelect.addEventListener("change", () => {
   const [sortBy, sortDir] = recipeSortSelect.value.split("-");
   recipeQuery.sortBy = sortBy;
   recipeQuery.sortDir = sortDir;
-  recipeQuery.page = 1;
   loadRecipes();
 });
-
-/* ---- Paging ---- */
-recipePageSizeSelect.addEventListener("change", () => {
-  recipeQuery.pageSize = Number(recipePageSizeSelect.value) || 20;
-  recipeQuery.page = 1;
-  loadRecipes();
-});
-recipeFirstPageBtn.addEventListener("click", () => { recipeQuery.page = 1; loadRecipes(); });
-recipePrevPageBtn.addEventListener("click", () => { recipeQuery.page = Math.max(1, recipeQuery.page - 1); loadRecipes(); });
-recipeNextPageBtn.addEventListener("click", () => { recipeQuery.page += 1; loadRecipes(); });
-recipeLastPageBtn.addEventListener("click", () => { recipeQuery.page = DB.recipesPage.totalPages; loadRecipes(); });
 
 /* ---- Filter zuruecksetzen ---- */
 recipeResetFiltersBtn.addEventListener("click", () => {
@@ -450,7 +511,6 @@ recipeResetFiltersBtn.addEventListener("click", () => {
   Object.assign(recipeQuery, DEFAULT_RECIPE_QUERY);
   recipeSearchInput.value = "";
   recipeSortSelect.value = "name-asc";
-  recipePageSizeSelect.value = "20";
   loadRecipes();
 });
 
@@ -686,7 +746,7 @@ recipeForm.addEventListener("submit", async (e) => {
 
   const ok = await guard(async () => {
     await DB.saveRecipe(payload);
-    await loadRecipes();
+    await loadRecipes({ keepLoaded: true });
     closeRecipeDialog();
   }, { success: "Rezept gespeichert." });
 
@@ -963,7 +1023,7 @@ usersTableBody.addEventListener("click", async (e) => {
         const updated = await API.patch(`/users/${enc(user.id)}`, { username });
         if(updated.id === currentUser.id) setCurrentUser({ ...currentUser, username: updated.username });
         await loadUsers();
-        await loadRecipes();
+        await loadRecipes({ keepLoaded: true });
       }, { success: `Benutzer umbenannt in ${username}.` });
       return;
     }
@@ -976,7 +1036,7 @@ usersTableBody.addEventListener("click", async (e) => {
       await guard(async () => {
         await API.del(`/users/${enc(user.id)}`);
         await loadUsers();
-        await loadRecipes();
+        await loadRecipes({ keepLoaded: true });
       }, { success: `Benutzer ${user.username} gelöscht.` });
     }
   }
@@ -1107,7 +1167,6 @@ async function startApp(user){
   Object.assign(recipeQuery, DEFAULT_RECIPE_QUERY);
   recipeSearchInput.value = "";
   recipeSortSelect.value = "name-asc";
-  recipePageSizeSelect.value = "20";
 
   const loaded = await guard(() => DB.load());
   if(!loaded) return;

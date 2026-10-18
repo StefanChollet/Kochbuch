@@ -105,7 +105,8 @@
       <button type="button" id="recipeResetFiltersBtn" class="btn btn-ghost btn-small" title="Suche und Sortierung zurücksetzen">Zurücksetzen</button>
     </div>
 
-    <div class="recipe-table-scroll">
+    <!-- Lazy Loading: beim Scrollen ans Ende laedt die naechste Portion nach -->
+    <div class="recipe-table-scroll" id="recipeTableScroll">
       <table class="recipe-table">
         <thead>
           <tr>
@@ -120,24 +121,12 @@
         </tbody>
       </table>
       <p id="recipeEmptyState" class="empty-state" hidden>Noch keine Rezepte vorhanden. Leg mit "Rezept erstellen" los.</p>
+      <!-- Merker am Listenende: wird er sichtbar, kommen die naechsten Rezepte -->
+      <div id="recipeLoadMore" class="recipe-load-more" aria-live="polite"></div>
     </div>
 
-    <div class="recipe-pager" id="recipePager">
+    <div class="recipe-pager">
       <p class="recipe-pager-info" id="recipePagerInfo"></p>
-      <div class="recipe-pager-controls">
-        <label for="recipePageSizeSelect" class="sr-only">Einträge pro Seite</label>
-        <select id="recipePageSizeSelect">
-          <option value="10">10 / Seite</option>
-          <option value="20" selected>20 / Seite</option>
-          <option value="50">50 / Seite</option>
-          <option value="100">100 / Seite</option>
-        </select>
-        <button type="button" id="recipeFirstPageBtn" class="btn btn-icon" aria-label="Erste Seite">«</button>
-        <button type="button" id="recipePrevPageBtn" class="btn btn-icon" aria-label="Vorherige Seite">‹</button>
-        <span id="recipePageIndicator" class="recipe-page-indicator"></span>
-        <button type="button" id="recipeNextPageBtn" class="btn btn-icon" aria-label="Nächste Seite">›</button>
-        <button type="button" id="recipeLastPageBtn" class="btn btn-icon" aria-label="Letzte Seite">»</button>
-      </div>
     </div>
   </section>
 

@@ -205,29 +205,22 @@ body{
 .recipe-sort-wrap select{ width:auto; min-width: 200px; }
 #recipeResetFiltersBtn{ flex: 0 0 auto; margin-left: auto; }
 
-/* ===== Recipe pager ===== */
+/* ===== Rezeptliste: Lazy Loading ===== */
 .recipe-pager{
-  display:flex;
-  flex-wrap:wrap;
-  align-items:center;
-  justify-content:space-between;
-  gap:.75rem;
   margin-top: 1rem;
   padding-top: .9rem;
   border-top: 1px solid var(--line);
 }
 .recipe-pager-info{ margin:0; color: var(--ink-soft); font-size:.82rem; }
-.recipe-pager-controls{
+/* Merker am Listenende - min-height, damit der IntersectionObserver ihn sicher sieht */
+.recipe-load-more{
+  min-height: 2.2rem;
   display:flex;
   align-items:center;
-  gap:.4rem;
-}
-.recipe-pager-controls select{ width:auto; }
-.recipe-page-indicator{
-  font-size:.85rem;
-  min-width: 108px;
-  text-align:center;
-  color: var(--ink);
+  justify-content:center;
+  color: var(--ink-soft);
+  font-size:.82rem;
+  font-style: italic;
 }
 .sr-only{
   position:absolute;

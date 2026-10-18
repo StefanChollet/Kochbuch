@@ -135,6 +135,11 @@ Leitung.
 Ein unbekannter `sortBy`-Wert fällt still auf `name` zurück; eine `page`
 jenseits der letzten Seite wird auf die letzte gültige Seite begrenzt.
 
+Die Oberfläche blättert nicht, sondern lädt per **Lazy Loading**: zuerst 25
+Rezepte, jede weitere Seite à 25, sobald das Listenende in Sicht scrollt
+(`IntersectionObserver`). Nach Speichern oder Löschen werden die bisher
+geladenen Seiten neu geholt und die Scrollposition bleibt erhalten.
+
 Antwort:
 
 ```json
@@ -255,7 +260,7 @@ node testdaten.js --rezepte 300 --benutzer 50
 ```
 
 Vorher den Server mit `Strg+C` beenden. Das Skript füllt Übersicht (Suche,
-Sortierung, Paging), Detaildialog (Kategorie, Zutaten, Zubereitung, 0–3
+Sortierung, Lazy Loading), Detaildialog (Kategorie, Zutaten, Zubereitung, 0–3
 SVG-Bilder) und Benutzerverwaltung (Rollen `rw`/`r`, Rezepte je Benutzer).
 Zeitstempel sind über das letzte Jahr verteilt; einige Randfälle (ohne
 Kategorie, Sonderzeichen, maximale Feldlängen, nur Name) sind dabei.
