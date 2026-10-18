@@ -14,7 +14,8 @@ const { DatabaseSync } = require("node:sqlite");
 const crypto = require("node:crypto");
 
 // 2: Benutzer (accounts) mit Rollen, Sitzungen, recipes.created_by
-const SCHEMA_VERSION = 2;
+// 3: Kochansicht-Links (recipe_views)
+const SCHEMA_VERSION = 3;
 
 // Feste Auswahl fuer das Feld Kategorie (genau eine je Rezept, oder keine = "").
 // Die Liste liegt bewusst nur hier; der Client bekommt sie ueber /api/state.
@@ -106,6 +107,16 @@ CREATE TABLE IF NOT EXISTS account_sessions (
   expires_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_account_sessions_account ON account_sessions(account_id);
+
+-- Kochansicht: zufaelliger Code (24-30 Zeichen) -> genau ein Rezept, nur lesen.
+-- Gespeichert wird nur der SHA-256 des Codes, nicht der Code selbst.
+CREATE TABLE IF NOT EXISTS recipe_views (
+  code_hash  TEXT PRIMARY KEY,
+  recipe_id  TEXT NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+  created_by INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_recipe_views_recipe ON recipe_views(recipe_id);
 `;
 
 /**
@@ -433,6 +444,39 @@ function deleteRecipe(id) {
 
 function getImage(id) {
   return db.prepare("SELECT id, name, mime, bytes, data FROM images WHERE id = ?").get(id) || null;
+}
+
+/* ------------------------------------------------------- Kochansicht */
+
+const VIEW_CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+const VIEW_CODE_MIN = 24;
+const VIEW_CODE_MAX = 30;
+const VIEW_CODE_PATTERN = new RegExp(`^[A-Za-z0-9]{${VIEW_CODE_MIN},${VIEW_CODE_MAX}}$`);
+
+/** Zufallscode aus crypto.randomInt - Laenge und jedes Zeichen gleichverteilt zufaellig. */
+function makeViewCode() {
+  const length = crypto.randomInt(VIEW_CODE_MIN, VIEW_CODE_MAX + 1);
+  let code = "";
+  for (let i = 0; i < length; i++) code += VIEW_CODE_ALPHABET[crypto.randomInt(VIEW_CODE_ALPHABET.length)];
+  return code;
+}
+
+/** Legt fuer ein Rezept einen neuen Kochansicht-Code an und liefert ihn (nur hier im Klartext). */
+function createRecipeView(recipeId, accountId) {
+  if (!db.prepare("SELECT 1 FROM recipes WHERE id = ?").get(recipeId)) {
+    throw new HttpError(404, `Rezept "${recipeId}" nicht gefunden.`);
+  }
+  const code = makeViewCode();
+  db.prepare("INSERT INTO recipe_views (code_hash, recipe_id, created_by, created_at) VALUES (?, ?, ?, ?)")
+    .run(hashToken(code), recipeId, accountId, nowIso());
+  return code;
+}
+
+/** Rezept zum Code oder null - unbekannte, falsch geformte oder verwaiste Codes sind alle gleich "nicht gefunden". */
+function getRecipeByView(code) {
+  if (!VIEW_CODE_PATTERN.test(String(code || ""))) return null;
+  const row = db.prepare("SELECT recipe_id AS recipeId FROM recipe_views WHERE code_hash = ?").get(hashToken(code));
+  return row ? getRecipe(row.recipeId) : null;
 }
 
 /* -------------------------------------------------------- Kuehlschrank */
@@ -1051,4 +1095,6 @@ module.exports = {
   createSession,
   getSessionAccount,
   deleteSession,
+  createRecipeView,
+  getRecipeByView,
 };

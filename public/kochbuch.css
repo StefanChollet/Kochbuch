@@ -664,3 +664,8 @@ body.is-readonly .write-only{ display:none !important; }
   .app-header{ flex-wrap:wrap; gap:.6rem; padding: 1rem; }
   .col-owner{ width:auto; }
 }
+
+/* Kochansicht-Button links in der Aktionsleiste des Rezeptdialogs */
+.dialog-actions .cook-view-btn{ margin-right:auto; }
+.cook-view-link{ margin:0; font-size:.85rem; }
+.cook-view-link a{ color: var(--accent); font-weight:600; word-break: break-all; }

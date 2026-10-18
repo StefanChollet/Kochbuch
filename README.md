@@ -48,9 +48,10 @@ nicht erreichbar.
 | `images` | Bilder als BLOB inkl. MIME-Typ, `recipe_id` → `recipes`, `ON DELETE CASCADE` |
 | `fridge_items` | Kühlschrank-Bestand |
 | `ingredient_catalog` | Vorschlagsliste, Primärschlüssel `COLLATE NOCASE` (»Mehl« = »mehl«) |
-| `meta` | u. a. `schema_version` (aktuell 2) |
+| `meta` | u. a. `schema_version` (aktuell 3) |
 | `accounts` | Benutzer: id (0 = Admin), Name (`COLLATE NOCASE`), scrypt-Passworthash, Rolle `admin`/`rw`/`r` |
 | `account_sessions` | Anmeldungen: SHA-256 des Sitzungstokens, Ablaufzeit; `ON DELETE CASCADE` mit dem Benutzer |
+| `recipe_views` | Kochansicht-Links: SHA-256 des Codes → Rezept (`ON DELETE CASCADE`), Ersteller, Zeitpunkt |
 
 Ein gelöschtes Rezept nimmt seine Zutaten und Bilder per Fremdschlüssel mit.
 `PRAGMA foreign_keys = ON` ist gesetzt, `journal_mode = WAL`.
@@ -96,6 +97,8 @@ Fehler kommen einheitlich als `{ "error": "..." }` mit passendem HTTP-Status
 | `POST` | `/api/users` | Benutzer anlegen `{ username, password, role: "rw" \| "r" }` (Schreibrecht) |
 | `PATCH` | `/api/users/:id` | `{ username?, role?, password? }` – nicht für den Admin (Schreibrecht) |
 | `DELETE` | `/api/users/:id` | Benutzer löschen – nicht den Admin, nicht sich selbst (Schreibrecht) |
+| `POST` | `/api/recipes/:id/views` | neuen Kochansicht-Link erzeugen → `{ code, url }` (Leserecht genügt) |
+| `GET` | `/api/views/:code` | das eine Rezept zum Code (angemeldet + gültiger Code, sonst 401/404) |
 | `GET` | `/api/state` | Kühlschrank + Katalog in einem Aufruf (Startaufbau) |
 | `GET` | `/api/recipes` | Rezeptübersicht: Suche, Sortierung, Paging |
 | `GET` | `/api/recommendations` | Empfehlungen aus Kühlschrank + Suchfilter |
@@ -290,6 +293,22 @@ Die Datenbank ist eine einzelne Datei. Server stoppen, `kochbuch.sqlite`
 kopieren, fertig. Im laufenden Betrieb gehören die Dateien `kochbuch.sqlite-wal`
 und `kochbuch.sqlite-shm` dazu; beim sauberen Beenden mit `Strg+C` schreibt der
 Server das WAL zurück und räumt sie ab.
+
+## Kochansicht
+
+Im Rezeptdialog öffnet **🍳 Kochansicht** das Rezept in einem neuen Tab als
+eigene, rein lesende Seite zum Nachkochen: große Schrift, Zutaten zum
+Abhaken, nummerierte Schritte (eine Zeile im Zubereitungstext = ein Schritt),
+Bilder, *Bildschirm anlassen* (Screen Wake Lock) und *Drucken*.
+
+- Adresse: `/kochansicht.html?code=<Code>`. Der Code ist bei jedem Klick neu,
+  24–30 Zeichen lang (`A–Z a–z 0–9`, Länge und Zeichen per `crypto.randomInt`).
+- Einsehbar nur **angemeldet und mit gültigem Code**. Ohne Anmeldung zeigt die
+  Seite einen Link zur Anmeldung und kehrt danach dorthin zurück (`/?next=`,
+  nur auf die Kochansicht selbst).
+- Der Code öffnet ausschließlich dieses eine Rezept zum Lesen; ändern lässt sich
+  darüber nichts. In der Datenbank liegt nur sein SHA-256. Wird das Rezept
+  gelöscht, sind seine Links ungültig.
 
 ## Benutzer und Rechte
 

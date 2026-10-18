@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Der Code in der URL ist ein Zugangsschluessel: nicht an fremde Seiten weitergeben -->
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<title>Kochansicht – Kochbuch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="kochbuch.css">
+<link rel="stylesheet" href="kochansicht.css">
+</head>
+<body>
+
+<!--
+  Kochansicht: zeigt genau ein Rezept zum Nachkochen, nur lesend.
+  Aufruf: kochansicht.html?code=<24-30 zufaellige Zeichen>
+  Voraussetzung: angemeldet im Kochbuch UND gueltiger Code.
+-->
+
+<header class="app-header">
+  <h1 class="app-title"><a href="/" class="view-home">Kochbuch</a> <span class="view-sub">· Kochansicht</span></h1>
+  <div class="view-tools" id="viewTools" hidden>
+    <label class="checkbox-label" title="Bildschirm bleibt an, solange diese Seite offen ist">
+      <input type="checkbox" id="wakeLockToggle"> Bildschirm anlassen
+    </label>
+    <button type="button" class="btn btn-ghost btn-small" id="printBtn">Drucken</button>
+  </div>
+</header>
+
+<p id="viewMessage" class="app-status view-message" role="status" hidden></p>
+
+<main id="viewMain" class="view-main" hidden>
+  <article class="panel view-recipe">
+    <p class="view-category" id="viewCategory" hidden></p>
+    <h2 class="view-title" id="viewTitle"></h2>
+    <p class="view-short" id="viewShort" hidden></p>
+    <p class="view-meta" id="viewMeta"></p>
+
+    <div class="view-images" id="viewImages" hidden></div>
+
+    <div class="view-columns">
+      <section class="view-ingredients" aria-labelledby="viewIngredientsHeading">
+        <h3 id="viewIngredientsHeading">Zutaten</h3>
+        <p class="view-hint">Antippen zum Abhaken</p>
+        <ul id="viewIngredientList" class="view-ingredient-list"></ul>
+        <p id="viewNoIngredients" class="empty-state" hidden>Keine Zutaten erfasst.</p>
+      </section>
+
+      <section class="view-steps" aria-labelledby="viewStepsHeading">
+        <h3 id="viewStepsHeading">Zubereitung</h3>
+        <ol id="viewStepList" class="view-step-list"></ol>
+        <p id="viewNoSteps" class="empty-state" hidden>Keine Zubereitung erfasst.</p>
+      </section>
+    </div>
+  </article>
+</main>
+
+<script src="kochansicht.js"></script>
+</body>
+</html>

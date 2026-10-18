@@ -17,7 +17,10 @@
     "client": [
       "public/kochbuch.html",
       "public/kochbuch.css",
-      "public/kochbuch.js"
+      "public/kochbuch.js",
+      "public/kochansicht.html",
+      "public/kochansicht.css",
+      "public/kochansicht.js"
     ],
     "docs": [
       "README.md"
@@ -28,7 +31,7 @@
     "driver": "node:sqlite (in Node.js eingebaut, keine native Kompilierung)",
     "file": "kochbuch.sqlite (ueberschreibbar mit der Umgebungsvariable KOCHBUCH_DB)",
     "journalMode": "WAL",
-    "schemaVersion": 2,
+    "schemaVersion": 3,
     "tables": [
       "recipes",
       "ingredients (FK -> recipes, ON DELETE CASCADE)",
@@ -37,7 +40,8 @@
       "ingredient_catalog (PK COLLATE NOCASE)",
       "meta",
       "accounts (Rollen admin/rw/r, Admin fest id 0)",
-      "account_sessions (FK -> accounts, ON DELETE CASCADE)"
+      "account_sessions (FK -> accounts, ON DELETE CASCADE)",
+      "recipe_views (FK -> recipes, ON DELETE CASCADE)"
     ],
     "note": "Die Datenhaltung liegt vollstaendig auf dem Server. Der Browser spricht ueber die REST-API unter /api mit der Datenbank; im localStorage bleibt nur die Theme-Einstellung. Bilder liegen als BLOB in der Tabelle images und werden einzeln ueber GET /api/images/:id ausgeliefert - nicht mehr als Base64 im Datensatz."
   },
@@ -54,6 +58,8 @@
       "POST   /api/users",
       "PATCH  /api/users/:id",
       "DELETE /api/users/:id",
+      "POST   /api/recipes/:id/views",
+      "GET    /api/views/:code",
       "GET    /api/state",
       "GET    /api/recipes",
       "POST   /api/recipes",

@@ -689,6 +689,8 @@ function openRecipeDialog(recipe){
   refreshIngredientCatalogDatalist();
   fillCategorySelect();
   applyRecipeAccess(recipe);
+  // Kochansicht nur fuer gespeicherte Rezepte - ein neues hat noch nichts zum Anzeigen.
+  cookViewBtn.hidden = !recipe;
   if(recipe){
     recipeCategorySelect.value = recipe.category || "";
     recipeIdInput.value = recipe.id;
@@ -716,6 +718,28 @@ function closeRecipeDialog(){
 }
 
 document.getElementById("createRecipeBtn").addEventListener("click", () => openRecipeDialog(null));
+
+/* ---- Kochansicht: neuer Link mit Zufallscode, oeffnet in neuem Tab ---- */
+const cookViewBtn = document.getElementById("cookViewBtn");
+
+cookViewBtn.addEventListener("click", async () => {
+  const id = recipeIdInput.value;
+  if(!id) return;
+  // Fenster sofort (im Klick) oeffnen - nach dem await wuerde der
+  // Popup-Blocker es verhindern. Adresse kommt, sobald der Code da ist.
+  const win = window.open("", "_blank");
+  if(win) win.opener = null;
+  cookViewBtn.disabled = true;
+  await guard(async () => {
+    const { url } = await API.post(`/recipes/${enc(id)}/views`);
+    if(win){
+      win.location.href = url;
+    }else{
+      showStatus(`Kochansicht: ${window.location.origin}${url}`, "info");
+    }
+  });
+  cookViewBtn.disabled = false;
+});
 document.getElementById("closeDialogBtn").addEventListener("click", closeRecipeDialog);
 cancelRecipeBtn.addEventListener("click", closeRecipeDialog);
 
@@ -1140,6 +1164,13 @@ authForm.addEventListener("submit", async (e) => {
       password: authPassword.value
     });
     authForm.reset();
+    // Kam die Anmeldung von einer Kochansicht, dorthin zurueck - nur auf
+    // genau diese eigene Seite, damit ?next= nirgendwo sonst hinfuehrt.
+    const next = new URLSearchParams(window.location.search).get("next") || "";
+    if(/^\/kochansicht\.html\?code=[A-Za-z0-9]{24,30}$/.test(next)){
+      window.location.replace(next);
+      return;
+    }
     await startApp(user);
   }catch(err){
     authError.textContent = err.message;

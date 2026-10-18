@@ -267,6 +267,20 @@ const routes = [
     sendEmpty(res, 204);
   }, "write"],
 
+  /* ---- Kochansicht (nur lesen, braucht Anmeldung + Code) ---- */
+  // Neuer Code fuer ein Rezept - Leserecht genuegt.
+  ["POST", /^\/api\/recipes\/([^/]+)\/views$/, async (req, res, ctx, id) => {
+    const code = db.createRecipeView(id, ctx.account.id);
+    sendJson(res, 201, { code, url: `/kochansicht.html?code=${code}` });
+  }],
+
+  // Liefert genau das eine Rezept zum Code - sonst nichts.
+  ["GET", /^\/api\/views\/([^/]+)$/, async (req, res, ctx, code) => {
+    const recipe = db.getRecipeByView(code);
+    if (!recipe) throw new HttpError(404, "Diese Kochansicht gibt es nicht (mehr).");
+    sendJson(res, 200, recipe);
+  }],
+
   /* ---- Bilder ---- */
   ["GET", /^\/api\/images\/([^/]+)$/, async (req, res, ctx, id) => {
     const image = db.getImage(id);
