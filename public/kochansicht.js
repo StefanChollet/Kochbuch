@@ -49,6 +49,34 @@ function splitSteps(text){
     .filter(Boolean);
 }
 
+// Kennzeichnung je Zutat (Abgleich macht der Server, siehe db.withFridgeMatch).
+const FRIDGE_BADGES = {
+  da: ' <span class="fridge-badge fridge-badge-da" title="Im Kühlschrank vorhanden">im Kühlschrank</span>',
+  vorrat: ' <span class="fridge-badge" title="Gilt als Vorrat, den man meist im Haus hat">Vorrat</span>',
+  fehlt: ' <span class="fridge-badge fridge-badge-fehlt" title="Nicht im Kühlschrank">fehlt</span>',
+};
+
+/** Kuehlschrank nur lesend; Eintraege, die das Rezept braucht, stehen oben und sind markiert. */
+function renderFridge(recipe){
+  const fridge = (recipe.fridge || []).slice()
+    .sort((a, b) => (b.usedBy.length > 0) - (a.usedBy.length > 0));
+  document.getElementById("viewFridgeList").innerHTML = fridge.map(f => `
+    <li class="${f.usedBy.length ? "is-used" : ""}" title="${f.usedBy.length ? `Für: ${escapeHtml(f.usedBy.join(", "))}` : "Für dieses Rezept nicht gebraucht"}">
+      <span>${f.usedBy.length ? "✓ " : ""}${escapeHtml(f.name)}</span>
+      <span class="amount">${escapeHtml(f.amount || "")}</span>
+    </li>`).join("");
+  document.getElementById("viewFridgeEmpty").hidden = fridge.length > 0;
+
+  const ingredients = recipe.ingredients || [];
+  const missing = ingredients.filter(i => i.fridge === "fehlt").length;
+  const summary = document.getElementById("viewFridgeSummary");
+  summary.textContent = missing === 0
+    ? "Alles da – es kann losgehen."
+    : `${ingredients.length - missing} von ${ingredients.length} Zutaten da, ${missing} fehlen.`;
+  summary.dataset.kind = missing === 0 ? "success" : "info";
+  summary.hidden = ingredients.length === 0;
+}
+
 function render(recipe){
   currentRecipeId = recipe.id;
   document.title = `${recipe.name} – Kochansicht`;
@@ -73,12 +101,13 @@ function render(recipe){
 
   const ingredients = recipe.ingredients || [];
   document.getElementById("viewIngredientList").innerHTML = ingredients.map(ing => `
-    <li><label>
+    <li class="fridge-${ing.fridge || "fehlt"}"><label>
       <input type="checkbox">
-      <span>${escapeHtml(ing.name)}</span>
+      <span>${escapeHtml(ing.name)}${FRIDGE_BADGES[ing.fridge] || ""}</span>
       <span class="amount">${escapeHtml(ing.amount || "")}</span>
     </label></li>`).join("");
   document.getElementById("viewNoIngredients").hidden = ingredients.length > 0;
+  renderFridge(recipe);
 
   const steps = splitSteps(recipe.longText);
   document.getElementById("viewStepList").innerHTML = steps.map(s => `<li>${escapeHtml(s)}</li>`).join("");

@@ -301,6 +301,11 @@ eigene, rein lesende Seite zum Nachkochen: große Schrift, Zutaten zum
 Abhaken, nummerierte Schritte (eine Zeile im Zubereitungstext = ein Schritt),
 Bilder, *Bildschirm anlassen* (Screen Wake Lock) und *Drucken*.
 
+**Kühlschrank (nur lesen):** Jede Zutat zeigt *im Kühlschrank*, *Vorrat* oder
+*fehlt* – derselbe Abgleich wie bei den Empfehlungen (Kernwort, Salz/Pfeffer &
+Co. als Vorrat). Darunter stehen eine Zusammenfassung (»3 von 5 Zutaten da«)
+und der ganze Kühlschrank; was das Rezept braucht, steht oben und ist markiert.
+
 **← Zurück zum Rezept** schliesst die Kochansicht; dahinter ist das Rezept im
 Kochbuch-Tab noch offen. Lässt der Browser das Schliessen nicht zu (Ansicht per
 Link geöffnet), lädt der Button stattdessen `/?recipe=<id>` – das Kochbuch

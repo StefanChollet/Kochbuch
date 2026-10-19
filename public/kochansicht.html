@@ -48,6 +48,14 @@
         <p class="view-hint">Antippen zum Abhaken</p>
         <ul id="viewIngredientList" class="view-ingredient-list"></ul>
         <p id="viewNoIngredients" class="empty-state" hidden>Keine Zutaten erfasst.</p>
+        <p class="view-fridge-summary" id="viewFridgeSummary" hidden></p>
+
+        <!-- Kuehlschrank, nur lesen: was fuer dieses Rezept gebraucht wird, ist markiert -->
+        <section class="view-fridge" aria-labelledby="viewFridgeHeading">
+          <h3 id="viewFridgeHeading">Kühlschrank</h3>
+          <ul id="viewFridgeList" class="view-fridge-list"></ul>
+          <p id="viewFridgeEmpty" class="empty-state" hidden>Der Kühlschrank ist leer.</p>
+        </section>
       </section>
 
       <section class="view-steps" aria-labelledby="viewStepsHeading">

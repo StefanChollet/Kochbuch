@@ -476,7 +476,28 @@ function createRecipeView(recipeId, accountId) {
 function getRecipeByView(code) {
   if (!VIEW_CODE_PATTERN.test(String(code || ""))) return null;
   const row = db.prepare("SELECT recipe_id AS recipeId FROM recipe_views WHERE code_hash = ?").get(hashToken(code));
-  return row ? getRecipe(row.recipeId) : null;
+  if (!row) return null;
+  const recipe = getRecipe(row.recipeId);
+  return recipe ? withFridgeMatch(recipe) : null;
+}
+
+/**
+ * Kuehlschrank-Abgleich fuer die Kochansicht - gleiche Logik wie bei den
+ * Empfehlungen (Kernwort, Vorraete). Ergaenzt jede Zutat um
+ * fridge: "da" | "vorrat" | "fehlt" und haengt den Kuehlschrank an,
+ * jeder Eintrag mit usedBy = Zutaten des Rezepts, die er abdeckt.
+ */
+function withFridgeMatch(recipe) {
+  const fridge = listFridge().map((f) => ({ ...f, core: coreWord(f.name), usedBy: [] }));
+  recipe.ingredients = recipe.ingredients.map((ing) => {
+    const core = coreWord(ing.name);
+    const hits = core ? fridge.filter((f) => f.core && coreMatch(core.stem, f.core.stem)) : [];
+    hits.forEach((f) => f.usedBy.push(ing.name));
+    const state = hits.length > 0 ? "da" : core && PANTRY_STAPLES.has(core.raw) ? "vorrat" : "fehlt";
+    return { ...ing, fridge: state };
+  });
+  recipe.fridge = fridge.map(({ core, ...f }) => f);
+  return recipe;
 }
 
 /* -------------------------------------------------------- Kuehlschrank */
