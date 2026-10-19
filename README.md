@@ -294,6 +294,22 @@ kopieren, fertig. Im laufenden Betrieb gehören die Dateien `kochbuch.sqlite-wal
 und `kochbuch.sqlite-shm` dazu; beim sauberen Beenden mit `Strg+C` schreibt der
 Server das WAL zurück und räumt sie ab.
 
+## App (PWA)
+
+Das Kochbuch lässt sich als App installieren (Android/Chrome/Edge: Button
+**📲 App installieren** oben oder Browser-Menü; iPhone/iPad: Safari → Teilen →
+*Zum Home-Bildschirm*). Es startet dann im eigenen Fenster mit eigenem Icon.
+
+- `public/manifest.webmanifest`: Name, Farben, Start `/`, Anzeige `standalone`.
+- `public/icons/`: 192/512 px, `maskable` 512 px (Android), 180 px (iOS), Favicon.
+- `public/sw.js` (Service Worker): speichert **nur die App-Hülle**
+  (HTML/CSS/JS/Icons), *Netz zuerst* – Änderungen auf dem Server kommen sofort
+  an, ohne Netz startet die App aus dem Speicher und meldet die fehlende
+  Verbindung. `/api/*` (Rezepte, Bilder, Kühlschrank, Anmeldung) wird **nie**
+  gespeichert; Kochansicht-Adressen landen ohne `?code=` im Speicher.
+- Neue Dateien in der Hülle: in `SHELL` eintragen und `CACHE` hochzählen.
+- Voraussetzung: HTTPS (live gegeben) oder `localhost`.
+
 ## Kochansicht
 
 Im Rezeptdialog öffnet **🍳 Kochansicht** das Rezept in einem neuen Tab als

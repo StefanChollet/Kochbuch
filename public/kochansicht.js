@@ -160,6 +160,11 @@ document.getElementById("backBtn").addEventListener("click", () => {
   setTimeout(() => { if(!window.closed) window.location.replace(fallback); }, 150);
 });
 
+// PWA: derselbe Service Worker wie im Kochbuch (speichert nur die Huelle, nie den Code oder Daten).
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("/sw.js").catch(() => { /* ohne SW laeuft die Seite genauso */ });
+}
+
 /* ---- Start ---- */
 (async function init(){
   const code = new URLSearchParams(window.location.search).get("code") || "";
