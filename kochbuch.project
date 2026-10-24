@@ -20,10 +20,7 @@
       "public/kochbuch.js",
       "public/kochansicht.html",
       "public/kochansicht.css",
-      "public/kochansicht.js",
-      "public/manifest.webmanifest",
-      "public/sw.js",
-      "public/icons/*.png"
+      "public/kochansicht.js"
     ],
     "docs": [
       "README.md"
