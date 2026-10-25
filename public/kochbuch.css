@@ -289,6 +289,12 @@ body{
 .recipe-img-icon.no-image{ color: var(--ink-soft); opacity:.4; }
 .col-menu{ width: 120px; }
 .menu-cell{ display:flex; gap:.4rem; }
+/* Menue-Symbole der Rezeptliste: 16x16, Loeschen als rotes Kreuz */
+.menu-icon-btn{ display:inline-flex; align-items:center; justify-content:center; padding:.35rem; line-height:0; color: var(--ink-soft); }
+.menu-icon-btn svg{ width:16px; height:16px; display:block; }
+.menu-icon-btn:hover{ color: var(--ink); }
+.menu-icon-delete{ color: var(--danger); }
+.menu-icon-delete:hover{ color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
 
 /* ===== Fridge (index-card look) ===== */
 .panel-fridge{

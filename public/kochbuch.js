@@ -406,10 +406,11 @@ function imageIndicator(imageCount){
 /** Aktionen je nach Rechten: Schreiben = bearbeiten + loeschen, Nur lesen = ansehen. */
 function recipeActions(recipe){
   const btn = (action, icon, label) =>
-    `<button class="btn btn-icon" data-action="${action}" data-id="${recipe.id}" title="${label}" aria-label="${label}">${icon}</button>`;
+    `<button class="btn btn-icon menu-icon-btn menu-icon-${icon}" data-action="${action}" data-id="${recipe.id}" title="${label}" aria-label="${label}">` +
+    `<svg width="16" height="16" aria-hidden="true"><use href="#icon-${icon}"/></svg></button>`;
   return canWrite()
-    ? btn("edit", "✏️", "Bearbeiten") + btn("delete", "🗑️", "Löschen")
-    : btn("edit", "👁️", "Ansehen");
+    ? btn("edit", "edit", "Bearbeiten") + btn("delete", "delete", "Löschen")
+    : btn("edit", "view", "Ansehen");
 }
 
 function appendRecipeRow(recipe){
