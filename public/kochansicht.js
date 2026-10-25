@@ -182,6 +182,6 @@ document.getElementById("backBtn").addEventListener("click", () => {
     }
     render(view.payload);
   }catch{
-    showMessage("Keine Verbindung zum Kochbuch – bitte Internetverbindung prüfen und die Seite neu laden.");
+    showMessage("Server nicht erreichbar.");
   }
 })();

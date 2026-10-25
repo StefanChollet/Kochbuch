@@ -16,7 +16,7 @@ const API = {
         body: body === undefined ? undefined : JSON.stringify(body)
       });
     }catch(err){
-      throw new Error("Keine Verbindung zum Kochbuch – bitte Internetverbindung prüfen und die Seite neu laden.");
+      throw new Error("Server nicht erreichbar. Läuft \"node server.js\" noch?");
     }
 
     if(res.status === 204) return null;
