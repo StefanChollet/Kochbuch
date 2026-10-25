@@ -391,16 +391,34 @@ new IntersectionObserver((entries) => {
   if(entries.some(e => e.isIntersecting)) loadMoreRecipes();
 }, { root: recipeTableScroll, rootMargin: `0px 0px ${RECIPE_PRELOAD_PX}px 0px` }).observe(recipeLoadMore);
 
-/** Ein Klick (oder Enter) auf die Zeile oeffnet das Rezept. */
+/**
+ * Festes 16x16-Kochbild-Symbol pro Zeile - immer dasselbe Bild, es zeigt nur,
+ * ob das Rezept Fotos hat (kraeftig) oder keine (blass, durchgestrichen).
+ */
+function imageIndicator(imageCount){
+  const has = imageCount > 0;
+  const label = has
+    ? (imageCount === 1 ? "1 Bild vorhanden" : `${imageCount} Bilder vorhanden`)
+    : "Kein Bild";
+  return `<svg class="recipe-img-icon ${has ? "has-image" : "no-image"}" width="16" height="16" role="img" aria-label="${label}"><title>${label}</title><use href="#${has ? "kochbild" : "kochbild-none"}"/></svg>`;
+}
+
+/** Aktionen je nach Rechten: Schreiben = bearbeiten + loeschen, Nur lesen = ansehen. */
+function recipeActions(recipe){
+  const btn = (action, icon, label) =>
+    `<button class="btn btn-icon" data-action="${action}" data-id="${recipe.id}" title="${label}" aria-label="${label}">${icon}</button>`;
+  return canWrite()
+    ? btn("edit", "✏️", "Bearbeiten") + btn("delete", "🗑️", "Löschen")
+    : btn("edit", "👁️", "Ansehen");
+}
+
 function appendRecipeRow(recipe){
   const tr = document.createElement("tr");
-  tr.dataset.id = recipe.id;
-  tr.tabIndex = 0;
-  tr.title = canWrite() ? "Rezept öffnen und bearbeiten" : "Rezept ansehen";
   tr.innerHTML = `
-    <td class="recipe-name-cell">${escapeHtml(recipe.name)}</td>
+    <td class="recipe-name-cell">${imageIndicator(recipe.imageCount)}${escapeHtml(recipe.name)}</td>
     <td>${truncate(recipe.shortDesc, 100)}</td>
     <td class="owner-cell">${escapeHtml(recipe.createdByName || "–")}</td>
+    <td class="menu-cell">${recipeActions(recipe)}</td>
   `;
   recipeTableBody.appendChild(tr);
 }
@@ -437,18 +455,30 @@ function updateRecipeFooter(){
   recipeLoadMore.hidden = !recipeLoading && !more;
 }
 
-let recipeOpening = false;
-async function openRecipeRow(tr){
-  if(!tr || recipeOpening) return;
-  recipeOpening = true;
-  await guard(async () => openRecipeDialog(await DB.getRecipe(tr.dataset.id)));
-  recipeOpening = false;
-}
-recipeTableBody.addEventListener("click", (e) => openRecipeRow(e.target.closest("tr[data-id]")));
-recipeTableBody.addEventListener("keydown", (e) => {
-  if(e.key !== "Enter") return;
-  e.preventDefault();
-  openRecipeRow(e.target.closest("tr[data-id]"));
+recipeTableBody.addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-action]");
+  if(!btn) return;
+  const id = btn.dataset.id;
+
+  if(btn.dataset.action === "edit"){
+    btn.disabled = true;
+    await guard(async () => {
+      const recipe = await DB.getRecipe(id);
+      openRecipeDialog(recipe);
+    });
+    btn.disabled = false;
+    return;
+  }
+
+  if(btn.dataset.action === "delete"){
+    const recipe = DB.recipesPage.items.find(r => r.id === id);
+    const ok = window.confirm(`Rezept "${recipe ? recipe.name : ""}" unwiderruflich löschen?`);
+    if(!ok) return;
+    await guard(async () => {
+      await DB.deleteRecipe(id);
+      await loadRecipes({ keepLoaded: true });
+    }, { success: "Rezept gelöscht." });
+  }
 });
 
 /* ---- Suche (debounced, Enter loest sofort aus) ---- */
@@ -661,8 +691,6 @@ function openRecipeDialog(recipe){
   applyRecipeAccess(recipe);
   // Kochansicht nur fuer gespeicherte Rezepte - ein neues hat noch nichts zum Anzeigen.
   cookViewBtn.hidden = !recipe;
-  // Loeschen nur fuer gespeicherte Rezepte und nur mit Schreibrechten.
-  deleteRecipeBtn.hidden = !recipe || recipeReadOnly;
   if(recipe){
     recipeCategorySelect.value = recipe.category || "";
     recipeIdInput.value = recipe.id;
@@ -711,22 +739,6 @@ cookViewBtn.addEventListener("click", async () => {
     }
   });
   cookViewBtn.disabled = false;
-});
-/* ---- Rezept loeschen (im geoeffneten Rezept) ---- */
-const deleteRecipeBtn = document.getElementById("deleteRecipeBtn");
-
-deleteRecipeBtn.addEventListener("click", async () => {
-  const id = recipeIdInput.value;
-  if(!id || recipeReadOnly) return;
-  const ok = window.confirm(`Rezept "${recipeNameInput.value}" unwiderruflich löschen?`);
-  if(!ok) return;
-  deleteRecipeBtn.disabled = true;
-  await guard(async () => {
-    await DB.deleteRecipe(id);
-    closeRecipeDialog();
-    await loadRecipes({ keepLoaded: true });
-  }, { success: "Rezept gelöscht." });
-  deleteRecipeBtn.disabled = false;
 });
 document.getElementById("closeDialogBtn").addEventListener("click", closeRecipeDialog);
 cancelRecipeBtn.addEventListener("click", closeRecipeDialog);

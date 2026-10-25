@@ -276,11 +276,17 @@ body{
 .recipe-name-cell{
   font-family: var(--font-display);
   font-size:1.02rem;
+  display:flex;
+  align-items:center;
+  gap:.5rem;
 }
-/* Rezeptzeilen sind anklickbar (oeffnen das Rezept) */
-#recipeTableBody tr{ cursor:pointer; }
-#recipeTableBody tr:hover{ background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
-#recipeTableBody tr:focus-visible{ outline: 2px solid var(--accent); outline-offset:-2px; }
+/* Kochbild-Symbol vor dem Rezeptnamen: 16x16, zwei Zustaende */
+.recipe-img-icon{
+  width:16px; height:16px;
+  flex:0 0 auto;
+}
+.recipe-img-icon.has-image{ color: var(--ok); }
+.recipe-img-icon.no-image{ color: var(--ink-soft); opacity:.4; }
 .col-menu{ width: 120px; }
 .menu-cell{ display:flex; gap:.4rem; }
 
