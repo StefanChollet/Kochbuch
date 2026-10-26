@@ -391,18 +391,6 @@ new IntersectionObserver((entries) => {
   if(entries.some(e => e.isIntersecting)) loadMoreRecipes();
 }, { root: recipeTableScroll, rootMargin: `0px 0px ${RECIPE_PRELOAD_PX}px 0px` }).observe(recipeLoadMore);
 
-/**
- * Festes 16x16-Kochbild-Symbol pro Zeile - immer dasselbe Bild, es zeigt nur,
- * ob das Rezept Fotos hat (kraeftig) oder keine (blass, durchgestrichen).
- */
-function imageIndicator(imageCount){
-  const has = imageCount > 0;
-  const label = has
-    ? (imageCount === 1 ? "1 Bild vorhanden" : `${imageCount} Bilder vorhanden`)
-    : "Kein Bild";
-  return `<svg class="recipe-img-icon ${has ? "has-image" : "no-image"}" width="16" height="16" role="img" aria-label="${label}"><title>${label}</title><use href="#${has ? "kochbild" : "kochbild-none"}"/></svg>`;
-}
-
 /** Aktionen je nach Rechten: Schreiben = bearbeiten + loeschen, Nur lesen = ansehen. */
 function recipeActions(recipe){
   const btn = (action, icon, label) =>
@@ -420,7 +408,7 @@ function appendRecipeRow(recipe){
   tr.tabIndex = 0;
   tr.title = canWrite() ? "Rezept öffnen und bearbeiten" : "Rezept ansehen";
   tr.innerHTML = `
-    <td class="recipe-name-cell">${imageIndicator(recipe.imageCount)}${escapeHtml(recipe.name)}</td>
+    <td class="recipe-name-cell">${escapeHtml(recipe.name)}</td>
     <td>${truncate(recipe.shortDesc, 100)}</td>
     <td class="owner-cell">${escapeHtml(recipe.createdByName || "–")}</td>
     <td class="menu-cell">${recipeActions(recipe)}</td>
