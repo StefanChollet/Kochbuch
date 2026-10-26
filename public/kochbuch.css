@@ -273,6 +273,10 @@ body{
    bewusst nur ein minimaler Farbunterschied, damit lange Listen lesbarer
    werden, ohne unruhig zu wirken. */
 .recipe-table tbody tr:nth-child(even){ background: var(--surface-2); }
+/* Rezeptzeilen: leichte Farbaenderung unter der Maus, Klick oeffnet das Rezept */
+#recipeTableBody tr{ cursor:pointer; transition: background-color .12s ease; }
+#recipeTableBody tr:hover{ background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+#recipeTableBody tr:focus-visible{ outline: 2px solid var(--accent); outline-offset:-2px; }
 .recipe-name-cell{
   font-family: var(--font-display);
   font-size:1.02rem;

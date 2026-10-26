@@ -413,8 +413,12 @@ function recipeActions(recipe){
     : btn("edit", "view", "Ansehen");
 }
 
+/** Ein Klick (oder Enter) auf die Zeile oeffnet das Rezept - wie der Stift bzw. das Auge. */
 function appendRecipeRow(recipe){
   const tr = document.createElement("tr");
+  tr.dataset.id = recipe.id;
+  tr.tabIndex = 0;
+  tr.title = canWrite() ? "Rezept öffnen und bearbeiten" : "Rezept ansehen";
   tr.innerHTML = `
     <td class="recipe-name-cell">${imageIndicator(recipe.imageCount)}${escapeHtml(recipe.name)}</td>
     <td>${truncate(recipe.shortDesc, 100)}</td>
@@ -456,17 +460,32 @@ function updateRecipeFooter(){
   recipeLoadMore.hidden = !recipeLoading && !more;
 }
 
+let recipeOpening = false;
+async function openRecipeById(id){
+  if(recipeOpening) return;
+  recipeOpening = true;
+  await guard(async () => openRecipeDialog(await DB.getRecipe(id)));
+  recipeOpening = false;
+}
+
+recipeTableBody.addEventListener("keydown", (e) => {
+  if(e.key !== "Enter" || !e.target.matches("tr[data-id]")) return;
+  e.preventDefault();
+  openRecipeById(e.target.dataset.id);
+});
+
 recipeTableBody.addEventListener("click", async (e) => {
   const btn = e.target.closest("button[data-action]");
-  if(!btn) return;
+  if(!btn){
+    const tr = e.target.closest("tr[data-id]");
+    if(tr) openRecipeById(tr.dataset.id);
+    return;
+  }
   const id = btn.dataset.id;
 
   if(btn.dataset.action === "edit"){
     btn.disabled = true;
-    await guard(async () => {
-      const recipe = await DB.getRecipe(id);
-      openRecipeDialog(recipe);
-    });
+    await openRecipeById(id);
     btn.disabled = false;
     return;
   }
