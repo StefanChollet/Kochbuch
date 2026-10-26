@@ -280,7 +280,17 @@ body{
 .recipe-name-cell{
   font-family: var(--font-display);
   font-size:1.02rem;
+  display:flex;
+  align-items:center;
+  gap:.5rem;
 }
+/* Kochbild-Symbol vor dem Rezeptnamen: 16x16, zwei Zustaende */
+.recipe-img-icon{
+  width:16px; height:16px;
+  flex:0 0 auto;
+}
+.recipe-img-icon.has-image{ color: var(--ok); }
+.recipe-img-icon.no-image{ color: var(--ink-soft); opacity:.4; }
 .col-menu{ width: 120px; }
 .menu-cell{ display:flex; gap:.4rem; }
 /* Menue-Symbole der Rezeptliste: 16x16, Loeschen als rotes Kreuz */
