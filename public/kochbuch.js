@@ -609,25 +609,36 @@ ingredientList.addEventListener("click", (e) => {
   renderIngredientList();
 });
 
-document.getElementById("addIngredientBtn").addEventListener("click", async () => {
+/**
+ * Uebernimmt die eingetippte, noch nicht hinzugefuegte Zutat in die Liste.
+ * Liefert ihren Namen oder "" (Feld leer).
+ */
+function takePendingIngredient(){
   const name = ingredientNameInput.value.trim();
   const amount = ingredientAmountInput.value.trim();
-  if(!name) return;
-
+  if(!name) return "";
   workingIngredients.push({ key: makeId(), name, amount });
   ingredientNameInput.value = "";
   ingredientAmountInput.value = "";
-  ingredientNameInput.focus();
   renderIngredientList();
+  return name;
+}
 
-  // Der Katalog ist nur eine Vorschlagsliste - ein Fehler hier darf die
-  // Zutat im Formular nicht verhindern.
+/** Der Katalog ist nur eine Vorschlagsliste - ein Fehler hier darf die Zutat nicht verhindern. */
+async function addToCatalogQuietly(name){
   try{
     await DB.addToIngredientCatalog(name);
     refreshIngredientCatalogDatalist();
   }catch(err){
     console.warn("Zutat konnte nicht in den Katalog übernommen werden:", err);
   }
+}
+
+document.getElementById("addIngredientBtn").addEventListener("click", async () => {
+  const name = takePendingIngredient();
+  if(!name) return;
+  ingredientNameInput.focus();
+  await addToCatalogQuietly(name);
 });
 
 function renderImageList(){
@@ -734,6 +745,9 @@ function openRecipeDialog(recipe){
     workingIngredients = [];
     workingImages = [];
   }
+  // Eine bei "Abbrechen" eingetippte Zutat darf nicht ins naechste Rezept wandern.
+  ingredientNameInput.value = "";
+  ingredientAmountInput.value = "";
   renderIngredientList();
   renderImageList();
   recipeDialog.showModal();
@@ -785,6 +799,11 @@ recipeForm.addEventListener("submit", async (e) => {
     recipeNameInput.focus();
     return;
   }
+
+  // "Speichern" speichert alles im Dialog - auch eine eingetippte Zutat,
+  // die noch nicht mit "Hinzufuegen" uebernommen wurde.
+  const pendingIngredient = takePendingIngredient();
+  if(pendingIngredient) addToCatalogQuietly(pendingIngredient);
 
   const payload = {
     id: recipeIdInput.value || undefined,
