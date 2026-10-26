@@ -291,6 +291,14 @@ body{
 }
 .recipe-img-icon.has-image{ color: var(--ok); }
 .recipe-img-icon.no-image{ color: var(--ink-soft); opacity:.4; }
+/* Das Symbol ist ein Knopf: Klick oeffnet die Kochansicht */
+.recipe-img-btn{
+  display:inline-flex; align-items:center; justify-content:center;
+  padding:2px; margin:-2px; border:0; border-radius:4px;
+  background:transparent; cursor:pointer; line-height:0;
+}
+.recipe-img-btn:hover{ background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.recipe-img-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
 .col-menu{ width: 120px; }
 .menu-cell{ display:flex; gap:.4rem; }
 /* Menue-Symbole der Rezeptliste: 16x16, Loeschen als rotes Kreuz */

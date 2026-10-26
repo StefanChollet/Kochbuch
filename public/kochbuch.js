@@ -394,13 +394,15 @@ new IntersectionObserver((entries) => {
 /**
  * Festes 16x16-Kochbild-Symbol pro Zeile - immer dasselbe Bild, es zeigt nur,
  * ob das Rezept Fotos hat (kraeftig) oder keine (blass, durchgestrichen).
+ * Ein Klick darauf oeffnet die Kochansicht in einem neuen Tab.
  */
-function imageIndicator(imageCount){
-  const has = imageCount > 0;
-  const label = has
-    ? (imageCount === 1 ? "1 Bild vorhanden" : `${imageCount} Bilder vorhanden`)
-    : "Kein Bild";
-  return `<svg class="recipe-img-icon ${has ? "has-image" : "no-image"}" width="16" height="16" role="img" aria-label="${label}"><title>${label}</title><use href="#${has ? "kochbild" : "kochbild-none"}"/></svg>`;
+function imageIndicator(recipe){
+  const has = recipe.imageCount > 0;
+  const label = (has
+    ? (recipe.imageCount === 1 ? "1 Bild vorhanden" : `${recipe.imageCount} Bilder vorhanden`)
+    : "Kein Bild") + " – Kochansicht öffnen";
+  return `<button type="button" class="recipe-img-btn" data-action="cook" data-id="${recipe.id}" title="${label}" aria-label="${label}">` +
+    `<svg class="recipe-img-icon ${has ? "has-image" : "no-image"}" width="16" height="16" aria-hidden="true"><use href="#${has ? "kochbild" : "kochbild-none"}"/></svg></button>`;
 }
 
 /** Aktionen je nach Rechten: Schreiben = bearbeiten + loeschen, Nur lesen = ansehen. */
@@ -420,7 +422,7 @@ function appendRecipeRow(recipe){
   tr.tabIndex = 0;
   tr.title = canWrite() ? "Rezept öffnen und bearbeiten" : "Rezept ansehen";
   tr.innerHTML = `
-    <td class="recipe-name-cell">${imageIndicator(recipe.imageCount)}${escapeHtml(recipe.name)}</td>
+    <td class="recipe-name-cell">${imageIndicator(recipe)}${escapeHtml(recipe.name)}</td>
     <td>${truncate(recipe.shortDesc, 100)}</td>
     <td class="owner-cell">${escapeHtml(recipe.createdByName || "–")}</td>
     <td class="menu-cell">${recipeActions(recipe)}</td>
@@ -482,6 +484,13 @@ recipeTableBody.addEventListener("click", async (e) => {
     return;
   }
   const id = btn.dataset.id;
+
+  if(btn.dataset.action === "cook"){
+    btn.disabled = true;
+    await openCookView(id);
+    btn.disabled = false;
+    return;
+  }
 
   if(btn.dataset.action === "edit"){
     btn.disabled = true;
@@ -742,15 +751,13 @@ document.getElementById("createRecipeBtn").addEventListener("click", () => openR
 /* ---- Kochansicht: neuer Link mit Zufallscode, oeffnet in neuem Tab ---- */
 const cookViewBtn = document.getElementById("cookViewBtn");
 
-cookViewBtn.addEventListener("click", async () => {
-  const id = recipeIdInput.value;
-  if(!id) return;
+/** Kochansicht eines Rezepts in neuem Tab - aus dem Dialog und vom Bild-Symbol der Liste. */
+async function openCookView(id){
   // Fenster sofort (im Klick) oeffnen - nach dem await wuerde der
   // Popup-Blocker es verhindern. Adresse kommt, sobald der Code da ist.
   const win = window.open("", "_blank");
   if(win) win.opener = null;
-  cookViewBtn.disabled = true;
-  await guard(async () => {
+  const ok = await guard(async () => {
     const { url } = await API.post(`/recipes/${enc(id)}/views`);
     if(win){
       win.location.href = url;
@@ -758,6 +765,14 @@ cookViewBtn.addEventListener("click", async () => {
       showStatus(`Kochansicht: ${window.location.origin}${url}`, "info");
     }
   });
+  if(!ok && win) win.close();
+}
+
+cookViewBtn.addEventListener("click", async () => {
+  const id = recipeIdInput.value;
+  if(!id) return;
+  cookViewBtn.disabled = true;
+  await openCookView(id);
   cookViewBtn.disabled = false;
 });
 document.getElementById("closeDialogBtn").addEventListener("click", closeRecipeDialog);
