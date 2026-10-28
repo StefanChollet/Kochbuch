@@ -144,6 +144,11 @@ function checkOrigin(req) {
   if (originHost !== host) throw new HttpError(403, "Anfrage von fremder Herkunft abgelehnt.");
 }
 
+/** 404, wenn es das Rezept nicht gibt oder es fuer diesen Benutzer nicht sichtbar ist. */
+function requireRecipeAccess(ctx, id) {
+  if (!db.canAccessRecipe(ctx.account, id)) throw new HttpError(404, `Rezept "${id}" nicht gefunden.`);
+}
+
 /** Was der Client ueber den angemeldeten Benutzer wissen muss. */
 function describeAccount(account) {
   return { id: account.id, username: account.username, role: account.role, canWrite: db.canWrite(account) };
@@ -224,9 +229,10 @@ const routes = [
 
   // Empfehlungen aus Kuehlschrank + Suchfilter, siehe db.getRecommendations().
   // ?search=&limit=5&exclude=id1,id2 (zuletzt gezeigte Rezepte, werden gemieden)
-  ["GET", /^\/api\/recommendations$/, async (req, res) => {
+  ["GET", /^\/api\/recommendations$/, async (req, res, ctx) => {
     const q = getQuery(req);
     sendJson(res, 200, db.getRecommendations({
+      ownerId: db.recipeOwnerFilter(ctx.account),
       search: q.get("search") || "",
       limit: q.get("limit") || 4,
       exclude: (q.get("exclude") || "").split(",").filter(Boolean),
@@ -234,10 +240,13 @@ const routes = [
   }],
 
   /* ---- Rezepte ---- */
+  // Sichtbarkeit: "rw" sieht nur die eigenen Rezepte, Admin und "r" alle
+  // (db.recipeOwnerFilter). Fremde Rezepte gelten als "nicht gefunden".
   // Unterstuetzt ?search=&sortBy=name|shortDesc|updatedAt&sortDir=asc|desc&page=&pageSize=
-  ["GET", /^\/api\/recipes$/, async (req, res) => {
+  ["GET", /^\/api\/recipes$/, async (req, res, ctx) => {
     const q = getQuery(req);
     sendJson(res, 200, db.listRecipesPage({
+      ownerId: db.recipeOwnerFilter(ctx.account),
       search: q.get("search") || "",
       sortBy: q.get("sortBy") || "name",
       sortDir: q.get("sortDir") || "asc",
@@ -253,23 +262,26 @@ const routes = [
   }, "write"],
 
   ["GET", /^\/api\/recipes\/([^/]+)$/, async (req, res, ctx, id) => {
-    const recipe = db.getRecipe(id);
-    if (!recipe) throw new HttpError(404, `Rezept "${id}" nicht gefunden.`);
-    sendJson(res, 200, recipe);
+    requireRecipeAccess(ctx, id);
+    sendJson(res, 200, db.getRecipe(id));
   }],
 
   ["PUT", /^\/api\/recipes\/([^/]+)$/, async (req, res, ctx, id) => {
+    requireRecipeAccess(ctx, id);
     sendJson(res, 200, db.updateRecipe(id, await readJson(req)));
   }, "write"],
 
   ["DELETE", /^\/api\/recipes\/([^/]+)$/, async (req, res, ctx, id) => {
-    if (!db.deleteRecipe(id)) throw new HttpError(404, `Rezept "${id}" nicht gefunden.`);
+    requireRecipeAccess(ctx, id);
+    db.deleteRecipe(id);
     sendEmpty(res, 204);
   }, "write"],
 
   /* ---- Kochansicht (nur lesen, braucht Anmeldung + Code) ---- */
-  // Neuer Code fuer ein Rezept - Leserecht genuegt.
+  // Neuer Code fuer ein sichtbares Rezept - Leserecht genuegt. Wer den
+  // Link bekommt, darf genau dieses eine Rezept lesen (bewusstes Teilen).
   ["POST", /^\/api\/recipes\/([^/]+)\/views$/, async (req, res, ctx, id) => {
+    requireRecipeAccess(ctx, id);
     const code = db.createRecipeView(id, ctx.account.id);
     sendJson(res, 201, { code, url: `/kochansicht.html?code=${code}` });
   }],

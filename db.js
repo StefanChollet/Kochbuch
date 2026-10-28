@@ -237,15 +237,22 @@ function escapeLike(term) {
  * gemeinsam genutzt von der Uebersicht und den Empfehlungen, damit beide
  * exakt denselben Filter meinen. Tabellenalias im Aufrufer: r.
  */
-function buildSearchWhere(term) {
-  if (!term) return { where: "", params: [] };
-  const like = `%${escapeLike(term)}%`;
-  return {
-    where: `WHERE (r.name LIKE ? ESCAPE '\\'
+function buildSearchWhere(term, ownerId = null) {
+  const conditions = [];
+  const params = [];
+  if (term) {
+    const like = `%${escapeLike(term)}%`;
+    conditions.push(`(r.name LIKE ? ESCAPE '\\'
        OR r.short_desc LIKE ? ESCAPE '\\'
-       OR EXISTS (SELECT 1 FROM ingredients si WHERE si.recipe_id = r.id AND si.name LIKE ? ESCAPE '\\'))`,
-    params: [like, like, like],
-  };
+       OR EXISTS (SELECT 1 FROM ingredients si WHERE si.recipe_id = r.id AND si.name LIKE ? ESCAPE '\\'))`);
+    params.push(like, like, like);
+  }
+  // Nur die eigenen Rezepte (siehe recipeOwnerFilter)
+  if (ownerId !== null) {
+    conditions.push("r.created_by = ?");
+    params.push(ownerId);
+  }
+  return { where: conditions.length ? `WHERE ${conditions.join(" AND ")}` : "", params };
 }
 
 /**
@@ -261,7 +268,7 @@ function listRecipesPage(options = {}) {
   const page = Math.max(1, Math.trunc(Number(options.page)) || 1);
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.trunc(Number(options.pageSize)) || DEFAULT_PAGE_SIZE));
 
-  const { where, params } = buildSearchWhere(term);
+  const { where, params } = buildSearchWhere(term, options.ownerId ?? null);
 
   const total = db.prepare(`SELECT COUNT(*) AS n FROM recipes r ${where}`).get(...params).n;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -700,6 +707,22 @@ function canWrite(account) {
   return !!account && (account.role === "admin" || account.role === "rw");
 }
 
+/**
+ * Welche Rezepte jemand sieht: Admin und "r" (nur lesen) alle, "rw" nur die
+ * selbst angelegten. Liefert die Besitzer-id zum Filtern oder null (= alle).
+ */
+function recipeOwnerFilter(account) {
+  return account && account.role === "rw" ? account.id : null;
+}
+
+/** Darf der Benutzer dieses Rezept sehen (und mit Schreibrecht aendern)? */
+function canAccessRecipe(account, recipeId) {
+  const row = db.prepare("SELECT created_by AS createdBy FROM recipes WHERE id = ?").get(recipeId);
+  if (!row) return false;
+  const ownerId = recipeOwnerFilter(account);
+  return ownerId === null || row.createdBy === ownerId;
+}
+
 function getAccount(id) {
   return publicAccount(db.prepare("SELECT id, username, role FROM accounts WHERE id = ?").get(Number(id)));
 }
@@ -972,8 +995,8 @@ function getRecommendations(options = {}) {
     })
     .filter(Boolean);
 
-  // Kandidaten laut Suchfilter samt Zutaten
-  const { where, params } = buildSearchWhere(term);
+  // Kandidaten laut Suchfilter samt Zutaten (ggf. nur die eigenen Rezepte)
+  const { where, params } = buildSearchWhere(term, options.ownerId ?? null);
   const rows = db.prepare(`
     SELECT r.id, r.name, r.short_desc AS shortDesc, ing.name AS ingredientName
     FROM recipes r
@@ -1106,6 +1129,8 @@ module.exports = {
   ADMIN_USERNAME,
   SESSION_DAYS,
   canWrite,
+  recipeOwnerFilter,
+  canAccessRecipe,
   getAccount,
   listAccounts,
   createAccount,
