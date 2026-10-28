@@ -757,6 +757,12 @@ function listAccounts() {
   `).all();
 }
 
+/** Nur die Namen - fuer die Auswahlliste im Anmeldefenster (Admin zuerst). */
+function listUsernames() {
+  return db.prepare("SELECT username FROM accounts ORDER BY id = 0 DESC, username COLLATE NOCASE")
+    .all().map((r) => r.username);
+}
+
 /** Der Admin ist fest: er laesst sich ueber die Verwaltung weder aendern noch loeschen. */
 function requireEditableAccount(id) {
   const account = getAccount(id);
@@ -1133,6 +1139,7 @@ module.exports = {
   canAccessRecipe,
   getAccount,
   listAccounts,
+  listUsernames,
   createAccount,
   updateAccount,
   deleteAccount,

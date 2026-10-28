@@ -1206,6 +1206,21 @@ function showAuthScreen(){
   authError.hidden = true;
   authPassword.value = "";
   authUsername.focus();
+  loadLoginUsers();
+}
+
+/** Auswahlliste im Anmeldefenster mit allen Benutzernamen fuellen. */
+async function loadLoginUsers(){
+  const selected = authUsername.value;
+  try{
+    const { usernames } = await API.get("/auth/users");
+    authUsername.innerHTML = `<option value="">– Benutzer wählen –</option>` +
+      usernames.map(u => `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join("");
+    if(usernames.includes(selected)) authUsername.value = selected;
+  }catch(err){
+    authError.textContent = err.message;
+    authError.hidden = false;
+  }
 }
 
 authForm.addEventListener("submit", async (e) => {

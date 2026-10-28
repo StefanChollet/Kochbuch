@@ -169,6 +169,12 @@ const routes = [
   }, "public"],
 
   /* ---- Anmeldung ---- */
+  // Benutzernamen fuer die Auswahlliste im Anmeldefenster (bewusst ohne
+  // Anmeldung erreichbar - nur Namen, keine Rollen oder sonstigen Daten).
+  ["GET", /^\/api\/auth\/users$/, async (req, res) => {
+    sendJson(res, 200, { usernames: db.listUsernames() });
+  }, "public"],
+
   ["GET", /^\/api\/auth\/status$/, async (req, res, ctx) => {
     sendJson(res, 200, { user: ctx.account ? describeAccount(ctx.account) : null });
   }, "public"],

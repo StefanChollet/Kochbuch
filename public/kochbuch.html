@@ -63,10 +63,12 @@
 <section id="authScreen" class="auth-screen" hidden>
   <form id="authForm" class="panel auth-panel">
     <h2>Anmelden</h2>
-    <p class="panel-sub">Bitte mit Benutzername und Passwort anmelden.</p>
+    <p class="panel-sub">Bitte Benutzer wählen und Passwort eingeben.</p>
     <label class="field">
-      <span>Benutzername</span>
-      <input type="text" id="authUsername" autocomplete="username" required maxlength="40">
+      <span>Benutzer</span>
+      <select id="authUsername" autocomplete="username" required>
+        <option value="">– Benutzer wählen –</option>
+      </select>
     </label>
     <label class="field">
       <span>Passwort</span>
