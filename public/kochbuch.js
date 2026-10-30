@@ -68,11 +68,9 @@ const DB = {
     return API.get(`/recipes/${enc(id)}`);
   },
   async saveRecipe(recipe){
-    const saved = recipe.id
-      ? await API.put(`/recipes/${enc(recipe.id)}`, recipe)
-      : await API.post("/recipes", recipe);
-    await this.refreshCatalog();
-    return saved;
+    return recipe.id
+      ? API.put(`/recipes/${enc(recipe.id)}`, recipe)
+      : API.post("/recipes", recipe);
   },
   async deleteRecipe(id){
     await API.del(`/recipes/${enc(id)}`);
@@ -688,18 +686,29 @@ document.addEventListener("keydown", (e) => {
   if(e.key === "Escape" && !imageLightbox.hidden) closeImageLightbox();
 });
 
+// Bilder, die gerade noch eingelesen werden - "Speichern" wartet auf sie.
+const pendingImageReads = new Set();
+
 imageInput.addEventListener("change", () => {
   const files = Array.from(imageInput.files || []);
   files.forEach(file => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      // Neue Bilder liegen bis zum Speichern als Data-URL im Formular und
-      // wandern dann als Bytes in die Datenbank.
-      workingImages.push({ key: makeId(), name: file.name, dataUrl: reader.result, isNew: true });
-      renderImageList();
-    };
-    reader.onerror = () => showStatus(`Bild "${file.name}" konnte nicht gelesen werden.`, "error");
-    reader.readAsDataURL(file);
+    const read = new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        // Neue Bilder liegen bis zum Speichern als Data-URL im Formular und
+        // wandern dann als Bytes in die Datenbank.
+        workingImages.push({ key: makeId(), name: file.name, dataUrl: reader.result, isNew: true });
+        renderImageList();
+        resolve();
+      };
+      reader.onerror = () => {
+        showStatus(`Bild "${file.name}" konnte nicht gelesen werden.`, "error");
+        resolve();
+      };
+      reader.readAsDataURL(file);
+    });
+    pendingImageReads.add(read);
+    read.then(() => pendingImageReads.delete(read));
   });
   imageInput.value = "";
 });
@@ -796,14 +805,26 @@ recipeForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   if(recipeReadOnly) return;
   if(!recipeNameInput.value.trim()){
+    showStatus("Bitte einen Rezeptnamen eingeben.", "error");
     recipeNameInput.focus();
     return;
   }
+  // Eine Menge ohne Zutat laesst sich nicht speichern - nicht stillschweigend verwerfen.
+  if(ingredientAmountInput.value.trim() && !ingredientNameInput.value.trim()){
+    showStatus("Zur eingetippten Menge fehlt noch die Zutat.", "error");
+    ingredientNameInput.focus();
+    return;
+  }
+
+  saveRecipeBtn.disabled = true;
+  saveRecipeBtn.textContent = "Speichert…";
 
   // "Speichern" speichert alles im Dialog - auch eine eingetippte Zutat,
-  // die noch nicht mit "Hinzufuegen" uebernommen wurde.
+  // die noch nicht mit "Hinzufuegen" uebernommen wurde, und Bilder, die
+  // noch eingelesen werden.
   const pendingIngredient = takePendingIngredient();
   if(pendingIngredient) addToCatalogQuietly(pendingIngredient);
+  await Promise.all(pendingImageReads);
 
   const payload = {
     id: recipeIdInput.value || undefined,
@@ -819,18 +840,25 @@ recipeForm.addEventListener("submit", async (e) => {
       : { id: img.id, name: img.name })
   };
 
-  saveRecipeBtn.disabled = true;
-  saveRecipeBtn.textContent = "Speichert…";
-
+  // Sobald der Server gespeichert hat, schliesst der Dialog - auch wenn das
+  // Nachladen der Liste scheitert. Offen bliebe sonst ein zweites Speichern
+  // moeglich, das ein neues Rezept doppelt anlegen wuerde.
   const ok = await guard(async () => {
     await DB.saveRecipe(payload);
-    await loadRecipes({ keepLoaded: true });
     closeRecipeDialog();
   }, { success: "Rezept gespeichert." });
 
   saveRecipeBtn.disabled = false;
   saveRecipeBtn.textContent = "Speichern";
-  if(!ok) recipeNameInput.focus();
+  if(!ok){
+    recipeNameInput.focus();
+    return;
+  }
+
+  await guard(async () => {
+    await DB.refreshCatalog();
+    await loadRecipes({ keepLoaded: true });
+  });
 });
 
 /* =========================================================================
