@@ -4,6 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Kochbuch</title>
+<!-- PWA: installierbar, eigenes Fenster, Icons -->
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#2F4B3C">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Kochbuch">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="kochbuch.css">
@@ -39,6 +48,8 @@
 <header class="app-header">
   <h1 class="app-title">Kochbuch</h1>
   <div class="header-right">
+    <!-- Erscheint nur, wenn der Browser die Installation als App anbietet -->
+    <button id="installBtn" class="btn btn-ghost btn-small" type="button" title="Kochbuch als App auf diesem Gerät installieren" hidden>📲 App installieren</button>
     <!-- Angemeldeter Benutzer mit Rechte-Anzeige, erst nach dem Login sichtbar -->
     <div id="userBar" class="user-bar" hidden>
       <span class="user-name" id="currentUserName"></span>

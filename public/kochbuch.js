@@ -16,7 +16,7 @@ const API = {
         body: body === undefined ? undefined : JSON.stringify(body)
       });
     }catch(err){
-      throw new Error("Server nicht erreichbar. Läuft \"node server.js\" noch?");
+      throw new Error("Keine Verbindung zum Kochbuch-Server – bitte Internetverbindung prüfen.");
     }
 
     if(res.status === 204) return null;
@@ -1319,6 +1319,39 @@ async function openRecipeFromUrl(){
   window.history.replaceState(null, "", window.location.pathname + (rest ? `?${rest}` : ""));
   await guard(async () => openRecipeDialog(await DB.getRecipe(id)));
 }
+
+/* =========================================================================
+   PWA — Service Worker (nur App-Huelle, keine Daten; siehe sw.js) und
+   "App installieren", sobald der Browser die Installation anbietet.
+   ========================================================================= */
+if("serviceWorker" in navigator){
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(err => console.warn("Service Worker:", err));
+  });
+}
+
+const installBtn = document.getElementById("installBtn");
+let installPrompt = null;
+
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();          // eigener Button statt Browser-Leiste
+  installPrompt = e;
+  installBtn.hidden = false;
+});
+
+installBtn.addEventListener("click", async () => {
+  if(!installPrompt) return;
+  installPrompt.prompt();
+  await installPrompt.userChoice;
+  installPrompt = null;
+  installBtn.hidden = true;
+});
+
+window.addEventListener("appinstalled", () => {
+  installPrompt = null;
+  installBtn.hidden = true;
+  showStatus("Kochbuch als App installiert.", "success");
+});
 
 /* =========================================================================
    Start
