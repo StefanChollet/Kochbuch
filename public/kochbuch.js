@@ -395,12 +395,11 @@ new IntersectionObserver((entries) => {
  * Ein Klick darauf oeffnet die Kochansicht in einem neuen Tab.
  */
 function imageIndicator(recipe){
-  const has = recipe.imageCount > 0;
-  const label = (has
-    ? (recipe.imageCount === 1 ? "1 Bild vorhanden" : `${recipe.imageCount} Bilder vorhanden`)
-    : "Kein Bild") + " – Kochansicht öffnen";
+  // Ohne Bild bleibt nur der leere Platz, damit die Namen untereinander stehen.
+  if(!recipe.thumbnailUrl) return `<span class="recipe-img-empty" aria-hidden="true"></span>`;
+  const label = (recipe.imageCount === 1 ? "1 Bild vorhanden" : `${recipe.imageCount} Bilder vorhanden`) + " – Kochansicht öffnen";
   return `<button type="button" class="recipe-img-btn" data-action="cook" data-id="${recipe.id}" title="${label}" aria-label="${label}">` +
-    `<svg class="recipe-img-icon ${has ? "has-image" : "no-image"}" width="16" height="16" aria-hidden="true"><use href="#${has ? "kochbild" : "kochbild-none"}"/></svg></button>`;
+    `<img class="recipe-img-thumb" src="${recipe.thumbnailUrl}" width="16" height="16" alt="" loading="lazy"></button>`;
 }
 
 /** Aktionen je nach Rechten: Schreiben = bearbeiten + loeschen, Nur lesen = ansehen. */

@@ -285,13 +285,15 @@ body{
   gap:.5rem;
 }
 /* Kochbild-Symbol vor dem Rezeptnamen: 16x16, zwei Zustaende */
-.recipe-img-icon{
+/* Erstes Bild des Rezepts als 16x16-Miniatur; ohne Bild bleibt der Platz leer */
+.recipe-img-thumb{
   width:16px; height:16px;
-  flex:0 0 auto;
+  display:block;
+  object-fit:cover;
+  border-radius:2px;
 }
-.recipe-img-icon.has-image{ color: var(--ok); }
-.recipe-img-icon.no-image{ color: var(--ink-soft); opacity:.4; }
-/* Das Symbol ist ein Knopf: Klick oeffnet die Kochansicht */
+.recipe-img-empty{ width:16px; height:16px; flex:0 0 auto; }
+/* Die Miniatur ist ein Knopf: Klick oeffnet die Kochansicht */
 .recipe-img-btn{
   display:inline-flex; align-items:center; justify-content:center;
   padding:2px; margin:-2px; border:0; border-radius:4px;
