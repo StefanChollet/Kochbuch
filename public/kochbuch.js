@@ -390,16 +390,17 @@ new IntersectionObserver((entries) => {
 }, { root: recipeTableScroll, rootMargin: `0px 0px ${RECIPE_PRELOAD_PX}px 0px` }).observe(recipeLoadMore);
 
 /**
- * Festes 16x16-Kochbild-Symbol pro Zeile - immer dasselbe Bild, es zeigt nur,
- * ob das Rezept Fotos hat (kraeftig) oder keine (blass, durchgestrichen).
- * Ein Klick darauf oeffnet die Kochansicht in einem neuen Tab.
+ * Festes 16x16-Kochbild-Symbol pro Zeile. Rezept mit Bildern: farbig, Klick
+ * oeffnet das Kochbuch-Detail. Ohne Bilder: hell in Schwarz-Weiss, Klick
+ * oeffnet die Kochansicht in einem neuen Tab.
  */
 function imageIndicator(recipe){
-  // Ohne Bild bleibt nur der leere Platz, damit die Namen untereinander stehen.
-  if(!recipe.thumbnailUrl) return `<span class="recipe-img-empty" aria-hidden="true"></span>`;
-  const label = (recipe.imageCount === 1 ? "1 Bild vorhanden" : `${recipe.imageCount} Bilder vorhanden`) + " – Kochansicht öffnen";
-  return `<button type="button" class="recipe-img-btn" data-action="cook" data-id="${recipe.id}" title="${label}" aria-label="${label}">` +
-    `<img class="recipe-img-thumb" src="${recipe.thumbnailUrl}" width="16" height="16" alt="" loading="lazy"></button>`;
+  const has = recipe.imageCount > 0;
+  const label = has
+    ? (recipe.imageCount === 1 ? "1 Bild vorhanden" : `${recipe.imageCount} Bilder vorhanden`) + " – Kochbuch-Detail öffnen"
+    : "Kein Bild – Kochansicht öffnen";
+  return `<button type="button" class="recipe-img-btn" data-action="${has ? "edit" : "cook"}" data-id="${recipe.id}" title="${label}" aria-label="${label}">` +
+    `<svg class="recipe-img-icon ${has ? "has-image" : "no-image"}" width="16" height="16" aria-hidden="true"><use href="#kochbild"/></svg></button>`;
 }
 
 /** Aktionen je nach Rechten: Schreiben = bearbeiten + loeschen, Nur lesen = ansehen. */
