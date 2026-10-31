@@ -341,16 +341,17 @@ Link geöffnet), lädt der Button stattdessen `/?recipe=<id>` – das Kochbuch
 | Rolle | Wer | Darf |
 |---|---|---|
 | `admin` | genau ein Benutzer, fest `id 0`, Name `stefan` (Konstante `ADMIN_USERNAME` in `db.js`) | alles; kann über die Verwaltung weder angelegt, verändert noch gelöscht werden |
-| `rw` – Lesen + Schreiben | beliebig viele | Rezepte anlegen, bearbeiten, löschen; Kühlschrank und Katalog; Benutzerverwaltung |
+| `rw` – Lesen + Schreiben | beliebig viele | Rezepte anlegen, bearbeiten, löschen; Kühlschrank und Katalog |
 | `r` – Nur lesen | beliebig viele | Rezepte, Details und Kühlschrank nur ansehen |
 
 - Ohne Anmeldung liefert die API nur `/api/health` und `/api/auth/*`, alles
   andere antwortet mit `401`. Schreibende Anfragen ohne Schreibrecht → `403`.
 - Kopfzeile: Benutzername, Rechte-Anzeige (Admin / Lesen + Schreiben / Nur
-  lesen), Menü *Benutzerverwaltung* (nur Admin und `rw`), *Passwort*, *Abmelden*.
-- Benutzerverwaltung: anlegen, umbenennen, Rechte ändern, Passwort setzen,
-  löschen. Die eigenen Rechte und das eigene Konto lassen sich dort nicht ändern
-  bzw. löschen. Rezepte eines gelöschten Benutzers bleiben erhalten.
+  lesen), Menü *Benutzerverwaltung* (nur Admin), *Passwort*, *Abmelden*.
+- Benutzerverwaltung (nur Admin, sonst `403`): Beim Erfassen werden nur
+  Benutzername und Passwort eingegeben, id und Rechte (`r`) setzt die App. Ändern
+  lassen sich danach nur die Rechte. Löschen bleibt möglich; Rezepte eines
+  gelöschten Benutzers bleiben erhalten.
 - Jeder (auch der Admin) kann das **eigene** Passwort ändern.
 - **Admin-Startpasswort:** wird beim ersten Start angelegt – aus
   `KOCHBUCH_ADMIN_PASSWORD`, sonst zufällig und einmalig im Server-Log. Der

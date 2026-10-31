@@ -250,7 +250,7 @@
   </div>
 </dialog>
 
-<!-- ============ Dialog: Benutzerverwaltung (Admin und Lesen + Schreiben) ============ -->
+<!-- ============ Dialog: Benutzerverwaltung (nur Admin) ============ -->
 <dialog id="usersDialog" class="recipe-dialog users-dialog-wide">
   <div class="dialog-body">
     <div class="dialog-head">
@@ -273,10 +273,6 @@
         <div class="new-user-row">
           <input type="text" id="newUserName" placeholder="Benutzername" required maxlength="40" autocomplete="off">
           <input type="password" id="newUserPassword" placeholder="Passwort (mind. 8 Zeichen)" required maxlength="200" autocomplete="new-password">
-          <select id="newUserRole" aria-label="Rechte">
-            <option value="r">Nur lesen</option>
-            <option value="rw">Lesen + Schreiben</option>
-          </select>
           <button type="submit" class="btn btn-primary btn-small">Anlegen</button>
         </div>
       </fieldset>

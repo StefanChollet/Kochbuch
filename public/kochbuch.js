@@ -1014,8 +1014,8 @@ document.querySelectorAll("dialog [data-close]").forEach(btn => {
 
 /* =========================================================================
    Benutzer und Rechte
-   - admin (id 0): fest, einmalig, nicht aenderbar und nicht loeschbar
-   - rw: lesen und schreiben, inkl. Benutzerverwaltung
+   - admin (id 0): fest, einmalig, nicht aenderbar und nicht loeschbar; als einziger in der Benutzerverwaltung
+   - rw: lesen und schreiben
    - r:  nur lesen
    Der Server prueft jedes Recht selbst; hier geht es nur um die Anzeige.
    ========================================================================= */
@@ -1026,7 +1026,7 @@ function canWrite(){
   return !!currentUser && currentUser.canWrite;
 }
 
-/* ---- Benutzerverwaltung (nur Admin und Lesen + Schreiben) ---- */
+/* ---- Benutzerverwaltung (nur Admin): erfassen, Rechte aendern, loeschen ---- */
 const usersDialog = document.getElementById("usersDialog");
 const usersTableBody = document.getElementById("usersTableBody");
 const newUserForm = document.getElementById("newUserForm");
@@ -1039,14 +1039,12 @@ async function loadUsers(){
 
 function renderUsers(){
   usersTableBody.innerHTML = userList.map(u => {
-    const self = u.id === currentUser.id;
-    const me = self ? ' <span class="owner-cell">(ich)</span>' : "";
     if(u.role === "admin"){
       // Der Admin ist fest: keine Bedienelemente.
       return `
         <tr data-id="${u.id}">
           <td>${u.id}</td>
-          <td>${escapeHtml(u.username)}${me}</td>
+          <td>${escapeHtml(u.username)} <span class="owner-cell">(ich)</span></td>
           <td><span class="role-badge role-admin">${ROLE_LABELS.admin}</span></td>
           <td>${u.recipeCount}</td>
           <td><span class="fixed-note">fest – nicht änderbar</span></td>
@@ -1056,17 +1054,15 @@ function renderUsers(){
     return `
       <tr data-id="${u.id}">
         <td>${u.id}</td>
-        <td>${escapeHtml(u.username)}${me}</td>
+        <td>${escapeHtml(u.username)}</td>
         <td>
-          <select data-action="role" aria-label="Rechte von ${escapeHtml(u.username)}"${self ? " disabled title=\"Eigene Rechte kann man nicht selbst ändern\"" : ""}>
+          <select data-action="role" aria-label="Rechte von ${escapeHtml(u.username)}">
             ${opt("rw")}${opt("r")}
           </select>
         </td>
         <td>${u.recipeCount}</td>
         <td class="menu-cell">
-          <button type="button" class="btn btn-icon" data-action="rename" title="Umbenennen" aria-label="Umbenennen">✏️</button>
-          <button type="button" class="btn btn-ghost btn-small" data-action="password">Passwort setzen</button>
-          ${self ? "" : `<button type="button" class="btn btn-icon" data-action="delete-user" title="Löschen" aria-label="Löschen">🗑️</button>`}
+          <button type="button" class="btn btn-icon" data-action="delete-user" title="Löschen" aria-label="Löschen">🗑️</button>
         </td>
       </tr>`;
   }).join("");
@@ -1083,80 +1079,30 @@ usersTableBody.addEventListener("change", async (e) => {
   if(!ok) select.value = user.role;
 });
 
-/** Ersetzt die Menu-Zelle einer Zeile durch ein kleines Eingabefeld mit OK/Abbrechen. */
-function inlineEdit(cell, { type, value = "", placeholder, saveAction }){
-  cell.innerHTML = `
-    <input type="${type}" placeholder="${placeholder}" maxlength="${type === "password" ? 200 : 40}"
-           autocomplete="${type === "password" ? "new-password" : "off"}" value="${escapeHtml(value)}">
-    <button type="button" class="btn btn-primary btn-small" data-action="${saveAction}">OK</button>
-    <button type="button" class="btn btn-ghost btn-small" data-action="edit-cancel">Abbrechen</button>`;
-  const input = cell.querySelector("input");
-  input.focus();
-  input.select();
-  input.addEventListener("keydown", (e) => {
-    if(e.key === "Enter"){ e.preventDefault(); cell.querySelector(`[data-action="${saveAction}"]`).click(); }
-  });
-}
-
 usersTableBody.addEventListener("click", async (e) => {
-  const btn = e.target.closest("button[data-action]");
+  const btn = e.target.closest('button[data-action="delete-user"]');
   if(!btn) return;
-  const row = btn.closest("tr");
-  const user = userList.find(u => String(u.id) === row.dataset.id);
-  const cell = btn.closest(".menu-cell");
-
-  switch(btn.dataset.action){
-    case "password":
-      // Passwortfeld direkt in der Zeile statt window.prompt (das zeigt Klartext).
-      inlineEdit(cell, { type: "password", placeholder: "Neues Passwort", saveAction: "password-save" });
-      return;
-    case "rename":
-      inlineEdit(cell, { type: "text", value: user.username, placeholder: "Benutzername", saveAction: "rename-save" });
-      return;
-    case "edit-cancel":
-      renderUsers();
-      return;
-    case "password-save": {
-      const password = cell.querySelector("input").value;
-      const ok = await guard(() => API.patch(`/users/${enc(user.id)}`, { password }),
-        { success: `Neues Passwort für ${user.username} gesetzt.` });
-      if(ok) renderUsers();
-      return;
-    }
-    case "rename-save": {
-      const username = cell.querySelector("input").value.trim();
-      await guard(async () => {
-        const updated = await API.patch(`/users/${enc(user.id)}`, { username });
-        if(updated.id === currentUser.id) setCurrentUser({ ...currentUser, username: updated.username });
-        await loadUsers();
-        await loadRecipes({ keepLoaded: true });
-      }, { success: `Benutzer umbenannt in ${username}.` });
-      return;
-    }
-    case "delete-user": {
-      const ok = window.confirm(
-        `Benutzer "${user.username}" löschen?\n\n` +
-        (user.recipeCount > 0 ? `Seine ${user.recipeCount} Rezept(e) bleiben erhalten.` : "Er hat keine Rezepte erstellt.")
-      );
-      if(!ok) return;
-      await guard(async () => {
-        await API.del(`/users/${enc(user.id)}`);
-        await loadUsers();
-        await loadRecipes({ keepLoaded: true });
-      }, { success: `Benutzer ${user.username} gelöscht.` });
-    }
-  }
+  const user = userList.find(u => String(u.id) === btn.closest("tr").dataset.id);
+  const ok = window.confirm(
+    `Benutzer "${user.username}" löschen?\n\n` +
+    (user.recipeCount > 0 ? `Seine ${user.recipeCount} Rezept(e) bleiben erhalten.` : "Er hat keine Rezepte erstellt.")
+  );
+  if(!ok) return;
+  await guard(async () => {
+    await API.del(`/users/${enc(user.id)}`);
+    await loadUsers();
+    await loadRecipes({ keepLoaded: true });
+  }, { success: `Benutzer ${user.username} gelöscht.` });
 });
 
 newUserForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const username = document.getElementById("newUserName").value.trim();
-  const role = document.getElementById("newUserRole").value;
   await guard(async () => {
-    await API.post("/users", { username, password: document.getElementById("newUserPassword").value, role });
+    await API.post("/users", { username, password: document.getElementById("newUserPassword").value });
     newUserForm.reset();
     await loadUsers();
-  }, { success: `Benutzer ${username} angelegt (${ROLE_LABELS[role]}).` });
+  }, { success: `Benutzer ${username} angelegt (${ROLE_LABELS.r}).` });
 });
 
 document.getElementById("usersBtn").addEventListener("click", async () => {
@@ -1220,7 +1166,7 @@ function setCurrentUser(user){
   currentUserRole.textContent = ROLE_LABELS[user.role] || user.role;
   currentUserRole.className = `role-badge role-${user.role}`;
   currentUserRole.title = user.canWrite ? "Darf lesen und schreiben" : "Darf nur lesen";
-  usersBtn.hidden = !user.canWrite;
+  usersBtn.hidden = user.role !== "admin";
   document.body.classList.toggle("is-readonly", !user.canWrite);
 }
 

@@ -702,7 +702,7 @@ function publicAccount(row) {
   return row ? { id: row.id, username: row.username, role: row.role } : null;
 }
 
-/** Schreiben duerfen Admin und "rw" - Rezepte, Kuehlschrank, Katalog und Benutzerverwaltung. */
+/** Schreiben duerfen Admin und "rw" - Rezepte, Kuehlschrank und Katalog. */
 function canWrite(account) {
   return !!account && (account.role === "admin" || account.role === "rw");
 }
@@ -789,34 +789,11 @@ function createAccount(input) {
   });
 }
 
-/** Aendert einen Benutzer: { username?, role?, password? }. */
-function updateAccount(id, changes, actingId) {
-  if (!changes || typeof changes !== "object") throw new HttpError(400, "Keine Aenderungen uebergeben.");
-  return transaction(() => {
-    const account = requireEditableAccount(id);
-    if ("username" in changes) {
-      const username = normalizeUsername(changes.username);
-      const clash = db.prepare("SELECT id FROM accounts WHERE username = ?").get(username);
-      if (clash && clash.id !== account.id) {
-        throw new HttpError(409, `Den Benutzernamen "${username}" gibt es schon.`);
-      }
-      db.prepare("UPDATE accounts SET username = ? WHERE id = ?").run(username, account.id);
-    }
-    if ("role" in changes) {
-      const role = normalizeRole(changes.role);
-      if (account.id === actingId && role !== account.role) {
-        throw new HttpError(400, "Die eigenen Rechte kann man nicht selbst ändern.");
-      }
-      db.prepare("UPDATE accounts SET role = ? WHERE id = ?").run(role, account.id);
-    }
-    if ("password" in changes) {
-      db.prepare("UPDATE accounts SET password_hash = ? WHERE id = ?")
-        .run(hashPassword(validatePassword(changes.password)), account.id);
-      // Neues Passwort: alle bestehenden Anmeldungen dieses Benutzers beenden.
-      db.prepare("DELETE FROM account_sessions WHERE account_id = ?").run(account.id);
-    }
-    return getAccount(account.id);
-  });
+/** Aendert die Rechte eines Benutzers - mehr laesst sich an ihm nicht aendern. */
+function updateAccountRole(id, role) {
+  const account = requireEditableAccount(id);
+  db.prepare("UPDATE accounts SET role = ? WHERE id = ?").run(normalizeRole(role), account.id);
+  return getAccount(account.id);
 }
 
 /** Loescht einen Benutzer. Seine Rezepte bleiben, nur "erstellt von" wird leer. */
@@ -1141,7 +1118,7 @@ module.exports = {
   listAccounts,
   listUsernames,
   createAccount,
-  updateAccount,
+  updateAccountRole,
   deleteAccount,
   authenticate,
   changeOwnPassword,

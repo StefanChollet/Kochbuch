@@ -159,7 +159,7 @@ function describeAccount(account) {
 /**
  * Jede Route: [Methode, Pfad-Regex, Handler, Zugriff].
  * Zugriff: "public" (ohne Anmeldung), "read" (jeder Angemeldete, Standard)
- * oder "write" (Admin und Rolle "rw").
+ * "write" (Admin und Rolle "rw") oder "admin" (nur der Admin).
  * Handler bekommen (req, res, ctx, ...Regex-Gruppen); ctx.account ist der
  * angemeldete Benutzer, ctx.token das Sitzungstoken.
  */
@@ -206,27 +206,29 @@ const routes = [
     sendEmpty(res, 204);
   }],
 
-  /* ---- Benutzerverwaltung (Admin und "rw") ---- */
+  /* ---- Benutzerverwaltung (nur der Admin) ---- */
   ["GET", /^\/api\/users$/, async (req, res) => {
     sendJson(res, 200, db.listAccounts());
-  }, "write"],
+  }, "admin"],
 
+  // Erfasst werden nur Name und Passwort; neue Benutzer duerfen zuerst nur lesen.
   ["POST", /^\/api\/users$/, async (req, res) => {
     const body = await readJson(req);
-    sendJson(res, 201, db.createAccount({ username: body.username, password: body.password, role: body.role }));
-  }, "write"],
+    sendJson(res, 201, db.createAccount({ username: body.username, password: body.password, role: "r" }));
+  }, "admin"],
 
-  // Body: { username?, role?, password? } - der Admin (id 0) ist gesperrt.
+  // Body: { role } - aendern laesst sich nur das Recht, der Admin (id 0) ist gesperrt.
   ["PATCH", /^\/api\/users\/([^/]+)$/, async (req, res, ctx, id) => {
     const body = await readJson(req);
-    const changes = {};
-    for (const key of ["username", "role", "password"]) if (key in body) changes[key] = body[key];
-    sendJson(res, 200, db.updateAccount(id, changes, ctx.account.id));
-  }, "write"],
+    if (Object.keys(body).some((key) => key !== "role")) {
+      throw new HttpError(400, "Geändert werden können nur die Rechte.");
+    }
+    sendJson(res, 200, db.updateAccountRole(id, body.role));
+  }, "admin"],
 
   ["DELETE", /^\/api\/users\/([^/]+)$/, async (req, res, ctx, id) => {
     sendJson(res, 200, db.deleteAccount(id, ctx.account.id));
-  }, "write"],
+  }, "admin"],
 
   // Alles fuer den Startaufbau in einem Rutsch.
   ["GET", /^\/api\/state$/, async (req, res) => {
@@ -387,6 +389,9 @@ async function handle(req, res, pathname) {
       if (access !== "public" && !account) throw new HttpError(401, "Bitte anmelden.");
       if (access === "write" && !db.canWrite(account)) {
         throw new HttpError(403, "Dafür fehlen die Rechte – dieser Benutzer darf nur lesen.");
+      }
+      if (access === "admin" && account.role !== "admin") {
+        throw new HttpError(403, "Die Benutzerverwaltung steht nur dem Admin zur Verfügung.");
       }
       await handler(req, res, { account, token }, ...match.slice(1).map(decodeURIComponent));
     } catch (err) {
