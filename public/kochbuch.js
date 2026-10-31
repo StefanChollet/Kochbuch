@@ -1098,11 +1098,12 @@ usersTableBody.addEventListener("click", async (e) => {
 newUserForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const username = document.getElementById("newUserName").value.trim();
+  const role = document.getElementById("newUserRole").value;
   await guard(async () => {
-    await API.post("/users", { username, password: document.getElementById("newUserPassword").value });
+    await API.post("/users", { username, password: document.getElementById("newUserPassword").value, role });
     newUserForm.reset();
     await loadUsers();
-  }, { success: `Benutzer ${username} angelegt (${ROLE_LABELS.r}).` });
+  }, { success: `Benutzer ${username} angelegt (${ROLE_LABELS[role]}).` });
 });
 
 document.getElementById("usersBtn").addEventListener("click", async () => {

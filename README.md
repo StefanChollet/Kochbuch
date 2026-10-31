@@ -348,9 +348,9 @@ Link geöffnet), lädt der Button stattdessen `/?recipe=<id>` – das Kochbuch
   andere antwortet mit `401`. Schreibende Anfragen ohne Schreibrecht → `403`.
 - Kopfzeile: Benutzername, Rechte-Anzeige (Admin / Lesen + Schreiben / Nur
   lesen), Menü *Benutzerverwaltung* (nur Admin), *Passwort*, *Abmelden*.
-- Benutzerverwaltung (nur Admin, sonst `403`): Beim Erfassen werden nur
-  Benutzername und Passwort eingegeben, id und Rechte (`r`) setzt die App. Ändern
-  lassen sich danach nur die Rechte. Löschen bleibt möglich; Rezepte eines
+- Benutzerverwaltung (nur Admin, sonst `403`): Beim Erfassen werden
+  Benutzername, Passwort und Rechte (`r` oder `rw`) eingegeben, die id setzt die
+  App. Ändern lassen sich danach nur die Rechte. Löschen bleibt möglich; Rezepte eines
   gelöschten Benutzers bleiben erhalten.
 - Jeder (auch der Admin) kann das **eigene** Passwort ändern.
 - **Admin-Startpasswort:** wird beim ersten Start angelegt – aus

@@ -211,10 +211,10 @@ const routes = [
     sendJson(res, 200, db.listAccounts());
   }, "admin"],
 
-  // Erfasst werden nur Name und Passwort; neue Benutzer duerfen zuerst nur lesen.
+  // Erfasst werden Name, Passwort und Rechte; die id setzt die App.
   ["POST", /^\/api\/users$/, async (req, res) => {
     const body = await readJson(req);
-    sendJson(res, 201, db.createAccount({ username: body.username, password: body.password, role: "r" }));
+    sendJson(res, 201, db.createAccount({ username: body.username, password: body.password, role: body.role }));
   }, "admin"],
 
   // Body: { role } - aendern laesst sich nur das Recht, der Admin (id 0) ist gesperrt.
