@@ -669,6 +669,18 @@ body.is-readonly .write-only{ display:none !important; }
 }
 .recipe-dialog .dialog-body form{ padding:0; max-height:none; overflow:visible; }
 .users-dialog-wide{ width: min(760px, 94vw); }
+/* Die Benutzerliste scrollt in sich, Titel und Formular bleiben stehen; gut sichtbarer Balken */
+.users-dialog-wide .dialog-body,
+.users-dialog-wide .recipe-table-scroll{
+  scrollbar-width: auto;
+  scrollbar-color: var(--ink-soft) transparent;
+}
+.users-dialog-wide .recipe-table-scroll{
+  flex: 0 1 auto;
+  min-height: 9rem;
+  max-height: 40vh;
+  margin-top: 0;
+}
 .users-table td{ padding:.5rem .6rem; vertical-align:middle; }
 .users-table .col-menu{ width:auto; }
 .users-table .menu-cell{ align-items:center; white-space:nowrap; }
