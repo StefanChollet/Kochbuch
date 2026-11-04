@@ -361,11 +361,6 @@ const routes = [
     if (!db.deleteCatalogEntry(name)) throw new HttpError(404, `Katalogeintrag "${name}" nicht gefunden.`);
     sendEmpty(res, 204);
   }, "write"],
-
-  /* ---- Import aus dem alten localStorage-Bestand ---- */
-  ["POST", /^\/api\/import$/, async (req, res, ctx) => {
-    sendJson(res, 200, db.importState(await readJson(req), ctx.account.id));
-  }, "write"],
 ];
 
 /**

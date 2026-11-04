@@ -569,52 +569,6 @@ function deleteCatalogEntry(name) {
   return db.prepare("DELETE FROM ingredient_catalog WHERE name = ?").run(String(name)).changes > 0;
 }
 
-/* -------------------------------------------------------------- Import */
-
-/**
- * Uebernimmt einen kompletten Datenbestand im alten localStorage-Format.
- * Bestehende Datensaetze (gleiche id) werden uebersprungen, nicht ueberschrieben.
- */
-function importState(state, accountId) {
-  if (!state || typeof state !== "object") throw new HttpError(400, "Import-Daten fehlen.");
-  const recipes = Array.isArray(state.recipes) ? state.recipes : [];
-  const fridge = Array.isArray(state.fridge) ? state.fridge : [];
-  const catalog = Array.isArray(state.ingredientCatalog) ? state.ingredientCatalog : [];
-
-  return transaction(() => {
-    const result = { recipes: 0, fridge: 0, catalog: 0, skipped: 0 };
-
-    for (const recipe of recipes) {
-      if (!recipe || typeof recipe !== "object") continue;
-      const id = typeof recipe.id === "string" && recipe.id.trim() ? recipe.id.trim() : makeId();
-      if (db.prepare("SELECT 1 FROM recipes WHERE id = ?").get(id)) { result.skipped++; continue; }
-      const data = normalizeRecipeInput(recipe);
-      insertRecipe(id, data, accountId);
-      writeIngredients(id, data.ingredients);
-      // Altbestand kennt nur dataUrl-Bilder; ids aus dem Browser gelten hier nicht.
-      writeImages(id, data.images.map((img) => ({ name: img && img.name, dataUrl: img && img.dataUrl })));
-      syncCatalogFromIngredients(data.ingredients);
-      result.recipes++;
-    }
-
-    for (const item of fridge) {
-      if (!item || typeof item !== "object" || !String(item.name || "").trim()) continue;
-      const id = typeof item.id === "string" && item.id.trim() ? item.id.trim() : makeId();
-      if (db.prepare("SELECT 1 FROM fridge_items WHERE id = ?").get(id)) { result.skipped++; continue; }
-      addFridgeItem({ id, name: item.name, amount: item.amount });
-      result.fridge++;
-    }
-
-    for (const name of catalog) {
-      if (typeof name !== "string" || !name.trim()) continue;
-      addCatalogEntry(name);
-      result.catalog++;
-    }
-
-    return result;
-  });
-}
-
 /* --------------------------------------------------------------- Stand */
 
 function getState() {
@@ -796,12 +750,18 @@ function updateAccountRole(id, role) {
   return getAccount(account.id);
 }
 
-/** Loescht einen Benutzer. Seine Rezepte bleiben, nur "erstellt von" wird leer. */
+/**
+ * Loescht einen Benutzer samt allen seinen Rezepten (Zutaten, Bilder und
+ * Kochansicht-Links verschwinden per ON DELETE CASCADE mit).
+ */
 function deleteAccount(id, actingId) {
   const account = requireEditableAccount(id);
   if (account.id === actingId) throw new HttpError(400, "Man kann sich nicht selbst löschen.");
-  db.prepare("DELETE FROM accounts WHERE id = ?").run(account.id);
-  return { deleted: account.username };
+  return transaction(() => {
+    const recipes = db.prepare("DELETE FROM recipes WHERE created_by = ?").run(account.id).changes;
+    db.prepare("DELETE FROM accounts WHERE id = ?").run(account.id);
+    return { deleted: account.username, deletedRecipes: recipes };
+  });
 }
 
 /** Prueft Benutzername + Passwort; liefert den Benutzer oder null. */
@@ -1104,7 +1064,6 @@ module.exports = {
   listCatalog,
   addCatalogEntry,
   deleteCatalogEntry,
-  importState,
   getState,
   getStats,
   getRecommendations,

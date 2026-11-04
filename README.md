@@ -93,10 +93,10 @@ Fehler kommen einheitlich als `{ "error": "..." }` mit passendem HTTP-Status
 | `POST` | `/api/auth/login` | `{ username, password }` → Sitzungs-Cookie |
 | `POST` | `/api/auth/logout` | Sitzung beenden → `204` |
 | `POST` | `/api/auth/password` | eigenes Passwort ändern `{ currentPassword, newPassword }` (alle Rollen) |
-| `GET` | `/api/users` | Benutzerliste mit Rolle und Rezeptzahl (Schreibrecht) |
-| `POST` | `/api/users` | Benutzer anlegen `{ username, password, role: "rw" \| "r" }` (Schreibrecht) |
-| `PATCH` | `/api/users/:id` | `{ username?, role?, password? }` – nicht für den Admin (Schreibrecht) |
-| `DELETE` | `/api/users/:id` | Benutzer löschen – nicht den Admin, nicht sich selbst (Schreibrecht) |
+| `GET` | `/api/users` | Benutzerliste mit Rolle und Rezeptzahl (nur Admin) |
+| `POST` | `/api/users` | Benutzer anlegen `{ username, password, role: "rw" \| "r" }` (nur Admin) |
+| `PATCH` | `/api/users/:id` | nur `{ role }` – nicht für den Admin (nur Admin) |
+| `DELETE` | `/api/users/:id` | Benutzer samt seinen Rezepten löschen – nicht den Admin (nur Admin) |
 | `POST` | `/api/recipes/:id/views` | neuen Kochansicht-Link erzeugen → `{ code, url }` (Leserecht genügt) |
 | `GET` | `/api/views/:code` | das eine Rezept zum Code (angemeldet + gültiger Code, sonst 401/404) |
 | `GET` | `/api/state` | Kühlschrank + Katalog in einem Aufruf (Startaufbau) |
@@ -115,7 +115,6 @@ Fehler kommen einheitlich als `{ "error": "..." }` mit passendem HTTP-Status
 | `GET` | `/api/catalog` | Zutaten-Vorschläge |
 | `POST` | `/api/catalog` | Vorschlag ergänzen |
 | `DELETE` | `/api/catalog/:name` | Vorschlag entfernen → `204` |
-| `POST` | `/api/import` | Altbestand aus der localStorage-Version übernehmen |
 
 ### Rezeptübersicht: Suche, Sortierung, Paging
 
@@ -272,21 +271,6 @@ Testrezepte haben ids mit `test-`, Testbenutzer werden in `meta`
 Daten bleiben unberührt. Passwort aller Testbenutzer: `test1234`.
 Die Zutatennamen bleiben nach dem Entfernen im Zutaten-Katalog.
 
-## Übernahme alter Browser-Daten
-
-Die erste Fassung hielt alles im `localStorage`. Liegt dort noch etwas und ist
-die Datenbank leer, bietet die App beim Laden einmalig die Übernahme an und
-schickt den Bestand an `POST /api/import`. Datensätze mit bereits vergebener
-`id` werden übersprungen, nicht überschrieben. Der Import lässt sich auch von
-Hand aufrufen:
-
-```bash
-curl -X POST http://localhost:3000/api/import -H "Content-Type: application/json" -d @export.json
-```
-
-Im `localStorage` bleibt danach nur noch die Theme-Einstellung – eine
-Anzeigeeinstellung pro Gerät, die auf dem Server nichts zu suchen hat.
-
 ## Sichern
 
 Die Datenbank ist eine einzelne Datei. Server stoppen, `kochbuch.sqlite`
@@ -350,8 +334,10 @@ Link geöffnet), lädt der Button stattdessen `/?recipe=<id>` – das Kochbuch
   lesen), Menü *Benutzerverwaltung* (nur Admin), *Passwort*, *Abmelden*.
 - Benutzerverwaltung (nur Admin, sonst `403`): Beim Erfassen werden
   Benutzername, Passwort und Rechte (`r` oder `rw`) eingegeben, die id setzt die
-  App. Ändern lassen sich danach nur die Rechte. Löschen bleibt möglich; Rezepte eines
-  gelöschten Benutzers bleiben erhalten.
+  App. Ändern lassen sich danach nur die Rechte. Löschen bleibt möglich und löscht
+  auch alle Rezepte dieses Benutzers.
+- Rezepte entstehen nur im Dialog *Kochbuch-Detail* (`POST /api/recipes`) und
+  gehören dem angemeldeten Benutzer.
 - Jeder (auch der Admin) kann das **eigene** Passwort ändern.
 - **Admin-Startpasswort:** wird beim ersten Start angelegt – aus
   `KOCHBUCH_ADMIN_PASSWORD`, sonst zufällig und einmalig im Server-Log. Der

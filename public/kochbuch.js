@@ -960,53 +960,6 @@ clearFridgeBtn.addEventListener("click", async () => {
   }, { success: "Kühlschrank geleert." });
 });
 
-/* =========================================================================
-   Einmalige Uebernahme alter Browser-Daten.
-   Frueher lag alles in localStorage. Steht dort noch etwas und ist der
-   Server leer, wird die Uebernahme einmal angeboten.
-   ========================================================================= */
-const LEGACY_KEY = "kochbuchV2_db";
-const LEGACY_DONE_KEY = "kochbuchV2_migrated";
-
-async function offerLegacyImport(){
-  if(!canWrite() || window.localStorage.getItem(LEGACY_DONE_KEY)) return false;
-
-  let legacy;
-  try{
-    const raw = window.localStorage.getItem(LEGACY_KEY);
-    if(!raw) return false;
-    legacy = JSON.parse(raw);
-  }catch{
-    return false;
-  }
-
-  const recipeCount = Array.isArray(legacy.recipes) ? legacy.recipes.length : 0;
-  const fridgeCount = Array.isArray(legacy.fridge) ? legacy.fridge.length : 0;
-  if(recipeCount + fridgeCount === 0) return false;
-
-  // Nur anbieten, solange auf dem Server noch nichts liegt.
-  if(DB.recipesPage.total > 0 || DB.data.fridge.length > 0) return false;
-
-  const ok = window.confirm(
-    `Im Browser liegen noch Daten aus der localStorage-Version:\n` +
-    `${recipeCount} Rezept(e), ${fridgeCount} Kühlschrank-Eintrag/-Einträge.\n\n` +
-    `In die Datenbank auf dem Server übernehmen?`
-  );
-  if(!ok){
-    window.localStorage.setItem(LEGACY_DONE_KEY, "abgelehnt");
-    return false;
-  }
-
-  return guard(async () => {
-    const result = await API.post("/import", legacy);
-    window.localStorage.setItem(LEGACY_DONE_KEY, new Date().toISOString());
-    await DB.load();
-    await loadRecipes();
-    renderFridgeList();
-    showStatus(`Übernommen: ${result.recipes} Rezept(e), ${result.fridge} Kühlschrank-Eintrag/-Einträge.`, "success");
-  });
-}
-
 // Kleine Dialoge: Buttons mit data-close schliessen ihren Dialog.
 document.querySelectorAll("dialog [data-close]").forEach(btn => {
   btn.addEventListener("click", () => btn.closest("dialog").close());
@@ -1085,14 +1038,14 @@ usersTableBody.addEventListener("click", async (e) => {
   const user = userList.find(u => String(u.id) === btn.closest("tr").dataset.id);
   const ok = window.confirm(
     `Benutzer "${user.username}" löschen?\n\n` +
-    (user.recipeCount > 0 ? `Seine ${user.recipeCount} Rezept(e) bleiben erhalten.` : "Er hat keine Rezepte erstellt.")
+    (user.recipeCount > 0 ? `Seine ${user.recipeCount} Rezept(e) werden ebenfalls gelöscht.` : "Er hat keine Rezepte erstellt.")
   );
   if(!ok) return;
   await guard(async () => {
     await API.del(`/users/${enc(user.id)}`);
     await loadUsers();
     await loadRecipes({ keepLoaded: true });
-  }, { success: `Benutzer ${user.username} gelöscht.` });
+  }, { success: `Benutzer ${user.username} und seine Rezepte gelöscht.` });
 });
 
 newUserForm.addEventListener("submit", async (e) => {
@@ -1248,7 +1201,6 @@ async function startApp(user){
   await loadRecipes();
   clearStatus();
   renderFridgeList();
-  await offerLegacyImport();
   await openRecipeFromUrl();
 }
 
