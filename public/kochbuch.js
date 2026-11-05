@@ -1139,6 +1139,25 @@ const userBar = document.getElementById("userBar");
 const currentUserName = document.getElementById("currentUserName");
 const currentUserRole = document.getElementById("currentUserRole");
 const usersBtn = document.getElementById("usersBtn");
+const userMenuBtn = document.getElementById("userMenuBtn");
+const userMenu = document.getElementById("userMenu");
+
+/* ---- Benutzermenue oben rechts ---- */
+function setUserMenuOpen(open){
+  userMenu.hidden = !open;
+  userMenuBtn.setAttribute("aria-expanded", String(open));
+  if(open) userMenu.querySelector(".user-menu-item:not([hidden])")?.focus();
+}
+
+userMenuBtn.addEventListener("click", () => setUserMenuOpen(userMenu.hidden));
+// Ein Menuepunkt schliesst das Menue; seine eigene Aktion haengt am jeweiligen Button.
+userMenu.addEventListener("click", (e) => { if(e.target.closest(".user-menu-item")) setUserMenuOpen(false); });
+document.addEventListener("click", (e) => {
+  if(!userMenu.hidden && !e.target.closest("#userBar")) setUserMenuOpen(false);
+});
+document.addEventListener("keydown", (e) => {
+  if(e.key === "Escape" && !userMenu.hidden){ setUserMenuOpen(false); userMenuBtn.focus(); }
+});
 
 /** Kopfzeile: Benutzername, Rechte-Anzeige und Menu passend zur Rolle. */
 function setCurrentUser(user){
@@ -1155,6 +1174,7 @@ function showAuthScreen(){
   currentUser = null;
   document.querySelectorAll("dialog[open]").forEach(d => d.close());
   appMain.hidden = true;
+  setUserMenuOpen(false);
   userBar.hidden = true;
   authScreen.hidden = false;
   clearStatus();

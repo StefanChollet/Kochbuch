@@ -332,7 +332,8 @@ Link geöffnet), lädt der Button stattdessen `/?recipe=<id>` – das Kochbuch
 - Ohne Anmeldung liefert die API nur `/api/health` und `/api/auth/*`, alles
   andere antwortet mit `401`. Schreibende Anfragen ohne Schreibrecht → `403`.
 - Kopfzeile: Benutzername, Rechte-Anzeige (Admin / Lesen + Schreiben / Nur
-  lesen), Menü *Benutzerverwaltung* (nur Admin), *Passwort*, *Abmelden*.
+  lesen). Ein Klick darauf öffnet das Benutzermenü mit *Benutzerverwaltung* (nur
+  Admin), *Passwort ändern* und *Abmelden*.
 - Benutzerverwaltung (nur Admin, sonst `403`): Beim Erfassen werden
   Benutzername, Passwort und Rechte (`r` oder `rw`) eingegeben, die id setzt die
   App. Ändern lassen sich danach nur die Rechte. Löschen bleibt möglich und löscht

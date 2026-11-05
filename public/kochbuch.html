@@ -50,13 +50,19 @@
   <div class="header-right">
     <!-- Erscheint nur, wenn der Browser die Installation als App anbietet -->
     <button id="installBtn" class="btn btn-ghost btn-small" type="button" title="Kochbuch als App auf diesem Gerät installieren" hidden>📲 App installieren</button>
-    <!-- Angemeldeter Benutzer mit Rechte-Anzeige, erst nach dem Login sichtbar -->
+    <!-- Angemeldeter Benutzer mit Rechte-Anzeige, erst nach dem Login sichtbar.
+         Ein Klick auf den Namen oeffnet das Benutzermenue. -->
     <div id="userBar" class="user-bar" hidden>
-      <span class="user-name" id="currentUserName"></span>
-      <span class="role-badge" id="currentUserRole"></span>
-      <button id="usersBtn" class="btn btn-ghost btn-small" type="button" hidden>Benutzerverwaltung</button>
-      <button id="passwordBtn" class="btn btn-ghost btn-small" type="button">Passwort</button>
-      <button id="logoutBtn" class="btn btn-ghost btn-small" type="button">Abmelden</button>
+      <button id="userMenuBtn" class="user-menu-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="userMenu" title="Benutzermenü">
+        <span class="user-name" id="currentUserName"></span>
+        <span class="role-badge" id="currentUserRole"></span>
+        <span class="user-menu-caret" aria-hidden="true">▾</span>
+      </button>
+      <div id="userMenu" class="user-menu" role="menu" hidden>
+        <button id="usersBtn" class="user-menu-item" role="menuitem" type="button" hidden>Benutzerverwaltung</button>
+        <button id="passwordBtn" class="user-menu-item" role="menuitem" type="button">Passwort ändern</button>
+        <button id="logoutBtn" class="user-menu-item user-menu-logout" role="menuitem" type="button">Abmelden</button>
+      </div>
     </div>
     <button id="themeToggle" class="btn btn-ghost" type="button" aria-label="Hell/Dunkel umschalten">
       <span id="themeIcon">🌙</span>
