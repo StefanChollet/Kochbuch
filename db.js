@@ -772,6 +772,22 @@ function authenticate(username, password) {
   return ok && row ? publicAccount(row) : null;
 }
 
+/**
+ * Der Admin setzt das Passwort eines anderen Benutzers und bestaetigt mit
+ * seinem eigenen. Der Betroffene wird auf allen Geraeten abgemeldet.
+ */
+function setAccountPassword(id, adminId, adminPassword, newPassword) {
+  const admin = db.prepare("SELECT password_hash AS hash FROM accounts WHERE id = ?").get(adminId);
+  if (!admin || !verifyPassword(String(adminPassword || ""), admin.hash)) {
+    throw new HttpError(400, "Dein Admin-Passwort stimmt nicht.");
+  }
+  const account = requireEditableAccount(id);
+  db.prepare("UPDATE accounts SET password_hash = ? WHERE id = ?")
+    .run(hashPassword(validatePassword(newPassword)), account.id);
+  db.prepare("DELETE FROM account_sessions WHERE account_id = ?").run(account.id);
+  return getAccount(account.id);
+}
+
 /** Eigenes Passwort aendern - das darf jeder, auch der Admin. */
 function changeOwnPassword(accountId, currentPassword, newPassword, keepTokenHash) {
   const row = db.prepare("SELECT password_hash AS hash FROM accounts WHERE id = ?").get(accountId);
@@ -1081,6 +1097,7 @@ module.exports = {
   deleteAccount,
   authenticate,
   changeOwnPassword,
+  setAccountPassword,
   createSession,
   getSessionAccount,
   deleteSession,

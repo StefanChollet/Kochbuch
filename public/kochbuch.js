@@ -1066,14 +1066,36 @@ document.getElementById("usersBtn").addEventListener("click", async () => {
   });
 });
 
-/* ---- Eigenes Passwort aendern (jeder Benutzer, auch der Admin) ---- */
+/* ---- Passwort aendern: jeder das eigene, der Admin auch das anderer Benutzer ---- */
 const passwordDialog = document.getElementById("passwordDialog");
 const passwordForm = document.getElementById("passwordForm");
 const passwordError = document.getElementById("passwordError");
+const passwordUserField = document.getElementById("passwordUserField");
+const passwordUser = document.getElementById("passwordUser");
+const currentPasswordLabel = document.getElementById("currentPasswordLabel");
 
-document.getElementById("passwordBtn").addEventListener("click", () => {
+/** Fuer einen anderen Benutzer bestaetigt der Admin mit seinem eigenen Passwort. */
+function updatePasswordLabel(){
+  const forOther = !passwordUserField.hidden && passwordUser.value !== String(currentUser.id);
+  currentPasswordLabel.textContent = forOther ? "Dein Admin-Passwort zur Bestätigung" : "Bisheriges Passwort";
+}
+
+passwordUser.addEventListener("change", updatePasswordLabel);
+
+document.getElementById("passwordBtn").addEventListener("click", async () => {
   passwordForm.reset();
   passwordError.hidden = true;
+  passwordUserField.hidden = currentUser.role !== "admin";
+  if(!passwordUserField.hidden){
+    const ok = await guard(async () => {
+      const users = await API.get("/users");
+      passwordUser.innerHTML = users.map(u =>
+        `<option value="${u.id}">${escapeHtml(u.username)}${u.id === currentUser.id ? " (ich)" : ""}</option>`).join("");
+      passwordUser.value = String(currentUser.id);
+    });
+    if(!ok) return;
+  }
+  updatePasswordLabel();
   passwordDialog.showModal();
 });
 
@@ -1085,11 +1107,16 @@ passwordForm.addEventListener("submit", async (e) => {
     passwordError.hidden = false;
     return;
   }
+  const currentPassword = document.getElementById("currentPassword").value;
+  const forOther = !passwordUserField.hidden && passwordUser.value !== String(currentUser.id);
   try{
-    await API.post("/auth/password", {
-      currentPassword: document.getElementById("currentPassword").value,
-      newPassword
-    });
+    if(forOther){
+      const user = await API.post(`/users/${enc(passwordUser.value)}/password`, { adminPassword: currentPassword, newPassword });
+      passwordDialog.close();
+      showStatus(`Neues Passwort für ${user.username} gesetzt.`, "success");
+      return;
+    }
+    await API.post("/auth/password", { currentPassword, newPassword });
     passwordDialog.close();
     showStatus("Passwort geändert.", "success");
   }catch(err){

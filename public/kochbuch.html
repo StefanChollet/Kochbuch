@@ -291,8 +291,13 @@
       <h2>Passwort ändern</h2>
       <button type="button" class="btn btn-ghost" data-close aria-label="Schliessen">✕</button>
     </div>
+    <!-- Nur fuer den Admin: Passwort eines anderen Benutzers neu setzen -->
+    <label class="field" id="passwordUserField" hidden>
+      <span>Benutzer</span>
+      <select id="passwordUser"></select>
+    </label>
     <label class="field">
-      <span>Bisheriges Passwort</span>
+      <span id="currentPasswordLabel">Bisheriges Passwort</span>
       <input type="password" id="currentPassword" required autocomplete="current-password" maxlength="200">
     </label>
     <label class="field">

@@ -96,6 +96,7 @@ Fehler kommen einheitlich als `{ "error": "..." }` mit passendem HTTP-Status
 | `GET` | `/api/users` | Benutzerliste mit Rolle und Rezeptzahl (nur Admin) |
 | `POST` | `/api/users` | Benutzer anlegen `{ username, password, role: "rw" \| "r" }` (nur Admin) |
 | `PATCH` | `/api/users/:id` | nur `{ role }` – nicht für den Admin (nur Admin) |
+| `POST` | `/api/users/:id/password` | `{ adminPassword, newPassword }` – Passwort eines anderen Benutzers neu setzen (nur Admin) |
 | `DELETE` | `/api/users/:id` | Benutzer samt seinen Rezepten löschen – nicht den Admin (nur Admin) |
 | `POST` | `/api/recipes/:id/views` | neuen Kochansicht-Link erzeugen → `{ code, url }` (Leserecht genügt) |
 | `GET` | `/api/views/:code` | das eine Rezept zum Code (angemeldet + gültiger Code, sonst 401/404) |
@@ -338,7 +339,10 @@ Link geöffnet), lädt der Button stattdessen `/?recipe=<id>` – das Kochbuch
   auch alle Rezepte dieses Benutzers.
 - Rezepte entstehen nur im Dialog *Kochbuch-Detail* (`POST /api/recipes`) und
   gehören dem angemeldeten Benutzer.
-- Jeder (auch der Admin) kann das **eigene** Passwort ändern.
+- Jeder (auch der Admin) kann über *Passwort* das **eigene** Passwort ändern.
+  Der Admin kann dort zusätzlich das Passwort jedes anderen Benutzers neu setzen
+  (`POST /api/users/:id/password`, bestätigt mit dem eigenen Admin-Passwort);
+  der Betroffene wird dabei überall abgemeldet.
 - **Admin-Startpasswort:** wird beim ersten Start angelegt – aus
   `KOCHBUCH_ADMIN_PASSWORD`, sonst zufällig und einmalig im Server-Log. Der
   Rezeptbestand von vor Schema 2 gilt als vom Admin erstellt.

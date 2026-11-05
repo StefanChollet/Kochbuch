@@ -226,6 +226,12 @@ const routes = [
     sendJson(res, 200, db.updateAccountRole(id, body.role));
   }, "admin"],
 
+  // Body: { adminPassword, newPassword } - Passwort eines anderen Benutzers neu setzen.
+  ["POST", /^\/api\/users\/([^/]+)\/password$/, async (req, res, ctx, id) => {
+    const body = await readJson(req);
+    sendJson(res, 200, db.setAccountPassword(id, ctx.account.id, body.adminPassword, body.newPassword));
+  }, "admin"],
+
   ["DELETE", /^\/api\/users\/([^/]+)$/, async (req, res, ctx, id) => {
     sendJson(res, 200, db.deleteAccount(id, ctx.account.id));
   }, "admin"],
