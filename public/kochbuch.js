@@ -421,7 +421,7 @@ function appendRecipeRow(recipe){
   tr.title = canWrite() ? "Rezept öffnen und bearbeiten" : "Rezept ansehen";
   tr.innerHTML = `
     <td class="recipe-name-cell">${imageIndicator(recipe)}${escapeHtml(recipe.name)}</td>
-    <td>${truncate(recipe.shortDesc, 100)}</td>
+    <td class="col-desc">${truncate(recipe.shortDesc, 100)}</td>
     <td class="owner-cell">${escapeHtml(recipe.createdByName || "–")}</td>
     <td class="menu-cell">${recipeActions(recipe)}</td>
   `;

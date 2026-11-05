@@ -156,6 +156,9 @@ body{
 @media (max-width: 860px){
   .layout{ grid-template-columns: 1fr; }
 }
+/* Spalten duerfen schmaler werden als ihr Inhalt - sonst schiebt eine breite
+   Tabelle die ganze Seite ueber den Bildschirmrand (sie scrollt dann in sich). */
+.layout > *{ min-width: 0; }
 
 .panel{
   background: var(--surface);
@@ -732,6 +735,13 @@ body.is-readonly .write-only{ display:none !important; }
 @media (max-width: 640px){
   .app-header{ flex-wrap:wrap; gap:.6rem; padding: 1rem; }
   .col-owner{ width:auto; }
+  /* Handy: weniger Rand, die kurze Beschreibung entfaellt in der Rezeptliste */
+  .layout{ padding: 1rem; gap: 1rem; }
+  .panel{ padding: 1rem; }
+  .col-desc{ display:none; }
+  .recipe-table th, .recipe-table td{ padding-left:.35rem; padding-right:.35rem; }
+  .recipe-table .menu-cell{ gap:.25rem; }
+  .recipe-table .menu-icon-btn{ padding:.3rem; }
 }
 
 /* Kochansicht-Button links in der Aktionsleiste des Rezeptdialogs */
