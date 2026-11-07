@@ -202,7 +202,7 @@ Content-Type: application/json
   "name": "Zwiebelkuchen",
   "shortDesc": "Herbstklassiker mit Speck und Kümmel",
   "longText": "Hefeteig gehen lassen, Zwiebeln glasig dünsten ...",
-  "category": "Vorspeise & Salat",
+  "categories": ["Vorspeise & Salat", "Vegetarisch & Vegan"],
   "ingredients": [
     { "name": "Zwiebeln", "amount": "1 kg" },
     { "name": "Schmand",  "amount": "400 g" }
@@ -217,13 +217,14 @@ Antwort `201` mit dem gespeicherten Rezept. Pflichtfeld ist nur `name`.
 Zutaten ohne Namen werden stillschweigend verworfen; die übrigen Namen wandern
 automatisch in den Zutaten-Katalog.
 
-`category` ist optional: leer (keine Kategorie) oder **genau ein** Wert aus der
-festen Auswahlliste (`CATEGORY_OPTIONS` in `db.js`: Suppe, Vorspeise & Salat,
-Fleisch, Fisch, Pasta & Italienisch, Asiatisch, Vegetarisch & Vegan, Beilage,
-Brot & Backwaren, Dessert & Kuchen, Frühstück, Getränk). Ein anderer Wert
-ergibt `400`. Der Client holt die Liste aus `GET /api/state`
-(`categoryOptions`) und zeigt sie im Dialog als Auswahlfeld. Bestehende
-Datenbanken bekommen die Spalte beim Start automatisch nachgezogen.
+`categories` ist optional: eine Liste mit beliebig vielen Kategorien, aufgebaut
+wie die Zutatenliste. Leere und doppelte Einträge (Gross-/Kleinschreibung egal)
+fallen still weg, je Eintrag max. 40 Zeichen. Eigene Kategorien sind erlaubt.
+Als Vorschläge liefert `GET /api/state` (`categoryOptions`) die feste Liste
+(`CATEGORY_OPTIONS` in `db.js`) plus alle schon benutzten Kategorien. Ältere
+Clients dürfen noch `category` als einzelnen Text schicken. Bestehende
+Datenbanken (Schema 4): die frühere Einzel-Kategorie wird beim Start zum
+ersten Eintrag der Liste (Tabelle `recipe_categories`).
 
 ### Rezept ändern
 

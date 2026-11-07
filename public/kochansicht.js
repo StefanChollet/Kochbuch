@@ -83,8 +83,9 @@ function render(recipe){
   document.getElementById("viewTitle").textContent = recipe.name;
 
   const category = document.getElementById("viewCategory");
-  category.textContent = recipe.category || "";
-  category.hidden = !recipe.category;
+  const categories = recipe.categories || [];
+  category.textContent = categories.join(" · ");
+  category.hidden = categories.length === 0;
 
   const short = document.getElementById("viewShort");
   short.textContent = recipe.shortDesc || "";

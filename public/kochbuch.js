@@ -558,14 +558,68 @@ const ingredientCatalogList = document.getElementById("ingredientCatalogList");
 const imageInput = document.getElementById("imageInput");
 const imageListEl = document.getElementById("imageList");
 const saveRecipeBtn = document.getElementById("saveRecipeBtn");
-const recipeCategorySelect = document.getElementById("recipeCategory");
+const categoryList = document.getElementById("categoryList");
+const categoryEmptyState = document.getElementById("categoryEmptyState");
+const categoryNameInput = document.getElementById("categoryNameInput");
+const categoryOptionsList = document.getElementById("categoryOptionsList");
+let workingCategories = [];    // [{key, name}]
 
-// Auswahlfeld: genau eine Kategorie oder keine. Die Liste kommt vom Server.
-function fillCategorySelect(){
-  recipeCategorySelect.innerHTML =
-    `<option value="">– keine Kategorie –</option>` +
-    DB.data.categoryOptions.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+// Vorschlaege (feste Liste + schon benutzte) kommen vom Server; eigene Eingaben sind erlaubt.
+function refreshCategoryDatalist(){
+  categoryOptionsList.innerHTML = DB.data.categoryOptions
+    .map(c => `<option value="${escapeHtml(c)}"></option>`)
+    .join("");
 }
+
+function renderCategoryList(){
+  categoryEmptyState.hidden = workingCategories.length > 0;
+  categoryList.innerHTML = workingCategories.map(cat => `
+    <li class="ingredient-row" data-key="${cat.key}">
+      <input type="text" class="category-edit-name" value="${escapeHtml(cat.name)}" maxlength="40"${recipeReadOnly ? " disabled" : ""}>
+      <button type="button" class="btn btn-icon" data-action="remove-category" aria-label="Kategorie entfernen">✕</button>
+    </li>
+  `).join("");
+}
+
+categoryList.addEventListener("input", (e) => {
+  const row = e.target.closest("li.ingredient-row");
+  if(!row) return;
+  const cat = workingCategories.find(c => c.key === row.dataset.key);
+  if(cat && e.target.classList.contains("category-edit-name")) cat.name = e.target.value;
+});
+
+categoryList.addEventListener("click", (e) => {
+  const btn = e.target.closest('button[data-action="remove-category"]');
+  if(!btn) return;
+  const row = e.target.closest("li.ingredient-row");
+  workingCategories = workingCategories.filter(c => c.key !== row.dataset.key);
+  renderCategoryList();
+});
+
+/** Uebernimmt die eingetippte, noch nicht hinzugefuegte Kategorie in die Liste. */
+function takePendingCategory(){
+  const name = categoryNameInput.value.trim();
+  if(!name) return "";
+  categoryNameInput.value = "";
+  // Doppelt bringt nichts - schon vorhanden (gross/klein egal) wird nicht nochmals angehaengt.
+  if(!workingCategories.some(c => c.name.trim().toLowerCase() === name.toLowerCase())){
+    workingCategories.push({ key: makeId(), name });
+  }
+  renderCategoryList();
+  return name;
+}
+
+document.getElementById("addCategoryBtn").addEventListener("click", () => {
+  takePendingCategory();
+  categoryNameInput.focus();
+});
+
+// Enter im Kategoriefeld fuegt hinzu, statt das ganze Rezept zu speichern.
+categoryNameInput.addEventListener("keydown", (e) => {
+  if(e.key !== "Enter") return;
+  e.preventDefault();
+  takePendingCategory();
+});
 
 const recipeOwnerInfo = document.getElementById("recipeOwnerInfo");
 const cancelRecipeBtn = document.getElementById("cancelRecipeBtn");
@@ -736,12 +790,12 @@ function openRecipeDialog(recipe){
   // kommt asynchron und koennte sonst eine neue Meldung wieder ausblenden.
   recipeDialog.querySelector(".dialog-status").hidden = true;
   refreshIngredientCatalogDatalist();
-  fillCategorySelect();
+  refreshCategoryDatalist();
   applyRecipeAccess(recipe);
   // Kochansicht nur fuer gespeicherte Rezepte - ein neues hat noch nichts zum Anzeigen.
   cookViewBtn.hidden = !recipe;
   if(recipe){
-    recipeCategorySelect.value = recipe.category || "";
+    workingCategories = (recipe.categories || []).map(name => ({ key: makeId(), name }));
     recipeIdInput.value = recipe.id;
     recipeNameInput.value = recipe.name;
     recipeShortDescInput.value = recipe.shortDesc || "";
@@ -751,9 +805,12 @@ function openRecipeDialog(recipe){
   }else{
     recipeForm.reset();
     recipeIdInput.value = "";
+    workingCategories = [];
     workingIngredients = [];
     workingImages = [];
   }
+  categoryNameInput.value = "";
+  renderCategoryList();
   // Eine bei "Abbrechen" eingetippte Zutat darf nicht ins naechste Rezept wandern.
   ingredientNameInput.value = "";
   ingredientAmountInput.value = "";
@@ -822,6 +879,7 @@ recipeForm.addEventListener("submit", async (e) => {
   // "Speichern" speichert alles im Dialog - auch eine eingetippte Zutat,
   // die noch nicht mit "Hinzufuegen" uebernommen wurde, und Bilder, die
   // noch eingelesen werden.
+  takePendingCategory();
   const pendingIngredient = takePendingIngredient();
   if(pendingIngredient) addToCatalogQuietly(pendingIngredient);
   await Promise.all(pendingImageReads);
@@ -831,7 +889,7 @@ recipeForm.addEventListener("submit", async (e) => {
     name: recipeNameInput.value.trim(),
     shortDesc: recipeShortDescInput.value.trim(),
     longText: recipeLongTextInput.value,
-    category: recipeCategorySelect.value,
+    categories: workingCategories.map(c => c.name),
     ingredients: workingIngredients.map(i => ({ name: i.name, amount: i.amount })),
     // Bereits gespeicherte Bilder nur per id referenzieren - die Bytes
     // liegen auf dem Server und muessen nicht erneut hochgeladen werden.

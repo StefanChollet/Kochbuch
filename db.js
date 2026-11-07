@@ -15,10 +15,12 @@ const crypto = require("node:crypto");
 
 // 2: Benutzer (accounts) mit Rollen, Sitzungen, recipes.created_by
 // 3: Kochansicht-Links (recipe_views)
-const SCHEMA_VERSION = 3;
+// 4: Kategorien als Liste (recipe_categories) statt einer Spalte
+const SCHEMA_VERSION = 4;
 
-// Feste Auswahl fuer das Feld Kategorie (genau eine je Rezept, oder keine = "").
-// Die Liste liegt bewusst nur hier; der Client bekommt sie ueber /api/state.
+// Vorschlaege fuer die Kategorien eines Rezepts. Wie bei den Zutaten darf
+// man auch eigene eintippen; der Client bekommt diese Liste plus alle schon
+// benutzten Kategorien ueber /api/state.
 const CATEGORY_OPTIONS = [
   "Suppe", "Vorspeise & Salat", "Fleisch", "Fisch", "Pasta & Italienisch",
   "Asiatisch", "Vegetarisch & Vegan", "Beilage", "Brot & Backwaren",
@@ -57,6 +59,15 @@ CREATE TABLE IF NOT EXISTS ingredients (
   position  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_ingredients_recipe ON ingredients(recipe_id, position);
+
+-- Kategorien eines Rezepts: beliebig viele, in der eingegebenen Reihenfolge.
+CREATE TABLE IF NOT EXISTS recipe_categories (
+  id        TEXT PRIMARY KEY,
+  recipe_id TEXT NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+  name      TEXT NOT NULL,
+  position  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_recipe_categories_recipe ON recipe_categories(recipe_id, position);
 
 CREATE TABLE IF NOT EXISTS images (
   id        TEXT PRIMARY KEY,
@@ -144,6 +155,19 @@ function open(file, options = {}) {
   if (!recipeColumns.includes("created_by")) {
     db.exec("ALTER TABLE recipes ADD COLUMN created_by INTEGER REFERENCES accounts(id) ON DELETE SET NULL");
     db.exec("UPDATE recipes SET created_by = 0");
+  }
+
+  // Schema 4: die alte Einzel-Kategorie (Spalte recipes.category) wird zum
+  // ersten Eintrag der Liste. Danach bleibt die Spalte leer und ungenutzt.
+  const moveCategories = db.prepare("SELECT id, category FROM recipes WHERE category <> ''").all();
+  if (moveCategories.length) {
+    transaction(() => {
+      const insert = db.prepare(
+        "INSERT INTO recipe_categories (id, recipe_id, name, position) VALUES (?, ?, ?, 0)"
+      );
+      for (const r of moveCategories) insert.run(makeId(), r.id, r.category.trim());
+      db.exec("UPDATE recipes SET category = ''");
+    });
   }
 
   const row = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get();
@@ -303,7 +327,7 @@ function listRecipesPage(options = {}) {
 
 function getRecipe(id) {
   const recipe = db.prepare(`
-    SELECT r.id, r.name, r.short_desc AS shortDesc, r.long_text AS longText, r.category,
+    SELECT r.id, r.name, r.short_desc AS shortDesc, r.long_text AS longText,
            r.created_at AS createdAt, r.updated_at AS updatedAt,
            r.created_by AS createdBy, a.username AS createdByName
     FROM recipes r LEFT JOIN accounts a ON a.id = r.created_by
@@ -314,6 +338,10 @@ function getRecipe(id) {
   recipe.ingredients = db.prepare(`
     SELECT id, name, amount FROM ingredients WHERE recipe_id = ? ORDER BY position
   `).all(id);
+
+  recipe.categories = db.prepare(`
+    SELECT name FROM recipe_categories WHERE recipe_id = ? ORDER BY position
+  `).all(id).map((c) => c.name);
 
   // Bewusst ohne Spalte "data" - die Bytes kommen ueber GET /api/images/:id.
   recipe.images = db.prepare(`
@@ -335,6 +363,14 @@ function writeIngredients(recipeId, ingredients) {
     if (!name.trim()) return; // leere Zeilen still verwerfen
     insert.run(makeId(), recipeId, name.trim(), text(ing.amount, "ingredients[].amount", { max: 30 }).trim(), index);
   });
+}
+
+function writeCategories(recipeId, categories) {
+  db.prepare("DELETE FROM recipe_categories WHERE recipe_id = ?").run(recipeId);
+  const insert = db.prepare(
+    "INSERT INTO recipe_categories (id, recipe_id, name, position) VALUES (?, ?, ?, ?)"
+  );
+  categories.forEach((name, index) => insert.run(makeId(), recipeId, name, index));
 }
 
 function writeImages(recipeId, images) {
@@ -388,27 +424,38 @@ function normalizeRecipeInput(input) {
     name: text(input.name, "name", { max: 80, required: true }),
     shortDesc: text(input.shortDesc, "shortDesc", { max: 150 }).trim(),
     longText: text(input.longText, "longText", { max: 20000 }),
-    category: normalizeCategory(input.category),
+    categories: normalizeCategories(input),
     ingredients,
     images,
   };
 }
 
-/** Kategorie: leer (keine) oder genau ein Wert aus CATEGORY_OPTIONS. */
-function normalizeCategory(value) {
-  const category = value == null ? "" : String(value).trim();
-  if (category && !CATEGORY_OPTIONS.includes(category)) {
-    throw new HttpError(400, `Unbekannte Kategorie "${category}".`);
+/**
+ * Kategorien: Liste von Texten, beliebig viele. Leere Eintraege und doppelte
+ * (Gross-/Kleinschreibung egal) fallen still weg. Aeltere Clients schicken
+ * noch "category" als einzelnen Text - der wird zur Liste mit einem Eintrag.
+ */
+function normalizeCategories(input) {
+  let list = input.categories;
+  if (list == null) list = input.category ? [input.category] : [];
+  if (!Array.isArray(list)) throw new HttpError(400, 'Feld "categories" muss eine Liste sein.');
+  const seen = new Set();
+  const result = [];
+  for (const value of list) {
+    const name = text(value, "categories[]", { max: 40 }).trim();
+    if (!name || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    result.push(name);
   }
-  return category;
+  return result;
 }
 
 function insertRecipe(id, data, accountId) {
   const ts = nowIso();
   db.prepare(`
-    INSERT INTO recipes (id, name, short_desc, long_text, category, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, data.name, data.shortDesc, data.longText, data.category, accountId, ts, ts);
+    INSERT INTO recipes (id, name, short_desc, long_text, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, data.name, data.shortDesc, data.longText, accountId, ts, ts);
 }
 
 function createRecipe(input, accountId) {
@@ -419,6 +466,7 @@ function createRecipe(input, accountId) {
       throw new HttpError(409, `Es existiert bereits ein Rezept mit der id "${id}".`);
     }
     insertRecipe(id, data, accountId);
+    writeCategories(id, data.categories);
     writeIngredients(id, data.ingredients);
     writeImages(id, data.images);
     syncCatalogFromIngredients(data.ingredients);
@@ -433,8 +481,9 @@ function updateRecipe(id, input) {
       throw new HttpError(404, `Rezept "${id}" nicht gefunden.`);
     }
     db.prepare(`
-      UPDATE recipes SET name = ?, short_desc = ?, long_text = ?, category = ?, updated_at = ? WHERE id = ?
-    `).run(data.name, data.shortDesc, data.longText, data.category, nowIso(), id);
+      UPDATE recipes SET name = ?, short_desc = ?, long_text = ?, updated_at = ? WHERE id = ?
+    `).run(data.name, data.shortDesc, data.longText, nowIso(), id);
+    writeCategories(id, data.categories);
     writeIngredients(id, data.ingredients);
     writeImages(id, data.images);
     syncCatalogFromIngredients(data.ingredients);
@@ -571,11 +620,25 @@ function deleteCatalogEntry(name) {
 
 /* --------------------------------------------------------------- Stand */
 
+/** Vorschlaege fuer Kategorien: die feste Liste plus alle schon benutzten. */
+function listCategoryOptions() {
+  const options = [...CATEGORY_OPTIONS];
+  const known = new Set(options.map((c) => c.toLowerCase()));
+  const used = db.prepare("SELECT DISTINCT name FROM recipe_categories ORDER BY name COLLATE NOCASE").all();
+  for (const { name } of used) {
+    if (!known.has(name.toLowerCase())) {
+      known.add(name.toLowerCase());
+      options.push(name);
+    }
+  }
+  return options;
+}
+
 function getState() {
   // Die Rezeptliste kommt bewusst nicht hierher - sie wird paginiert ueber
   // listRecipesPage()/GET /api/recipes geladen, damit /api/state bei vielen
   // Rezepten klein und schnell bleibt.
-  return { fridge: listFridge(), ingredientCatalog: listCatalog(), categoryOptions: CATEGORY_OPTIONS };
+  return { fridge: listFridge(), ingredientCatalog: listCatalog(), categoryOptions: listCategoryOptions() };
 }
 
 function getStats() {

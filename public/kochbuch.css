@@ -695,6 +695,7 @@ body.is-readonly .write-only{ display:none !important; }
 .recipe-dialog form.is-readonly #imageInput,
 .recipe-dialog form.is-readonly .image-remove,
 .recipe-dialog form.is-readonly [data-action="remove-ingredient"],
+.recipe-dialog form.is-readonly [data-action="remove-category"],
 .recipe-dialog form.is-readonly #saveRecipeBtn{ display:none; }
 .recipe-dialog form.is-readonly input:disabled,
 .recipe-dialog form.is-readonly textarea:disabled,
