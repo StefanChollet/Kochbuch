@@ -1082,8 +1082,26 @@ function updatePasswordLabel(){
 
 passwordUser.addEventListener("change", updatePasswordLabel);
 
+/** Auge neben einem Passwortfeld: Klartext an/aus. */
+function setPasswordVisible(toggle, visible){
+  toggle.previousElementSibling.type = visible ? "text" : "password";
+  toggle.setAttribute("aria-pressed", String(visible));
+  toggle.title = visible ? "Passwort verbergen" : "Passwort anzeigen";
+  toggle.setAttribute("aria-label", toggle.title);
+  toggle.querySelector("use").setAttribute("href", visible ? "#icon-view-off" : "#icon-view");
+}
+
+passwordForm.querySelectorAll(".pw-toggle").forEach(toggle => {
+  toggle.addEventListener("click", () => {
+    setPasswordVisible(toggle, toggle.getAttribute("aria-pressed") !== "true");
+    toggle.previousElementSibling.focus();
+  });
+});
+
 document.getElementById("passwordBtn").addEventListener("click", async () => {
   passwordForm.reset();
+  // Bei jedem Oeffnen wieder verborgen - sonst stuende ein altes Passwort im Klartext da.
+  passwordForm.querySelectorAll(".pw-toggle").forEach(toggle => setPasswordVisible(toggle, false));
   passwordError.hidden = true;
   passwordUserField.hidden = currentUser.role !== "admin";
   if(!passwordUserField.hidden){

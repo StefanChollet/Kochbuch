@@ -653,6 +653,19 @@ input[type="search"]::-webkit-search-cancel-button{ cursor:pointer; }
   font-size:.85rem;
   font-weight:500;
 }
+/* Passwortfeld mit Auge rechts: zeigt das Eingetippte an bzw. verbirgt es wieder */
+.pw-wrap{ position:relative; display:block; }
+.pw-wrap input[type]{ width:100%; padding-right: 2.4rem; }
+.pw-toggle{
+  position:absolute; right:.3rem; top:50%; transform: translateY(-50%);
+  display:inline-flex; align-items:center; justify-content:center;
+  padding:.3rem; border:0; border-radius:4px;
+  background:transparent; color: var(--ink-soft); cursor:pointer; line-height:0;
+}
+.pw-toggle:hover{ color: var(--ink); background: var(--surface-2); }
+.pw-toggle:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+.pw-toggle[aria-pressed="true"]{ color: var(--accent); }
+
 input[type="password"]{
   font-family: var(--font-body);
   font-size: .9rem;
