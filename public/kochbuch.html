@@ -214,16 +214,16 @@
       <textarea id="recipeLongText" rows="6" placeholder="Zutaten-Mengen, Schritte, Anmerkungen..."></textarea>
     </label>
 
-    <!-- Kategorien: beliebig viele, aufgebaut wie die Zutatenliste -->
+    <!-- Kategorie: aufgebaut wie die Zutatenliste, aber hoechstens ein Eintrag -->
     <fieldset class="field-group">
-      <legend>Kategorien</legend>
-      <div class="ingredient-add-row category-add-row">
+      <legend>Kategorie</legend>
+      <div class="ingredient-add-row category-add-row" id="categoryAddRow">
         <input type="text" id="categoryNameInput" list="categoryOptionsList" placeholder="Kategorie wählen oder neu eingeben" maxlength="40">
         <datalist id="categoryOptionsList"></datalist>
         <button type="button" id="addCategoryBtn" class="btn btn-secondary btn-small">Hinzufügen</button>
       </div>
       <ul id="categoryList" class="ingredient-list"></ul>
-      <p id="categoryEmptyState" class="empty-state empty-state-small" hidden>Noch keine Kategorien erfasst.</p>
+      <p id="categoryEmptyState" class="empty-state empty-state-small" hidden>Noch keine Kategorie erfasst.</p>
     </fieldset>
 
     <!-- Zutatenliste -->

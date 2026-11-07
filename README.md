@@ -202,7 +202,7 @@ Content-Type: application/json
   "name": "Zwiebelkuchen",
   "shortDesc": "Herbstklassiker mit Speck und Kümmel",
   "longText": "Hefeteig gehen lassen, Zwiebeln glasig dünsten ...",
-  "categories": ["Vorspeise & Salat", "Vegetarisch & Vegan"],
+  "categories": ["Vorspeise & Salat"],
   "ingredients": [
     { "name": "Zwiebeln", "amount": "1 kg" },
     { "name": "Schmand",  "amount": "400 g" }
@@ -217,9 +217,11 @@ Antwort `201` mit dem gespeicherten Rezept. Pflichtfeld ist nur `name`.
 Zutaten ohne Namen werden stillschweigend verworfen; die übrigen Namen wandern
 automatisch in den Zutaten-Katalog.
 
-`categories` ist optional: eine Liste mit beliebig vielen Kategorien, aufgebaut
-wie die Zutatenliste. Leere und doppelte Einträge (Gross-/Kleinschreibung egal)
-fallen still weg, je Eintrag max. 40 Zeichen. Eigene Kategorien sind erlaubt.
+`categories` ist optional: eine Liste mit **höchstens einer** Kategorie (im
+Dialog aufgebaut wie die Zutatenliste, das Eingabefeld verschwindet, sobald eine
+gesetzt ist). Leere und doppelte Einträge (Gross-/Kleinschreibung egal) fallen
+still weg; bleiben mehr als einer übrig, gibt es `400`. Max. 40 Zeichen, eigene
+Kategorien sind erlaubt.
 Als Vorschläge liefert `GET /api/state` (`categoryOptions`) die feste Liste
 (`CATEGORY_OPTIONS` in `db.js`) plus alle schon benutzten Kategorien. Ältere
 Clients dürfen noch `category` als einzelnen Text schicken. Bestehende

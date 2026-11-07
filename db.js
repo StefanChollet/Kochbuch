@@ -15,11 +15,11 @@ const crypto = require("node:crypto");
 
 // 2: Benutzer (accounts) mit Rollen, Sitzungen, recipes.created_by
 // 3: Kochansicht-Links (recipe_views)
-// 4: Kategorien als Liste (recipe_categories) statt einer Spalte
+// 4: Kategorie in eigener Tabelle (recipe_categories) statt einer Spalte
 const SCHEMA_VERSION = 4;
 
-// Vorschlaege fuer die Kategorien eines Rezepts. Wie bei den Zutaten darf
-// man auch eigene eintippen; der Client bekommt diese Liste plus alle schon
+// Vorschlaege fuer die Kategorie eines Rezepts (hoechstens eine je Rezept).
+// Wie bei den Zutaten darf man auch eine eigene eintippen; der Client bekommt diese Liste plus alle schon
 // benutzten Kategorien ueber /api/state.
 const CATEGORY_OPTIONS = [
   "Suppe", "Vorspeise & Salat", "Fleisch", "Fisch", "Pasta & Italienisch",
@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS ingredients (
 );
 CREATE INDEX IF NOT EXISTS idx_ingredients_recipe ON ingredients(recipe_id, position);
 
--- Kategorien eines Rezepts: beliebig viele, in der eingegebenen Reihenfolge.
+-- Kategorie eines Rezepts: hoechstens eine (prueft normalizeCategories).
 CREATE TABLE IF NOT EXISTS recipe_categories (
   id        TEXT PRIMARY KEY,
   recipe_id TEXT NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
@@ -431,9 +431,10 @@ function normalizeRecipeInput(input) {
 }
 
 /**
- * Kategorien: Liste von Texten, beliebig viele. Leere Eintraege und doppelte
- * (Gross-/Kleinschreibung egal) fallen still weg. Aeltere Clients schicken
- * noch "category" als einzelnen Text - der wird zur Liste mit einem Eintrag.
+ * Kategorie: Liste mit hoechstens einem Text (leer = keine Kategorie).
+ * Leere Eintraege und doppelte (Gross-/Kleinschreibung egal) fallen still weg;
+ * bleiben mehr als einer uebrig, gibt es 400. Aeltere Clients schicken noch
+ * "category" als einzelnen Text - der wird zur Liste mit einem Eintrag.
  */
 function normalizeCategories(input) {
   let list = input.categories;
@@ -447,6 +448,7 @@ function normalizeCategories(input) {
     seen.add(name.toLowerCase());
     result.push(name);
   }
+  if (result.length > 1) throw new HttpError(400, "Ein Rezept kann nur eine Kategorie haben.");
   return result;
 }
 

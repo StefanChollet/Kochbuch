@@ -562,7 +562,8 @@ const categoryList = document.getElementById("categoryList");
 const categoryEmptyState = document.getElementById("categoryEmptyState");
 const categoryNameInput = document.getElementById("categoryNameInput");
 const categoryOptionsList = document.getElementById("categoryOptionsList");
-let workingCategories = [];    // [{key, name}]
+const categoryAddRow = document.getElementById("categoryAddRow");
+let workingCategories = [];    // [{key, name}] - hoechstens ein Eintrag
 
 // Vorschlaege (feste Liste + schon benutzte) kommen vom Server; eigene Eingaben sind erlaubt.
 function refreshCategoryDatalist(){
@@ -573,6 +574,9 @@ function refreshCategoryDatalist(){
 
 function renderCategoryList(){
   categoryEmptyState.hidden = workingCategories.length > 0;
+  // Nur eine Kategorie je Rezept: ist eine gesetzt, verschwindet das Eingabefeld.
+  // Zum Wechseln die bestehende mit ✕ entfernen oder direkt in der Zeile aendern.
+  categoryAddRow.hidden = workingCategories.length > 0;
   categoryList.innerHTML = workingCategories.map(cat => `
     <li class="ingredient-row" data-key="${cat.key}">
       <input type="text" class="category-edit-name" value="${escapeHtml(cat.name)}" maxlength="40"${recipeReadOnly ? " disabled" : ""}>
@@ -601,17 +605,13 @@ function takePendingCategory(){
   const name = categoryNameInput.value.trim();
   if(!name) return "";
   categoryNameInput.value = "";
-  // Doppelt bringt nichts - schon vorhanden (gross/klein egal) wird nicht nochmals angehaengt.
-  if(!workingCategories.some(c => c.name.trim().toLowerCase() === name.toLowerCase())){
-    workingCategories.push({ key: makeId(), name });
-  }
+  if(workingCategories.length === 0) workingCategories.push({ key: makeId(), name });
   renderCategoryList();
   return name;
 }
 
 document.getElementById("addCategoryBtn").addEventListener("click", () => {
   takePendingCategory();
-  categoryNameInput.focus();
 });
 
 // Enter im Kategoriefeld fuegt hinzu, statt das ganze Rezept zu speichern.
