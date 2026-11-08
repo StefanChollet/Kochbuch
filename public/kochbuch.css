@@ -448,6 +448,25 @@ input[type="search"]::-webkit-search-cancel-button{ cursor:pointer; }
   padding: 0 .4rem;
   color: var(--accent);
 }
+/* Kategorie, Zutaten, Bilder (Rezeptdialog): deutlich hervorgehoben - kraeftiger Rahmen,
+   leicht getoenter Hintergrund und grosse, fette Ueberschrift in Textfarbe. */
+.recipe-dialog .field-group{
+  border: 1.5px solid var(--accent);
+  border-left-width: 5px;
+  border-radius: 8px;
+  padding: .9rem 1rem 1.1rem;
+  background: var(--surface-2);
+}
+.recipe-dialog .field-group legend{
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 700;
+  padding: .1rem .6rem;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1.5px solid var(--accent);
+  border-radius: 6px;
+}
 .ingredient-add-row{
   display:flex;
   gap: .4rem;
