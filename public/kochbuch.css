@@ -266,10 +266,10 @@ body{
   padding: .5rem .6rem;
   border-bottom: 1px solid var(--line);
 }
-/* Spaltenkoepfe der Rezepte-Liste: deutlich hervorgehoben wie die Bereiche
+/* Spaltenkoepfe der Tabellen: deutlich hervorgehoben wie die Bereiche
    im Kochbuch-Detail - fett, Textfarbe, gruen getoent, kraeftige Linie unten.
-   (Die Benutzertabelle nutzt dieselbe Klasse und bleibt unveraendert.) */
-.recipe-table:not(.users-table) th{
+   Gilt auch fuer die Benutzertabelle (gleiche Klasse). */
+.recipe-table th{
   background: color-mix(in srgb, var(--accent) 24%, var(--surface));
   color: var(--ink);
   font-weight: 700;
