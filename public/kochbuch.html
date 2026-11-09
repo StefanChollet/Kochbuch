@@ -176,10 +176,16 @@
       <button type="submit" class="btn btn-primary btn-small">+</button>
     </form>
 
-    <ul id="fridgeList" class="fridge-list">
-      <!-- wird per JS befuellt -->
-    </ul>
-    <p id="fridgeEmptyState" class="empty-state" hidden>Der Kühlschrank ist leer.</p>
+    <!-- Eigener Scrollbereich mit Lazy Loading wie die Rezepte-Liste -->
+    <div class="fridge-scroll" id="fridgeScroll">
+      <ul id="fridgeList" class="fridge-list">
+        <!-- wird per JS befuellt -->
+      </ul>
+      <p id="fridgeEmptyState" class="empty-state" hidden>Der Kühlschrank ist leer.</p>
+      <!-- Merker am Listenende: wird er sichtbar, kommen die naechsten Eintraege -->
+      <div id="fridgeLoadMore" class="recipe-load-more" aria-live="polite"></div>
+    </div>
+    <p class="recipe-pager-info fridge-pager-info" id="fridgePagerInfo"></p>
   </aside>
 
 </main>

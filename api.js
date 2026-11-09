@@ -332,7 +332,14 @@ const routes = [
   }],
 
   /* ---- Kuehlschrank ---- */
+  // Ohne ?page: ganze Liste. Mit ?page=&pageSize=: eine Seite (Lazy Loading)
+  // als { items, total, page, pageSize, totalPages }.
   ["GET", /^\/api\/fridge$/, async (req, res) => {
+    const q = getQuery(req);
+    if (q.has("page")) {
+      sendJson(res, 200, db.listFridgePage({ page: q.get("page"), pageSize: q.get("pageSize") || 20 }));
+      return;
+    }
     sendJson(res, 200, db.listFridge());
   }],
 

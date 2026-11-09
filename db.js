@@ -566,6 +566,23 @@ function listFridge() {
   `).all();
 }
 
+/**
+ * Eine Seite des Kuehlschranks fuer das Lazy Loading - Reihenfolge wie
+ * listFridge (aelteste zuerst). Zu hohe Seite: die letzte gueltige.
+ */
+function listFridgePage(options = {}) {
+  const page = Math.max(1, Math.trunc(Number(options.page)) || 1);
+  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.trunc(Number(options.pageSize)) || DEFAULT_PAGE_SIZE));
+  const total = db.prepare("SELECT COUNT(*) AS n FROM fridge_items").get().n;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const items = db.prepare(`
+    SELECT id, name, amount, created_at AS createdAt FROM fridge_items
+    ORDER BY created_at, rowid LIMIT ? OFFSET ?
+  `).all(pageSize, (safePage - 1) * pageSize);
+  return { items, total, page: safePage, pageSize, totalPages };
+}
+
 function getFridgeItem(id) {
   return db.prepare(`
     SELECT id, name, amount, created_at AS createdAt FROM fridge_items WHERE id = ?
@@ -640,7 +657,7 @@ function getState() {
   // Die Rezeptliste kommt bewusst nicht hierher - sie wird paginiert ueber
   // listRecipesPage()/GET /api/recipes geladen, damit /api/state bei vielen
   // Rezepten klein und schnell bleibt.
-  return { fridge: listFridge(), ingredientCatalog: listCatalog(), categoryOptions: listCategoryOptions() };
+  return { ingredientCatalog: listCatalog(), categoryOptions: listCategoryOptions() };
 }
 
 function getStats() {
@@ -1138,6 +1155,7 @@ module.exports = {
   deleteRecipe,
   getImage,
   listFridge,
+  listFridgePage,
   addFridgeItem,
   updateFridgeItem,
   deleteFridgeItem,

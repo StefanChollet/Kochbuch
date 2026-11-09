@@ -51,7 +51,9 @@ const enc = encodeURIComponent;
    Aenderung sofort ueber die API in die SQLite-Datenbank.
    ========================================================================= */
 const DB = {
-  data: { fridge: [], ingredientCatalog: [], categoryOptions: [] },
+  data: { ingredientCatalog: [], categoryOptions: [] },
+  // Bisher geladener Teil des Kuehlschranks (Lazy Loading wie bei den Rezepten).
+  fridgePage: { items: [], total: 0, page: 0, pageSize: 25, totalPages: 1 },
   // Bisher geladener Teil der Rezeptuebersicht (Suche/Sortierung/Seiten laufen
   // serverseitig in SQL). items = alle schon geladenen Seiten, page = die letzte davon.
   recipesPage: { items: [], total: 0, page: 0, pageSize: 25, totalPages: 1 },
@@ -108,24 +110,24 @@ const DB = {
   },
 
   // ---- Kuehlschrank ----
+  /** Eine Seite - aendert DB.fridgePage nicht, das macht der Aufrufer. */
+  async fetchFridgePage(page, pageSize){
+    return API.get(`/fridge?page=${page}&pageSize=${pageSize}`);
+  },
   async addFridgeItem(item){
-    const created = await API.post("/fridge", item);
-    this.data.fridge.push(created);
-    return created;
+    return API.post("/fridge", item);
   },
   async updateFridgeItem(id, changes){
     const updated = await API.patch(`/fridge/${enc(id)}`, changes);
-    const idx = this.data.fridge.findIndex(f => f.id === id);
-    if(idx !== -1) this.data.fridge[idx] = updated;
+    const idx = this.fridgePage.items.findIndex(f => f.id === id);
+    if(idx !== -1) this.fridgePage.items[idx] = updated;
     return updated;
   },
   async deleteFridgeItem(id){
     await API.del(`/fridge/${enc(id)}`);
-    this.data.fridge = this.data.fridge.filter(f => f.id !== id);
   },
   async clearFridge(){
     await API.del("/fridge");
-    this.data.fridge = [];
   }
 };
 
@@ -929,12 +931,94 @@ const fridgeListEl = document.getElementById("fridgeList");
 const fridgeEmptyState = document.getElementById("fridgeEmptyState");
 const clearFridgeBtn = document.getElementById("clearFridgeBtn");
 
-function renderFridgeList(){
-  const items = DB.data.fridge;
-  fridgeEmptyState.hidden = items.length > 0;
+const fridgeScroll = document.getElementById("fridgeScroll");
+const fridgeLoadMore = document.getElementById("fridgeLoadMore");
+const fridgePagerInfo = document.getElementById("fridgePagerInfo");
+
+/* Lazy Loading wie bei den Rezepten: zuerst eine Portion, jede weitere laedt
+   nach, sobald das Listenende (#fridgeLoadMore) in Sicht scrollt. */
+const FRIDGE_BATCH_SIZE = 25;
+const FRIDGE_PRELOAD_PX = 150;
+let fridgeLoadGeneration = 0;
+let fridgeLoading = false;
+
+/**
+ * Laedt den Kuehlschrank neu. keepLoaded: so viele Eintraege wie bisher neu
+ * holen und die Scrollposition halten - nach Anlegen/Loeschen. plusOne: eine
+ * Portion mehr (nach dem Anlegen, falls der neue Eintrag eine neue Seite beginnt).
+ */
+async function loadFridge({ keepLoaded = false, plusOne = false } = {}){
+  const generation = ++fridgeLoadGeneration;
+  const pages = keepLoaded ? Math.max(1, DB.fridgePage.page) + (plusOne ? 1 : 0) : 1;
+  const scrollTop = keepLoaded ? fridgeScroll.scrollTop : 0;
+  fridgeLoading = true;
+  updateFridgeFooter();
+
+  let result = null;
+  const ok = await guard(async () => {
+    let items = [];
+    let last = null;
+    for(let page = 1; page <= pages; page++){
+      const next = await DB.fetchFridgePage(page, FRIDGE_BATCH_SIZE);
+      if(generation !== fridgeLoadGeneration) return;
+      if(next.page !== page) break;
+      items = items.concat(next.items);
+      last = next;
+      if(page >= next.totalPages) break;
+    }
+    result = { ...last, items };
+  });
+  if(generation !== fridgeLoadGeneration) return;
+
+  fridgeLoading = false;
+  if(ok && result) DB.fridgePage = result;
+  renderFridgeList();
+  fridgeScroll.scrollTop = scrollTop;
+  if(ok) fillFridgeViewport();
+}
+
+/** Naechste Portion anhaengen - ausgeloest vom Scrollen ans Listenende. */
+async function loadMoreFridge(){
+  const { page, totalPages } = DB.fridgePage;
+  if(fridgeLoading || page === 0 || page >= totalPages) return;
+  const generation = fridgeLoadGeneration;
+  fridgeLoading = true;
+  updateFridgeFooter();
+
+  let added = [];
+  const ok = await guard(async () => {
+    const next = await DB.fetchFridgePage(page + 1, FRIDGE_BATCH_SIZE);
+    if(generation !== fridgeLoadGeneration || next.page !== page + 1) return;
+    const known = new Set(DB.fridgePage.items.map(f => f.id));
+    added = next.items.filter(f => !known.has(f.id));
+    DB.fridgePage = { ...next, items: DB.fridgePage.items.concat(added) };
+  });
+  if(generation !== fridgeLoadGeneration) return;
+
+  fridgeLoading = false;
+  fridgeListEl.insertAdjacentHTML("beforeend", added.map(fridgeItemHtml).join(""));
+  updateFridgeFooter();
+  if(ok) fillFridgeViewport();
+}
+
+/** Ist die Liste kuerzer als ihr Kasten, gibt es nichts zu scrollen - dann gleich weiterladen. */
+function fillFridgeViewport(){
+  const el = fridgeScroll;
+  if(el.offsetParent === null) return;
+  if(el.scrollHeight - el.scrollTop - el.clientHeight < FRIDGE_PRELOAD_PX) loadMoreFridge();
+}
+
+new IntersectionObserver((entries) => {
+  if(entries.some(e => e.isIntersecting)) loadMoreFridge();
+}, { root: fridgeScroll, rootMargin: `0px 0px ${FRIDGE_PRELOAD_PX}px 0px` }).observe(fridgeLoadMore);
+// Zusaetzlich beim Scrollen selbst pruefen: liegt der Kuehlschrank-Kasten
+// teilweise ausserhalb des Fensters, meldet der Observer das Listenende nicht immer.
+fridgeScroll.addEventListener("scroll", fillFridgeViewport, { passive: true });
+
+function fridgeItemHtml(item){
   // Nur-lesen: Felder gesperrt, kein Loeschen.
   const locked = canWrite() ? "" : " disabled";
-  fridgeListEl.innerHTML = items.map(item => `
+  return `
     <li class="fridge-item" data-id="${item.id}">
       <input type="text" class="fridge-edit-name" value="${escapeHtml(item.name)}"${locked}>
       <input type="text" class="fridge-edit-amount fridge-item-amount" value="${escapeHtml(item.amount || "")}"${locked}>
@@ -942,19 +1026,45 @@ function renderFridgeList(){
         ${locked ? "" : `<button type="button" class="btn btn-icon" data-action="delete-fridge" aria-label="Löschen">🗑️</button>`}
       </span>
     </li>
-  `).join("");
+  `;
+}
+
+function renderFridgeList(){
+  const { items } = DB.fridgePage;
+  fridgeEmptyState.hidden = items.length > 0 || fridgeLoading;
+  fridgeListEl.innerHTML = items.map(fridgeItemHtml).join("");
+  updateFridgeFooter();
+}
+
+/** "x von y geladen" unter der Liste und Hinweis am Listenende. */
+function updateFridgeFooter(){
+  const { items, total, page, totalPages } = DB.fridgePage;
+  fridgePagerInfo.textContent = total === 0
+    ? ""
+    : items.length >= total
+      ? (total === 1 ? "1 Eintrag" : `Alle ${total} Einträge geladen`)
+      : `${items.length} von ${total} Einträgen geladen – weiterscrollen für mehr`;
+  const more = page > 0 && page < totalPages;
+  fridgeLoadMore.textContent = fridgeLoading ? "Einträge werden geladen…" : more ? "Weitere Einträge…" : "";
+  fridgeLoadMore.hidden = !fridgeLoading && !more;
 }
 
 fridgeForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const name = fridgeItemNameInput.value.trim();
   if(!name) return;
-  await guard(async () => {
+  const { page, totalPages } = DB.fridgePage;
+  const allLoaded = page >= totalPages;
+  const ok = await guard(async () => {
     await DB.addFridgeItem({ name, amount: fridgeItemAmountInput.value.trim() });
     fridgeForm.reset();
     fridgeItemNameInput.focus();
-    renderFridgeList();
   });
+  if(!ok) return;
+  // Neue Eintraege kommen ans Ende: ist schon alles geladen, erscheint er
+  // sofort; sonst kommt er beim Weiterscrollen.
+  await loadFridge({ keepLoaded: true, plusOne: allLoaded });
+  if(allLoaded) fridgeScroll.scrollTop = fridgeScroll.scrollHeight;
 });
 
 /* Inline-Aenderungen werden gebuendelt: sonst ginge pro Tastendruck eine
@@ -1001,21 +1111,16 @@ fridgeListEl.addEventListener("click", async (e) => {
   const row = e.target.closest("li.fridge-item");
   const id = row.dataset.id;
   pendingFridgeEdits.delete(id);   // ausstehende Aenderung ist hinfaellig
-  await guard(async () => {
-    await DB.deleteFridgeItem(id);
-    renderFridgeList();
-  });
+  const ok = await guard(() => DB.deleteFridgeItem(id));
+  if(ok) await loadFridge({ keepLoaded: true });
 });
 
 clearFridgeBtn.addEventListener("click", async () => {
-  if(DB.data.fridge.length === 0) return;
-  const ok = window.confirm("Den gesamten Kühlschrank leeren?");
-  if(!ok) return;
+  if(DB.fridgePage.total === 0) return;
+  if(!window.confirm("Den gesamten Kühlschrank leeren?")) return;
   pendingFridgeEdits.clear();
-  await guard(async () => {
-    await DB.clearFridge();
-    renderFridgeList();
-  }, { success: "Kühlschrank geleert." });
+  const ok = await guard(() => DB.clearFridge(), { success: "Kühlschrank geleert." });
+  if(ok) await loadFridge();
 });
 
 // Kleine Dialoge: Buttons mit data-close schliessen ihren Dialog.
@@ -1321,9 +1426,8 @@ async function startApp(user){
 
   const loaded = await guard(() => DB.load());
   if(!loaded) return;
-  await loadRecipes();
+  await Promise.all([loadRecipes(), loadFridge()]);
   clearStatus();
-  renderFridgeList();
   await openRecipeFromUrl();
 }
 

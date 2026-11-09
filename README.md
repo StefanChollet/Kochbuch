@@ -100,7 +100,7 @@ Fehler kommen einheitlich als `{ "error": "..." }` mit passendem HTTP-Status
 | `DELETE` | `/api/users/:id` | Benutzer samt seinen Rezepten löschen – nicht den Admin (nur Admin) |
 | `POST` | `/api/recipes/:id/views` | neuen Kochansicht-Link erzeugen → `{ code, url }` (Leserecht genügt) |
 | `GET` | `/api/views/:code` | das eine Rezept zum Code (angemeldet + gültiger Code, sonst 401/404) |
-| `GET` | `/api/state` | Kühlschrank + Katalog in einem Aufruf (Startaufbau) |
+| `GET` | `/api/state` | Zutaten-Katalog + Kategorie-Vorschläge (Startaufbau; der Kühlschrank kommt seitenweise über `/api/fridge`) |
 | `GET` | `/api/recipes` | Rezeptübersicht: Suche, Sortierung, Paging |
 | `GET` | `/api/recommendations` | Empfehlungen aus Kühlschrank + Suchfilter |
 | `POST` | `/api/recipes` | Rezept anlegen → `201` + `Location` |
@@ -108,7 +108,7 @@ Fehler kommen einheitlich als `{ "error": "..." }` mit passendem HTTP-Status
 | `PUT` | `/api/recipes/:id` | Rezept vollständig ersetzen |
 | `DELETE` | `/api/recipes/:id` | Rezept löschen (Zutaten + Bilder gehen mit) → `204` |
 | `GET` | `/api/images/:id` | Bildbytes mit MIME-Typ |
-| `GET` | `/api/fridge` | Kühlschrank auflisten |
+| `GET` | `/api/fridge` | Kühlschrank auflisten; mit `?page=&pageSize=` eine Seite (Lazy Loading) als `{ items, total, page, pageSize, totalPages }` |
 | `POST` | `/api/fridge` | Eintrag anlegen → `201` |
 | `PATCH` | `/api/fridge/:id` | Eintrag teilweise ändern |
 | `DELETE` | `/api/fridge/:id` | Eintrag löschen → `204` |
