@@ -322,7 +322,10 @@ body{
 .recipe-img-btn:hover{ background: color-mix(in srgb, var(--accent) 18%, transparent); }
 .recipe-img-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
 .col-menu{ width: 120px; }
-.menu-cell{ display:flex; gap:.4rem; }
+/* Bleibt eine echte Tabellenzelle - mit display:flex fehlten darin die
+   Zebrastreifen und die Linie; die Knoepfe stehen nebeneinander. */
+.menu-cell{ white-space:nowrap; }
+.menu-cell > * + *{ margin-left:.4rem; }
 /* Menue-Symbole der Rezeptliste: 16x16, Loeschen als rotes Kreuz */
 .menu-icon-btn{ display:inline-flex; align-items:center; justify-content:center; padding:.35rem; line-height:0; color: var(--ink-soft); }
 .menu-icon-btn svg{ width:16px; height:16px; display:block; }
@@ -535,7 +538,9 @@ input[type="search"]::-webkit-search-cancel-button{ cursor:pointer; }
 /* Basisgroesse 84px, um 300% vergroessert (= das 4-fache) auf 336px. */
 .image-thumb{
   position:relative;
-  width: 336px; height:336px;
+  /* Hoechstens 336px, auf schmalen Bildschirmen so breit wie der Platz */
+  width: min(336px, 100%);
+  aspect-ratio: 1 / 1;
   border-radius: 6px;
   overflow:hidden;
   border: 1px solid var(--line);
@@ -797,8 +802,51 @@ body.is-readonly .write-only{ display:none !important; }
 .new-user-row input[type="text"], .new-user-row input[type="password"]{ flex: 1 1 150px; width:auto; }
 .new-user-row select{ width:auto; }
 
+/* ===== Responsive: Tablet ===== */
+@media (max-width: 860px){
+  .panel-recommendations{ margin: 1.25rem 1.25rem 0; }
+  .layout{ padding: 1.25rem; gap: 1.25rem; }
+  /* Einspaltig: der Kuehlschrank darf nicht mehr oben kleben */
+  .panel-fridge{ position: static; }
+}
+
+/* ===== Responsive: Handy ===== */
 @media (max-width: 640px){
   .app-header{ flex-wrap:wrap; gap:.6rem; padding: 1rem; }
+  .panel-recommendations{ margin: 1rem 1rem 0; padding: 1rem; }
+  .panel-head{ flex-wrap: wrap; gap: .5rem; }
+  /* Suche und Sortierung je auf eigener, voller Zeile */
+  .recipe-search-wrap{ flex: 1 1 100%; }
+  .recipe-sort-wrap{ flex: 1 1 100%; }
+  .recipe-sort-wrap select{ flex: 1; min-width: 0; width: 100%; }
+  .recipe-table-scroll{ max-height: 70vh; }
+  /* Dialoge: fast volle Breite, weniger Innenabstand */
+  .recipe-dialog form, .dialog-body{ padding: 1rem; }
+  .recipe-dialog .field-group{ padding: .7rem .7rem .9rem; }
+  .ingredient-row .ingredient-amount{ max-width: 80px; flex: 0 0 80px; }
+  .dialog-actions{ flex-wrap: wrap; }
+  /* Benutzerverwaltung als Karten statt breiter Tabelle:
+     Zeile 1: ID, Name, Menu - Zeile 2: Rechte, Anzahl Rezepte */
+  .users-table thead{ display:none; }
+  .users-table, .users-table tbody{ display:block; }
+  .users-table tr{
+    display:grid;
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas: "id name menu" "id role count";
+    gap: .35rem .6rem;
+    align-items:center;
+    padding: .55rem .4rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .users-table td{ padding:0; border:0; }
+  .users-table td:nth-child(1){ grid-area: id; align-self:start; color: var(--ink-soft); font-size:.8rem; }
+  .users-table td:nth-child(2){ grid-area: name; font-weight:600; }
+  .users-table td:nth-child(3){ grid-area: role; }
+  .users-table td:nth-child(4){ grid-area: count; font-size:.8rem; color: var(--ink-soft); white-space:nowrap; }
+  .users-table td:nth-child(4)::before{ content: "Rezepte: "; }
+  .users-table td:nth-child(5){ grid-area: menu; justify-self:end; }
+  .users-table select{ width:100%; }
+  .users-table .fixed-note{ white-space: normal; }
   .col-owner{ width:auto; }
   /* Handy: weniger Rand, die kurze Beschreibung entfaellt in der Rezeptliste */
   .layout{ padding: 1rem; gap: 1rem; }
@@ -807,6 +855,12 @@ body.is-readonly .write-only{ display:none !important; }
   .recipe-table th, .recipe-table td{ padding-left:.35rem; padding-right:.35rem; }
   .recipe-table .menu-cell{ gap:.25rem; }
   .recipe-table .menu-icon-btn{ padding:.3rem; }
+}
+
+/* ===== Responsive: sehr kleines Handy ===== */
+@media (max-width: 420px){
+  /* Sonst passt die Rezepttabelle nicht: Spalte "Erstellt von" ausblenden */
+  .recipe-table th.col-owner, #recipeTableBody td.owner-cell{ display:none; }
 }
 
 /* Kochansicht-Button links in der Aktionsleiste des Rezeptdialogs */

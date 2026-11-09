@@ -24,7 +24,7 @@
 .view-meta{ font-size: .8rem; color: var(--ink-soft); margin: 0 0 1.25rem; }
 
 .view-images{ display:flex; gap:.75rem; overflow-x:auto; margin-bottom: 1.5rem; }
-.view-images img{ height: 220px; border-radius: 8px; object-fit: cover; flex: 0 0 auto; }
+.view-images img{ height: 220px; max-width: 100%; border-radius: 8px; object-fit: cover; flex: 0 0 auto; }
 
 .view-columns{
   display:grid;
@@ -80,6 +80,10 @@
   .view-columns{ grid-template-columns: 1fr; }
   .view-recipe{ padding: 1.25rem 1rem; }
   .app-header{ flex-wrap:wrap; gap:.6rem; padding: 1rem; }
+  /* Werkzeuge (Zurueck, Bildschirm anlassen, Drucken) umbrechen statt quetschen */
+  .view-tools{ flex-wrap: wrap; gap: .5rem; }
+  .view-tools .btn{ white-space: nowrap; }
+  .view-main{ padding: 1rem .75rem 2rem; }
 }
 
 @media print{
