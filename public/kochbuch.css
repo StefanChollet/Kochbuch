@@ -266,6 +266,18 @@ body{
   padding: .5rem .6rem;
   border-bottom: 1px solid var(--line);
 }
+/* Spaltenkoepfe der Rezepte-Liste: deutlich hervorgehoben wie die Bereiche
+   im Kochbuch-Detail - fett, Textfarbe, gruen getoent, kraeftige Linie unten.
+   (Die Benutzertabelle nutzt dieselbe Klasse und bleibt unveraendert.) */
+.recipe-table:not(.users-table) th{
+  background: color-mix(in srgb, var(--accent) 24%, var(--surface));
+  color: var(--ink);
+  font-weight: 700;
+  font-size: .95rem;
+  padding-top: .65rem;
+  padding-bottom: .65rem;
+  border-bottom: 2px solid var(--accent);
+}
 .recipe-table td{
   padding: .7rem .6rem;
   border-bottom: 1px solid var(--line);
