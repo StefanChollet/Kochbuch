@@ -333,9 +333,30 @@ body{
 /* ===== Fridge ===== */
 /* Bewusst ruhig: kein liniertes Muster, kein Rahmen - nur die Eingabefelder
    zum Hinzufuegen haben einen sichtbaren Rand. */
-/* Kein eigener Scrollbereich: der Kuehlschrank waechst mit der Seite mit,
-   weitere Eintraege laden beim Scrollen der Seite nach (Lazy Loading). */
-.panel-fridge{ align-self: start; }
+.panel-fridge{
+  /* Bleibt beim Scrollen der (potenziell langen) Rezeptliste sichtbar. */
+  position: sticky;
+  top: 1.75rem;
+  align-self: start;
+}
+@media (max-width: 860px){
+  /* Im einspaltigen Layout stuende ein fixierter Kuehlschrank der
+     Rezeptliste im Weg - dort ganz normal mitscrollen lassen. */
+  .panel-fridge{ position: static; }
+}
+/* Die Eintraege scrollen in einem eigenen Kasten - wie die Rezepte-Liste,
+   mit sichtbarer Scrollleiste; weitere Eintraege laden beim Scrollen nach. */
+.fridge-scroll{
+  max-height: 50vh;
+  overflow-y: auto;
+  padding-right: .3rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.fridge-scroll::-webkit-scrollbar{ width: 8px; }
+.fridge-scroll::-webkit-scrollbar-track{ background: transparent; }
+.fridge-scroll::-webkit-scrollbar-thumb{ background: var(--line); border-radius: 4px; }
+.fridge-scroll::-webkit-scrollbar-thumb:hover{ background: var(--ink-soft); }
 .fridge-pager-info{ margin-top: .6rem; }
 .fridge-pager-info:empty{ display:none; }
 .fridge-form{

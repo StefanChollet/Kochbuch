@@ -931,12 +931,12 @@ const fridgeListEl = document.getElementById("fridgeList");
 const fridgeEmptyState = document.getElementById("fridgeEmptyState");
 const clearFridgeBtn = document.getElementById("clearFridgeBtn");
 
+const fridgeScroll = document.getElementById("fridgeScroll");
 const fridgeLoadMore = document.getElementById("fridgeLoadMore");
 const fridgePagerInfo = document.getElementById("fridgePagerInfo");
 
 /* Lazy Loading wie bei den Rezepten: zuerst eine Portion, jede weitere laedt
-   nach, sobald das Listenende (#fridgeLoadMore) beim Scrollen der Seite in
-   Sicht kommt. Einen eigenen Scrollbereich hat der Kuehlschrank nicht. */
+   nach, sobald das Listenende (#fridgeLoadMore) in Sicht scrollt. */
 const FRIDGE_BATCH_SIZE = 25;
 const FRIDGE_PRELOAD_PX = 150;
 let fridgeLoadGeneration = 0;
@@ -944,12 +944,13 @@ let fridgeLoading = false;
 
 /**
  * Laedt den Kuehlschrank neu. keepLoaded: so viele Eintraege wie bisher neu
- * holen - nach Anlegen/Loeschen. plusOne: eine
+ * holen und die Scrollposition halten - nach Anlegen/Loeschen. plusOne: eine
  * Portion mehr (nach dem Anlegen, falls der neue Eintrag eine neue Seite beginnt).
  */
 async function loadFridge({ keepLoaded = false, plusOne = false } = {}){
   const generation = ++fridgeLoadGeneration;
   const pages = keepLoaded ? Math.max(1, DB.fridgePage.page) + (plusOne ? 1 : 0) : 1;
+  const scrollTop = keepLoaded ? fridgeScroll.scrollTop : 0;
   fridgeLoading = true;
   updateFridgeFooter();
 
@@ -972,6 +973,7 @@ async function loadFridge({ keepLoaded = false, plusOne = false } = {}){
   fridgeLoading = false;
   if(ok && result) DB.fridgePage = result;
   renderFridgeList();
+  fridgeScroll.scrollTop = scrollTop;
   if(ok) fillFridgeViewport();
 }
 
@@ -999,17 +1001,19 @@ async function loadMoreFridge(){
   if(ok) fillFridgeViewport();
 }
 
-/** Ist das Listenende schon (fast) im Fenster sichtbar, gleich weiterladen. */
+/** Ist die Liste kuerzer als ihr Kasten, gibt es nichts zu scrollen - dann gleich weiterladen. */
 function fillFridgeViewport(){
-  if(fridgeLoadMore.hidden || fridgeLoadMore.offsetParent === null) return;
-  if(fridgeLoadMore.getBoundingClientRect().top < window.innerHeight + FRIDGE_PRELOAD_PX) loadMoreFridge();
+  const el = fridgeScroll;
+  if(el.offsetParent === null) return;
+  if(el.scrollHeight - el.scrollTop - el.clientHeight < FRIDGE_PRELOAD_PX) loadMoreFridge();
 }
 
 new IntersectionObserver((entries) => {
   if(entries.some(e => e.isIntersecting)) loadMoreFridge();
-}, { rootMargin: `0px 0px ${FRIDGE_PRELOAD_PX}px 0px` }).observe(fridgeLoadMore);
-// Zusaetzlich beim Scrollen der Seite pruefen (Absicherung zum Observer).
-window.addEventListener("scroll", fillFridgeViewport, { passive: true });
+}, { root: fridgeScroll, rootMargin: `0px 0px ${FRIDGE_PRELOAD_PX}px 0px` }).observe(fridgeLoadMore);
+// Zusaetzlich beim Scrollen selbst pruefen: liegt der Kuehlschrank-Kasten
+// teilweise ausserhalb des Fensters, meldet der Observer das Listenende nicht immer.
+fridgeScroll.addEventListener("scroll", fillFridgeViewport, { passive: true });
 
 function fridgeItemHtml(item){
   // Nur-lesen: Felder gesperrt, kein Loeschen.
@@ -1060,7 +1064,7 @@ fridgeForm.addEventListener("submit", async (e) => {
   // Neue Eintraege kommen ans Ende: ist schon alles geladen, erscheint er
   // sofort; sonst kommt er beim Weiterscrollen.
   await loadFridge({ keepLoaded: true, plusOne: allLoaded });
-  if(allLoaded) fridgeListEl.lastElementChild?.scrollIntoView({ block: "nearest" });
+  if(allLoaded) fridgeScroll.scrollTop = fridgeScroll.scrollHeight;
 });
 
 /* Inline-Aenderungen werden gebuendelt: sonst ginge pro Tastendruck eine
