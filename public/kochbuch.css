@@ -330,10 +330,10 @@ body{
 .menu-icon-delete{ color: var(--danger); }
 .menu-icon-delete:hover{ color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
 
-/* ===== Fridge (index-card look) ===== */
+/* ===== Fridge ===== */
+/* Bewusst ruhig: kein liniertes Muster, kein Rahmen - nur die Eingabefelder
+   zum Hinzufuegen haben einen sichtbaren Rand. */
 .panel-fridge{
-  background: repeating-linear-gradient(var(--surface), var(--surface) 34px, var(--surface-2) 35px);
-  border: 1px dashed var(--line);
   /* Bleibt beim Scrollen der (potenziell langen) Rezeptliste sichtbar und
      bekommt bei viel Inhalt eine eigene Scrollleiste statt die ganze Seite
      in die Laenge zu ziehen. */
@@ -371,14 +371,20 @@ body{
   align-items:center;
   justify-content:space-between;
   gap:.5rem;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: .4rem .6rem;
+  padding: .1rem 0;
 }
+/* Eintraege ohne Rahmen; der Rand erscheint erst beim Darueberfahren oder Bearbeiten. */
+.fridge-item input[type="text"]{
+  border-color: transparent;
+  background: transparent;
+}
+.fridge-item input[type="text"]:hover:not(:disabled){ border-color: var(--line); }
+.fridge-item input[type="text"]:focus{ border-color: var(--accent); background: var(--surface); }
 .fridge-item-name{ font-weight:500; }
 .fridge-item-amount{ color: var(--ink-soft); font-size:.85rem; margin-right:auto; padding-left:.5rem; }
 .fridge-item-actions{ display:flex; gap:.3rem; }
+.fridge-item .btn-icon{ border-color: transparent; }
+.fridge-item .btn-icon:hover{ border-color: var(--line); }
 
 /* ===== Buttons ===== */
 .btn{
@@ -737,6 +743,8 @@ body.is-readonly .write-only{ display:none !important; }
   color: var(--ink);
   background: var(--surface-2);
 }
+/* Nur-lesen: auch ohne Toenung, wie normaler Text */
+.fridge-list input:disabled{ background: transparent; }
 
 /* ===== Benutzerverwaltung ===== */
 .small-dialog{ width: min(460px, 92vw); }
