@@ -347,19 +347,14 @@ body{
      Rezeptliste im Weg - dort ganz normal mitscrollen lassen. */
   .panel-fridge{ position: static; }
 }
-/* Die Eintraege scrollen in einem eigenen Kasten - wie die Rezepte-Liste,
-   mit sichtbarer Scrollleiste; weitere Eintraege laden beim Scrollen nach. */
+/* Die Eintraege scrollen in einem eigenen Kasten (Mausrad, Wischen),
+   aber ohne sichtbaren Scrollbalken; weitere Eintraege laden beim Scrollen nach. */
 .fridge-scroll{
   max-height: 50vh;
   overflow-y: auto;
-  padding-right: .3rem;
-  scrollbar-width: thin;
-  scrollbar-color: var(--line) transparent;
+  scrollbar-width: none;
 }
-.fridge-scroll::-webkit-scrollbar{ width: 8px; }
-.fridge-scroll::-webkit-scrollbar-track{ background: transparent; }
-.fridge-scroll::-webkit-scrollbar-thumb{ background: var(--line); border-radius: 4px; }
-.fridge-scroll::-webkit-scrollbar-thumb:hover{ background: var(--ink-soft); }
+.fridge-scroll::-webkit-scrollbar{ display: none; }
 .fridge-pager-info{ margin-top: .6rem; }
 .fridge-pager-info:empty{ display:none; }
 .fridge-form{
