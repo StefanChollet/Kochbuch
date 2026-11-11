@@ -864,7 +864,8 @@ function openRecipeDialog(recipe){
   refreshCategoryDatalist();
   applyRecipeAccess(recipe);
   // Kochansicht nur fuer gespeicherte Rezepte - ein neues hat noch nichts zum Anzeigen.
-  cookViewBtn.hidden = !recipe;
+  // Im roten Modus ist die Kochansicht gesperrt - darum dort kein Knopf dafuer.
+  cookViewBtn.hidden = !recipe || isLocked();
   if(recipe){
     workingCategories = (recipe.categories || []).map(name => ({ key: makeId(), name }));
     recipeIdInput.value = recipe.id;
@@ -1207,12 +1208,13 @@ document.querySelectorAll("dialog [data-close]").forEach(btn => {
 const ROLE_LABELS = { admin: "Admin", rw: "Lesen + Schreiben", r: "Nur lesen" };
 let currentUser = null;
 
-/* ---- Ampel neben "Rezepte": gruen = normaler Modus, rot = alles gesperrt ----
-   Im roten Modus ist jeglicher Zugriff gesperrt: Rezepte-Liste und
-   Kuehlschrank sind nur noch zu sehen (scrollen geht), aber nichts laesst
-   sich anklicken, oeffnen, suchen, filtern oder aendern - auch nicht das
-   Benutzermenue. Einzig die Ampel schaltet zurueck auf Gruen. Reine
-   Anzeige-Einstellung pro Geraet; der Server prueft die Rechte ohnehin selbst. */
+/* ---- Ampel neben "Rezepte": gruen = normaler Modus, rot = gesperrt ----
+   Im roten Modus ist die Hauptseite gesperrt (nicht suchen, sortieren,
+   nach Kategorie filtern, kein Kuehlschrank, keine Empfehlungen, kein
+   Benutzermenue). Frei bleiben: die Ampel, der Filter "Benutzer" und alle
+   Wege ins Kochbuch-Detail (Zeile, Auge, farbiges Kochbild, Rezept-Link) -
+   das Detail selbst ist dann nur zum Ansehen. Reine Anzeige-Einstellung
+   pro Geraet; der Server prueft die Rechte ohnehin selbst. */
 const VIEW_ONLY_KEY = "kochbuch_view_only";
 const viewModeBtn = document.getElementById("viewModeBtn");
 let viewOnly = false;
@@ -1227,14 +1229,24 @@ function isLocked(){
   return viewOnly && !!currentUser && currentUser.canWrite;
 }
 
-// Bereiche, in denen im roten Modus alles gesperrt ist.
+// Bereiche, in denen im roten Modus gesperrt wird ...
 const LOCK_SCOPE = ".app-header, #appMain";
+// ... und was darin trotzdem frei bleibt: Ampel, Filter "Benutzer" und die
+// Wege ins Kochbuch-Detail (Rezeptzeile, Auge/Stift, farbiges Kochbild).
+const LOCK_ALLOWED = "#viewModeBtn, #recipeOwnerFilter, #recipeTableBody tr";
+
+function allowedWhenLocked(target){
+  if(!target.closest) return false;
+  // Das schwarz-weisse Kochbild oeffnet die Kochansicht, nicht das Detail.
+  if(target.closest('[data-action="cook"]')) return false;
+  return !!target.closest(LOCK_ALLOWED);
+}
 
 /** Alle Bedienelemente sperren bzw. wieder freigeben (ausser der Ampel). */
 function setControlsLocked(locked){
   document.querySelectorAll(LOCK_SCOPE).forEach(scope => {
     scope.querySelectorAll("button, input, select, textarea").forEach(el => {
-      if(el === viewModeBtn) return;
+      if(allowedWhenLocked(el)) return;
       if(locked){
         if(!el.disabled){ el.disabled = true; el.dataset.viewLocked = "1"; }
       }else if(el.dataset.viewLocked){
@@ -1250,8 +1262,8 @@ function setControlsLocked(locked){
    nachgeladene Zeilen gesperrt. Scrollen ist davon nicht betroffen. */
 function blockWhenLocked(e){
   if(!isLocked()) return;
-  if(viewModeBtn.contains(e.target)) return;
   if(!e.target.closest || !e.target.closest(LOCK_SCOPE)) return;
+  if(allowedWhenLocked(e.target)) return;
   if(e.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
   e.preventDefault();
   e.stopPropagation();
@@ -1586,12 +1598,6 @@ async function openRecipeFromUrl(){
   const params = new URLSearchParams(window.location.search);
   const id = params.get("recipe");
   if(!id) return;
-  if(isLocked()){
-    // Im roten Modus wird auch per Link nichts geoeffnet.
-    params.delete("recipe");
-    window.history.replaceState(null, "", window.location.pathname + (params.toString() ? `?${params}` : ""));
-    return;
-  }
   params.delete("recipe");
   const rest = params.toString();
   window.history.replaceState(null, "", window.location.pathname + (rest ? `?${rest}` : ""));

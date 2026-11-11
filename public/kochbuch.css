@@ -196,8 +196,7 @@ body{
 }
 .traffic-light[aria-pressed="true"]{ border-color: #c0392b; color: #c0392b; }
 /* Roter Modus: alles gesperrt - kein Hand-Zeiger, Bedienelemente blass */
-body.view-locked #recipeTableBody tr,
-body.view-locked .recipe-img-btn,
+body.view-locked .recipe-img-icon.no-image,
 body.view-locked .recommendation-card{ cursor: default; }
 body.view-locked #appMain :is(button, input, select):disabled:not(#viewModeBtn),
 body.view-locked .app-header :is(button, input, select):disabled{ opacity: .45; cursor: not-allowed; }

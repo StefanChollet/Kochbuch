@@ -121,11 +121,13 @@ Fehler kommen einheitlich als `{ "error": "..." }` mit passendem HTTP-Status
 ### Ampel „gesperrt“
 
 Neben dem Titel „Rezepte“ steht für Benutzer mit Schreibrecht ein Ampelknopf.
-Grün = normaler Modus, Rot = jeglicher Zugriff gesperrt: Rezepte-Liste und
-Kühlschrank sind nur noch zu sehen (Scrollen geht), aber nichts lässt sich
-anklicken, öffnen, suchen, filtern oder ändern – auch Empfehlungen,
-Benutzermenü und Hell/Dunkel nicht. Auch eine offene Kochansicht ist gesperrt
-(kein Abhaken, kein Zurück/Drucken). Einzig die Ampel schaltet zurück auf Grün. Die Einstellung
+Grün = normaler Modus, Rot = gesperrt: Suchen, Sortieren, der Filter
+Kategorie, Kühlschrank, Empfehlungen, Benutzermenü und Hell/Dunkel sind
+gesperrt; Liste und Kühlschrank lassen sich ansehen und scrollen. Frei bleiben
+der Filter „Benutzer“ und alle Wege ins Kochbuch-Detail (Rezeptzeile, Auge,
+farbiges Kochbild, Rezept-Link) – das Detail ist dann nur zum Ansehen, ohne
+Kochansicht-Knopf. Auch eine offene Kochansicht ist gesperrt (kein Abhaken,
+kein Zurück/Drucken). Die Ampel schaltet zurück auf Grün. Die Einstellung
 gilt pro Gerät (Browser-Speicher) und ist nur eine Anzeige-Sperre – die Rechte
 prüft der Server unabhängig davon.
 
