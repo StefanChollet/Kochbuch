@@ -27,11 +27,6 @@
 <header class="app-header">
   <h1 class="app-title"><a href="/" class="view-home">Kochbuch</a> <span class="view-sub">· Kochansicht</span></h1>
   <div class="view-tools" id="viewTools" hidden>
-    <!-- Ampel aus dem Kochbuch auf Rot: hier ist dann auch nichts anklickbar -->
-    <span class="traffic-light view-lock-badge" id="viewLockBadge" aria-pressed="true" title="Rot: alles gesperrt – im Kochbuch über die Ampel neben „Rezepte“ umschalten" hidden>
-      <span class="traffic-light-dot" aria-hidden="true"></span>
-      <span class="traffic-light-label">Gesperrt</span>
-    </span>
     <button type="button" class="btn btn-primary btn-small" id="backBtn" title="Kochansicht schliessen und zurück zum Rezept">← Zurück zum Rezept</button>
     <label class="checkbox-label" title="Bildschirm bleibt an, solange diese Seite offen ist">
       <input type="checkbox" id="wakeLockToggle"> Bildschirm anlassen
@@ -54,7 +49,7 @@
     <div class="view-columns">
       <section class="view-ingredients" aria-labelledby="viewIngredientsHeading">
         <h3 id="viewIngredientsHeading">Zutaten</h3>
-        <p class="view-hint" id="viewCheckHint">Antippen zum Abhaken</p>
+        <p class="view-hint">Antippen zum Abhaken</p>
         <ul id="viewIngredientList" class="view-ingredient-list"></ul>
         <p id="viewNoIngredients" class="empty-state" hidden>Keine Zutaten erfasst.</p>
         <p class="view-fridge-summary" id="viewFridgeSummary" hidden></p>

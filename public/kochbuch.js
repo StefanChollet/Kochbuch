@@ -864,8 +864,7 @@ function openRecipeDialog(recipe){
   refreshCategoryDatalist();
   applyRecipeAccess(recipe);
   // Kochansicht nur fuer gespeicherte Rezepte - ein neues hat noch nichts zum Anzeigen.
-  // Im roten Modus ist die Kochansicht gesperrt - darum dort kein Knopf dafuer.
-  cookViewBtn.hidden = !recipe || isLocked();
+  cookViewBtn.hidden = !recipe;
   if(recipe){
     workingCategories = (recipe.categories || []).map(name => ({ key: makeId(), name }));
     recipeIdInput.value = recipe.id;
@@ -1208,13 +1207,10 @@ document.querySelectorAll("dialog [data-close]").forEach(btn => {
 const ROLE_LABELS = { admin: "Admin", rw: "Lesen + Schreiben", r: "Nur lesen" };
 let currentUser = null;
 
-/* ---- Ampel neben "Rezepte": gruen = normaler Modus, rot = gesperrt ----
-   Im roten Modus ist die Hauptseite gesperrt (nicht suchen, sortieren,
-   nach Kategorie filtern, kein Kuehlschrank, keine Empfehlungen, kein
-   Benutzermenue). Frei bleiben: die Ampel, der Filter "Benutzer" und alle
-   Wege ins Kochbuch-Detail (Zeile, Auge, farbiges Kochbild, Rezept-Link) -
-   das Detail selbst ist dann nur zum Ansehen. Reine Anzeige-Einstellung
-   pro Geraet; der Server prueft die Rechte ohnehin selbst. */
+/* ---- Ampel neben "Rezepte": gruen = normaler Modus, rot = nur Sicht ----
+   Im Modus "nur Sicht" laesst sich auf der Hauptseite und im Kochbuch-Detail
+   nichts aendern - auch wer Schreibrechte hat. Reine Anzeige-Einstellung pro
+   Geraet (wie das Farbschema); der Server prueft die Rechte ohnehin selbst. */
 const VIEW_ONLY_KEY = "kochbuch_view_only";
 const viewModeBtn = document.getElementById("viewModeBtn");
 let viewOnly = false;
@@ -1224,70 +1220,17 @@ function canWrite(){
   return !!currentUser && currentUser.canWrite && !viewOnly;
 }
 
-/** Roter Modus aktiv? Nur fuer Benutzer mit Ampel (Schreibrecht). */
-function isLocked(){
-  return viewOnly && !!currentUser && currentUser.canWrite;
-}
-
-// Bereiche, in denen im roten Modus gesperrt wird ...
-const LOCK_SCOPE = ".app-header, #appMain";
-// ... und was darin trotzdem frei bleibt: Ampel, Filter "Benutzer" und die
-// Wege ins Kochbuch-Detail (Rezeptzeile, Auge/Stift, farbiges Kochbild).
-const LOCK_ALLOWED = "#viewModeBtn, #recipeOwnerFilter, #recipeTableBody tr";
-
-function allowedWhenLocked(target){
-  if(!target.closest) return false;
-  // Das schwarz-weisse Kochbild oeffnet die Kochansicht, nicht das Detail.
-  if(target.closest('[data-action="cook"]')) return false;
-  return !!target.closest(LOCK_ALLOWED);
-}
-
-/** Alle Bedienelemente sperren bzw. wieder freigeben (ausser der Ampel). */
-function setControlsLocked(locked){
-  document.querySelectorAll(LOCK_SCOPE).forEach(scope => {
-    scope.querySelectorAll("button, input, select, textarea").forEach(el => {
-      if(allowedWhenLocked(el)) return;
-      if(locked){
-        if(!el.disabled){ el.disabled = true; el.dataset.viewLocked = "1"; }
-      }else if(el.dataset.viewLocked){
-        el.disabled = false;
-        delete el.dataset.viewLocked;
-      }
-    });
-  });
-}
-
-/* Klicks, Doppelklicks, Enter/Leertaste und Formulare im roten Modus
-   abfangen, bevor irgendein anderer Code sie sieht - so bleiben auch neu
-   nachgeladene Zeilen gesperrt. Scrollen ist davon nicht betroffen. */
-function blockWhenLocked(e){
-  if(!isLocked()) return;
-  if(!e.target.closest || !e.target.closest(LOCK_SCOPE)) return;
-  if(allowedWhenLocked(e.target)) return;
-  if(e.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
-  e.preventDefault();
-  e.stopPropagation();
-}
-["click", "dblclick", "keydown", "submit"].forEach(type => document.addEventListener(type, blockWhenLocked, true));
-
 /** Ampel und alle Bearbeiten-Elemente an den Modus anpassen. */
 function applyViewMode(){
   const mayWrite = !!currentUser && currentUser.canWrite;
   // Wer ohnehin nur lesen darf, braucht keine Ampel.
   viewModeBtn.hidden = !mayWrite;
   viewModeBtn.setAttribute("aria-pressed", String(viewOnly));
-  viewModeBtn.querySelector(".traffic-light-label").textContent = viewOnly ? "Gesperrt" : "Bearbeiten";
+  viewModeBtn.querySelector(".traffic-light-label").textContent = viewOnly ? "Nur Sicht" : "Bearbeiten";
   viewModeBtn.title = viewOnly
-    ? "Rot: alles gesperrt – nur ansehen. Klick: normaler Modus"
-    : "Grün: normaler Modus. Klick: alles sperren (nur ansehen)";
+    ? "Rot: nur Sicht – nichts kann geändert werden. Klick: normaler Modus"
+    : "Grün: normaler Modus. Klick: nur Sicht (nichts änderbar)";
   document.body.classList.toggle("is-readonly", !canWrite());
-  const locked = isLocked();
-  document.body.classList.toggle("view-locked", locked);
-  if(locked){
-    setUserMenuOpen(false);
-    document.querySelectorAll("dialog[open]").forEach(d => d.close());
-  }
-  setControlsLocked(locked);
 }
 
 viewModeBtn.addEventListener("click", () => {

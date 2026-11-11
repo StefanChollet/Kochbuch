@@ -117,46 +117,7 @@ function render(recipe){
   viewMessage.hidden = true;
   viewMain.hidden = false;
   viewTools.hidden = false;
-  applyViewLock();
 }
-
-/* ---- Ampel "nur Sicht" ----
-   Steht die Ampel im Kochbuch auf Rot (gleiche Einstellung im Browser),
-   ist auch hier jeglicher Zugriff gesperrt: Zutaten nicht abhakbar,
-   "Bildschirm anlassen", Zurueck und Drucken gesperrt, der Titel-Link ohne Wirkung. */
-const VIEW_ONLY_KEY = "kochbuch_view_only";
-
-function isViewOnly(){
-  try{ return window.localStorage.getItem(VIEW_ONLY_KEY) === "1"; }catch{ return false; }
-}
-
-function applyViewLock(){
-  const locked = isViewOnly();
-  document.body.classList.toggle("view-locked", locked);
-  document.getElementById("viewLockBadge").hidden = !locked;
-  document.getElementById("viewCheckHint").hidden = locked;
-  document.querySelectorAll("#viewIngredientList input[type=checkbox]").forEach(cb => { cb.disabled = locked; });
-  wakeLockToggle.disabled = locked;
-  document.getElementById("backBtn").disabled = locked;
-  document.getElementById("printBtn").disabled = locked;
-  if(locked && wakeLockToggle.checked){
-    wakeLockToggle.checked = false;
-    setWakeLock(false);
-  }
-}
-
-// Auch der Link "Kochbuch" oben fuehrt im gesperrten Zustand nirgends hin.
-document.addEventListener("click", (e) => {
-  if(isViewOnly() && e.target.closest && e.target.closest("a")){
-    e.preventDefault();
-    e.stopPropagation();
-  }
-}, true);
-
-// Wird die Ampel im Kochbuch (anderer Tab) umgestellt, sofort mitziehen.
-window.addEventListener("storage", (e) => {
-  if(e.key === VIEW_ONLY_KEY) applyViewLock();
-});
 
 /* ---- Bildschirm anlassen (Screen Wake Lock, wo der Browser es kann) ---- */
 const wakeLockToggle = document.getElementById("wakeLockToggle");
