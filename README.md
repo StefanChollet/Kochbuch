@@ -123,7 +123,9 @@ Fehler kommen einheitlich als `{ "error": "..." }` mit passendem HTTP-Status
 Neben dem Titel „Rezepte“ steht für Benutzer mit Schreibrecht ein Ampelknopf.
 Grün = normaler Modus, Rot = nur Sicht: Auf der Hauptseite und im
 Kochbuch-Detail lässt sich dann nichts ändern (kein Anlegen, Bearbeiten,
-Löschen, kein Kühlschrank-Ändern). Ein Klick wechselt den Modus. Die Einstellung
+Löschen, kein Kühlschrank-Ändern). Auch die Kochansicht ist dann gesperrt:
+Zutaten lassen sich nicht abhaken, „Bildschirm anlassen“ ist aus; Zurück und
+Drucken gehen weiter. Ein Klick wechselt den Modus. Die Einstellung
 gilt pro Gerät (Browser-Speicher) und ist nur eine Anzeige-Sperre – die Rechte
 prüft der Server unabhängig davon.
 

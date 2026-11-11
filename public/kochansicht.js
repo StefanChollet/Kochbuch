@@ -117,7 +117,36 @@ function render(recipe){
   viewMessage.hidden = true;
   viewMain.hidden = false;
   viewTools.hidden = false;
+  applyViewLock();
 }
+
+/* ---- Ampel "nur Sicht" ----
+   Steht die Ampel im Kochbuch auf Rot (gleiche Einstellung im Browser),
+   ist auch hier nichts anklickbar: Zutaten nicht abhakbar, "Bildschirm
+   anlassen" gesperrt. Zurueck und Drucken bleiben. */
+const VIEW_ONLY_KEY = "kochbuch_view_only";
+
+function isViewOnly(){
+  try{ return window.localStorage.getItem(VIEW_ONLY_KEY) === "1"; }catch{ return false; }
+}
+
+function applyViewLock(){
+  const locked = isViewOnly();
+  document.body.classList.toggle("view-locked", locked);
+  document.getElementById("viewLockBadge").hidden = !locked;
+  document.getElementById("viewCheckHint").hidden = locked;
+  document.querySelectorAll("#viewIngredientList input[type=checkbox]").forEach(cb => { cb.disabled = locked; });
+  wakeLockToggle.disabled = locked;
+  if(locked && wakeLockToggle.checked){
+    wakeLockToggle.checked = false;
+    setWakeLock(false);
+  }
+}
+
+// Wird die Ampel im Kochbuch (anderer Tab) umgestellt, sofort mitziehen.
+window.addEventListener("storage", (e) => {
+  if(e.key === VIEW_ONLY_KEY) applyViewLock();
+});
 
 /* ---- Bildschirm anlassen (Screen Wake Lock, wo der Browser es kann) ---- */
 const wakeLockToggle = document.getElementById("wakeLockToggle");
