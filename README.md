@@ -118,6 +118,15 @@ Fehler kommen einheitlich als `{ "error": "..." }` mit passendem HTTP-Status
 | `POST` | `/api/catalog` | Vorschlag ergänzen |
 | `DELETE` | `/api/catalog/:name` | Vorschlag entfernen → `204` |
 
+### Ampel „nur Sicht“
+
+Neben dem Titel „Rezepte“ steht für Benutzer mit Schreibrecht ein Ampelknopf.
+Grün = normaler Modus, Rot = nur Sicht: Auf der Hauptseite und im
+Kochbuch-Detail lässt sich dann nichts ändern (kein Anlegen, Bearbeiten,
+Löschen, kein Kühlschrank-Ändern). Ein Klick wechselt den Modus. Die Einstellung
+gilt pro Gerät (Browser-Speicher) und ist nur eine Anzeige-Sperre – die Rechte
+prüft der Server unabhängig davon.
+
 ### Rezeptübersicht: Suche, Sortierung, Paging
 
 ```

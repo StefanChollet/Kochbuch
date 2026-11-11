@@ -1207,9 +1207,40 @@ document.querySelectorAll("dialog [data-close]").forEach(btn => {
 const ROLE_LABELS = { admin: "Admin", rw: "Lesen + Schreiben", r: "Nur lesen" };
 let currentUser = null;
 
+/* ---- Ampel neben "Rezepte": gruen = normaler Modus, rot = nur Sicht ----
+   Im Modus "nur Sicht" laesst sich auf der Hauptseite und im Kochbuch-Detail
+   nichts aendern - auch wer Schreibrechte hat. Reine Anzeige-Einstellung pro
+   Geraet (wie das Farbschema); der Server prueft die Rechte ohnehin selbst. */
+const VIEW_ONLY_KEY = "kochbuch_view_only";
+const viewModeBtn = document.getElementById("viewModeBtn");
+let viewOnly = false;
+try{ viewOnly = window.localStorage.getItem(VIEW_ONLY_KEY) === "1"; }catch{ /* ohne Speicher: normaler Modus */ }
+
 function canWrite(){
-  return !!currentUser && currentUser.canWrite;
+  return !!currentUser && currentUser.canWrite && !viewOnly;
 }
+
+/** Ampel und alle Bearbeiten-Elemente an den Modus anpassen. */
+function applyViewMode(){
+  const mayWrite = !!currentUser && currentUser.canWrite;
+  // Wer ohnehin nur lesen darf, braucht keine Ampel.
+  viewModeBtn.hidden = !mayWrite;
+  viewModeBtn.setAttribute("aria-pressed", String(viewOnly));
+  viewModeBtn.querySelector(".traffic-light-label").textContent = viewOnly ? "Nur Sicht" : "Bearbeiten";
+  viewModeBtn.title = viewOnly
+    ? "Rot: nur Sicht – nichts kann geändert werden. Klick: normaler Modus"
+    : "Grün: normaler Modus. Klick: nur Sicht (nichts änderbar)";
+  document.body.classList.toggle("is-readonly", !canWrite());
+}
+
+viewModeBtn.addEventListener("click", () => {
+  viewOnly = !viewOnly;
+  try{ window.localStorage.setItem(VIEW_ONLY_KEY, viewOnly ? "1" : "0"); }catch{ /* nur fuer diese Sitzung */ }
+  applyViewMode();
+  // Liste und Kuehlschrank neu zeichnen: Stift/Loeschen bzw. Auge, Felder gesperrt
+  renderRecipeTable();
+  renderFridgeList();
+});
 
 /* ---- Benutzerverwaltung (nur Admin): erfassen, Rechte aendern, loeschen ---- */
 const usersDialog = document.getElementById("usersDialog");
@@ -1417,7 +1448,7 @@ function setCurrentUser(user){
   currentUserRole.className = `role-badge role-${user.role}`;
   currentUserRole.title = user.canWrite ? "Darf lesen und schreiben" : "Darf nur lesen";
   usersBtn.hidden = user.role !== "admin";
-  document.body.classList.toggle("is-readonly", !user.canWrite);
+  applyViewMode();
 }
 
 function showAuthScreen(){

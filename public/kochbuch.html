@@ -114,7 +114,14 @@
   <!-- ============ Rezept-Uebersicht ============ -->
   <section class="panel panel-recipes" aria-labelledby="recipesHeading">
     <div class="panel-head">
-      <h2 id="recipesHeading">Rezepte</h2>
+      <div class="panel-title">
+        <h2 id="recipesHeading">Rezepte</h2>
+        <!-- Ampel: gruen = normaler Modus, rot = nur Sicht (nichts aenderbar) -->
+        <button type="button" id="viewModeBtn" class="traffic-light" aria-pressed="false" hidden>
+          <span class="traffic-light-dot" aria-hidden="true"></span>
+          <span class="traffic-light-label">Bearbeiten</span>
+        </button>
+      </div>
       <button id="createRecipeBtn" class="btn btn-primary write-only" type="button">+ Rezept erstellen</button>
     </div>
 
