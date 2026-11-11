@@ -118,14 +118,14 @@ Fehler kommen einheitlich als `{ "error": "..." }` mit passendem HTTP-Status
 | `POST` | `/api/catalog` | Vorschlag ergänzen |
 | `DELETE` | `/api/catalog/:name` | Vorschlag entfernen → `204` |
 
-### Ampel „nur Sicht“
+### Ampel „gesperrt“
 
 Neben dem Titel „Rezepte“ steht für Benutzer mit Schreibrecht ein Ampelknopf.
-Grün = normaler Modus, Rot = nur Sicht: Auf der Hauptseite und im
-Kochbuch-Detail lässt sich dann nichts ändern (kein Anlegen, Bearbeiten,
-Löschen, kein Kühlschrank-Ändern). Auch die Kochansicht ist dann gesperrt:
-Zutaten lassen sich nicht abhaken, „Bildschirm anlassen“ ist aus; Zurück und
-Drucken gehen weiter. Ein Klick wechselt den Modus. Die Einstellung
+Grün = normaler Modus, Rot = jeglicher Zugriff gesperrt: Rezepte-Liste und
+Kühlschrank sind nur noch zu sehen (Scrollen geht), aber nichts lässt sich
+anklicken, öffnen, suchen, filtern oder ändern – auch Empfehlungen,
+Benutzermenü und Hell/Dunkel nicht. Auch eine offene Kochansicht ist gesperrt
+(kein Abhaken, kein Zurück/Drucken). Einzig die Ampel schaltet zurück auf Grün. Die Einstellung
 gilt pro Gerät (Browser-Speicher) und ist nur eine Anzeige-Sperre – die Rechte
 prüft der Server unabhängig davon.
 

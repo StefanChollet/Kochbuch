@@ -8,6 +8,8 @@
 body.view-locked .view-ingredient-list label,
 body.view-locked .checkbox-label{ cursor: default; }
 body.view-locked .checkbox-label{ opacity: .5; }
+body.view-locked .view-tools .btn:disabled{ opacity: .45; cursor: not-allowed; }
+body.view-locked .view-home{ cursor: default; }
 .checkbox-label{ display:flex; align-items:center; gap:.35rem; font-size:.85rem; white-space:nowrap; cursor:pointer; }
 
 .view-message{ max-width: 760px; margin: 2rem auto; border-radius: 8px; }

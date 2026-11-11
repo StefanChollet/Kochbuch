@@ -13,7 +13,7 @@
    nur ohne Netz kommt die zuletzt gespeicherte Fassung.
    ========================================================================= */
 
-const CACHE = "kochbuch-shell-v17";
+const CACHE = "kochbuch-shell-v18";
 const SHELL = [
   "/",
   "/kochbuch.css",

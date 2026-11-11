@@ -195,6 +195,13 @@ body{
   background: #2e9e57; box-shadow: 0 0 0 2px color-mix(in srgb, #2e9e57 25%, transparent), 0 0 8px #2e9e57;
 }
 .traffic-light[aria-pressed="true"]{ border-color: #c0392b; color: #c0392b; }
+/* Roter Modus: alles gesperrt - kein Hand-Zeiger, Bedienelemente blass */
+body.view-locked #recipeTableBody tr,
+body.view-locked .recipe-img-btn,
+body.view-locked .recommendation-card{ cursor: default; }
+body.view-locked #appMain :is(button, input, select):disabled:not(#viewModeBtn),
+body.view-locked .app-header :is(button, input, select):disabled{ opacity: .45; cursor: not-allowed; }
+body.view-locked #viewModeBtn{ opacity: 1; cursor: pointer; }
 .traffic-light[aria-pressed="true"] .traffic-light-dot{
   background: #d83a2b; box-shadow: 0 0 0 2px color-mix(in srgb, #d83a2b 25%, transparent), 0 0 8px #d83a2b;
 }
