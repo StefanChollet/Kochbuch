@@ -85,10 +85,16 @@ const DB = {
     if(exclude.length) params.set("exclude", exclude.join(","));
     return API.get(`/recommendations?${params.toString()}`);
   },
+  /** Auswahl fuer die Filter: { categories, owners, withoutCategory }. */
+  async getRecipeFilters(){
+    return API.get("/recipe-filters");
+  },
   /** Eine Seite der Uebersicht - aendert DB.recipesPage nicht, das macht der Aufrufer. */
   async fetchRecipesPage(query, page, pageSize){
     const params = new URLSearchParams();
     if(query.search) params.set("search", query.search);
+    if(query.category) params.set("category", query.category);
+    if(query.createdBy) params.set("createdBy", query.createdBy);
     params.set("sortBy", query.sortBy || "name");
     params.set("sortDir", query.sortDir || "asc");
     params.set("page", String(page));
@@ -306,11 +312,14 @@ const recipePagerInfo = document.getElementById("recipePagerInfo");
 const recipeTableScroll = document.getElementById("recipeTableScroll");
 const recipeLoadMore = document.getElementById("recipeLoadMore");
 const recipeResetFiltersBtn = document.getElementById("recipeResetFiltersBtn");
+const recipeCategoryFilter = document.getElementById("recipeCategoryFilter");
+const recipeOwnerFilter = document.getElementById("recipeOwnerFilter");
+const recipeOwnerFilterWrap = document.getElementById("recipeOwnerFilterWrap");
 
 const RECIPE_BATCH_SIZE = 25;
 // So nah (px) am Listenende wird schon nachgeladen, damit kein Warten sichtbar wird.
 const RECIPE_PRELOAD_PX = 300;
-const DEFAULT_RECIPE_QUERY = { search: "", sortBy: "name", sortDir: "asc" };
+const DEFAULT_RECIPE_QUERY = { search: "", category: "", createdBy: "", sortBy: "name", sortDir: "asc" };
 const recipeQuery = { ...DEFAULT_RECIPE_QUERY };
 
 // Jede neue Suche/Sortierung bekommt eine Nummer; Antworten zu einer
@@ -325,6 +334,9 @@ let recipeLoading = false;
  */
 async function loadRecipes({ keepLoaded = false } = {}){
   const generation = ++recipeLoadGeneration;
+  // Auswahl der Filter mitziehen - nach Speichern/Loeschen kann eine
+  // Kategorie oder ein Benutzer dazugekommen oder weggefallen sein.
+  refreshRecipeFilters();
   const pages = keepLoaded ? Math.max(1, DB.recipesPage.page) : 1;
   const scrollTop = keepLoaded ? recipeTableScroll.scrollTop : 0;
   recipeLoading = true;
@@ -432,12 +444,14 @@ function appendRecipeRow(recipe){
 
 function renderRecipeTable(){
   const { items } = DB.recipesPage;
-  const hasSearch = recipeQuery.search.trim().length > 0;
+  const hasSearch = recipeQuery.search.trim().length > 0 || !!recipeQuery.category || !!recipeQuery.createdBy;
 
   recipeTableBody.innerHTML = "";
   recipeEmptyState.hidden = items.length > 0 || recipeLoading;
   recipeEmptyState.textContent = hasSearch
-    ? `Keine Rezepte gefunden für "${recipeQuery.search.trim()}".`
+    ? (recipeQuery.search.trim()
+        ? `Keine Rezepte gefunden für "${recipeQuery.search.trim()}".`
+        : "Keine Rezepte für diesen Filter.")
     : canWrite()
       ? 'Noch keine Rezepte vorhanden. Leg mit "Rezept erstellen" los.'
       : "Noch keine Rezepte vorhanden.";
@@ -526,6 +540,58 @@ recipeSearchInput.addEventListener("keydown", (e) => {
   loadRecipes();
 });
 
+/* ---- Filter Kategorie / Benutzer ---- */
+/**
+ * Fuellt die beiden Auswahlfelder mit dem, was im sichtbaren Bestand
+ * vorkommt. Eine gewaehlte Option bleibt erhalten, auch wenn sie gerade
+ * keine Treffer mehr hat. Der Benutzer-Filter erscheint nur, wenn man
+ * Rezepte mehrerer Benutzer sieht.
+ */
+async function refreshRecipeFilters(){
+  let filters;
+  try{
+    filters = await DB.getRecipeFilters();
+  }catch(err){
+    console.warn("Filter konnten nicht geladen werden:", err);
+    return;
+  }
+  const opt = (value, label) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;
+
+  const categories = [...filters.categories];
+  const cat = recipeQuery.category;
+  if(cat && cat !== "-" && !categories.some(c => c.toLowerCase() === cat.toLowerCase())) categories.push(cat);
+  recipeCategoryFilter.innerHTML = opt("", "Alle Kategorien") +
+    categories.map(c => opt(c, c)).join("") +
+    (filters.withoutCategory || cat === "-" ? opt("-", "– ohne Kategorie –") : "");
+  recipeCategoryFilter.value = cat;
+
+  const owners = [...filters.owners];
+  const own = recipeQuery.createdBy;
+  if(own && !owners.some(o => String(o.id) === own)) owners.push({ id: own, username: "(unbekannt)" });
+  recipeOwnerFilter.innerHTML = opt("", "Alle Benutzer") +
+    owners.map(o => opt(String(o.id), o.username)).join("");
+  recipeOwnerFilter.value = own;
+  // Wer nur die eigenen Rezepte sieht, braucht keinen Benutzer-Filter.
+  recipeOwnerFilterWrap.hidden = !own && (currentUser && currentUser.role === "rw");
+  markActiveFilters();
+}
+
+function markActiveFilters(){
+  recipeCategoryFilter.classList.toggle("is-active", !!recipeQuery.category);
+  recipeOwnerFilter.classList.toggle("is-active", !!recipeQuery.createdBy);
+}
+
+recipeCategoryFilter.addEventListener("change", () => {
+  recipeQuery.category = recipeCategoryFilter.value;
+  markActiveFilters();
+  loadRecipes();
+});
+recipeOwnerFilter.addEventListener("change", () => {
+  recipeQuery.createdBy = recipeOwnerFilter.value;
+  markActiveFilters();
+  loadRecipes();
+});
+
 /* ---- Sortierung ---- */
 recipeSortSelect.addEventListener("change", () => {
   const [sortBy, sortDir] = recipeSortSelect.value.split("-");
@@ -540,6 +606,9 @@ recipeResetFiltersBtn.addEventListener("click", () => {
   Object.assign(recipeQuery, DEFAULT_RECIPE_QUERY);
   recipeSearchInput.value = "";
   recipeSortSelect.value = "name-asc";
+  recipeCategoryFilter.value = "";
+  recipeOwnerFilter.value = "";
+  markActiveFilters();
   loadRecipes();
 });
 
@@ -1423,6 +1492,7 @@ async function startApp(user){
   Object.assign(recipeQuery, DEFAULT_RECIPE_QUERY);
   recipeSearchInput.value = "";
   recipeSortSelect.value = "name-asc";
+  markActiveFilters();
 
   const loaded = await guard(() => DB.load());
   if(!loaded) return;

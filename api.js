@@ -256,17 +256,25 @@ const routes = [
   /* ---- Rezepte ---- */
   // Sichtbarkeit: "rw" sieht nur die eigenen Rezepte, Admin und "r" alle
   // (db.recipeOwnerFilter). Fremde Rezepte gelten als "nicht gefunden".
-  // Unterstuetzt ?search=&sortBy=name|shortDesc|updatedAt&sortDir=asc|desc&page=&pageSize=
+  // Unterstuetzt ?search=&category=&createdBy=&sortBy=name|shortDesc|updatedAt|createdBy
+  // &sortDir=asc|desc&page=&pageSize= (category "-" = ohne Kategorie)
   ["GET", /^\/api\/recipes$/, async (req, res, ctx) => {
     const q = getQuery(req);
     sendJson(res, 200, db.listRecipesPage({
       ownerId: db.recipeOwnerFilter(ctx.account),
       search: q.get("search") || "",
+      category: q.get("category") || "",
+      createdBy: q.get("createdBy") || "",
       sortBy: q.get("sortBy") || "name",
       sortDir: q.get("sortDir") || "asc",
       page: q.get("page") || 1,
       pageSize: q.get("pageSize") || 20,
     }));
+  }],
+
+  // Auswahl fuer die Filter der Uebersicht (Kategorien, Benutzer) im sichtbaren Bestand
+  ["GET", /^\/api\/recipe-filters$/, async (req, res, ctx) => {
+    sendJson(res, 200, db.listRecipeFilters(db.recipeOwnerFilter(ctx.account)));
   }],
 
   ["POST", /^\/api\/recipes$/, async (req, res, ctx) => {

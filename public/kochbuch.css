@@ -206,6 +206,9 @@ body{
   white-space:nowrap;
 }
 .recipe-sort-wrap select{ width:auto; min-width: 200px; }
+.recipe-filter-wrap select{ min-width: 160px; }
+/* Aktiver Filter: Auswahlfeld gruen umrandet, damit man sieht, dass gefiltert wird */
+.recipe-filter-wrap select.is-active{ border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 #recipeResetFiltersBtn{ flex: 0 0 auto; margin-left: auto; }
 
 /* ===== Rezeptliste: Lazy Loading ===== */
@@ -814,6 +817,8 @@ body.is-readonly .write-only{ display:none !important; }
   .recipe-search-wrap{ flex: 1 1 100%; }
   .recipe-sort-wrap{ flex: 1 1 100%; }
   .recipe-sort-wrap select{ flex: 1; min-width: 0; width: 100%; }
+  /* Beschriftungen gleich breit, damit die Auswahlfelder buendig stehen */
+  .recipe-sort-wrap label{ flex: 0 0 4.6rem; }
   .recipe-table-scroll{ max-height: 70vh; }
   /* Dialoge: fast volle Breite, weniger Innenabstand */
   .recipe-dialog form, .dialog-body{ padding: 1rem; }

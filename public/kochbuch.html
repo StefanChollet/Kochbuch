@@ -120,7 +120,7 @@
 
     <div class="recipe-toolbar">
       <div class="recipe-search-wrap">
-        <input type="search" id="recipeSearchInput" placeholder="Rezept oder Zutat suchen…" aria-label="Rezepte durchsuchen">
+        <input type="search" id="recipeSearchInput" placeholder="Suchen: Rezept, Zutat, Kategorie, Benutzer" aria-label="Rezepte durchsuchen">
       </div>
       <div class="recipe-sort-wrap">
         <label for="recipeSortSelect">Sortieren</label>
@@ -134,7 +134,20 @@
           <option value="createdBy-asc">Erstellt von (A–Z)</option>
         </select>
       </div>
-      <button type="button" id="recipeResetFiltersBtn" class="btn btn-ghost btn-small" title="Suche und Sortierung zurücksetzen">Zurücksetzen</button>
+      <!-- Filter: nur Rezepte einer Kategorie bzw. eines Benutzers -->
+      <div class="recipe-sort-wrap recipe-filter-wrap">
+        <label for="recipeCategoryFilter">Kategorie</label>
+        <select id="recipeCategoryFilter">
+          <option value="">Alle Kategorien</option>
+        </select>
+      </div>
+      <div class="recipe-sort-wrap recipe-filter-wrap" id="recipeOwnerFilterWrap">
+        <label for="recipeOwnerFilter">Benutzer</label>
+        <select id="recipeOwnerFilter">
+          <option value="">Alle Benutzer</option>
+        </select>
+      </div>
+      <button type="button" id="recipeResetFiltersBtn" class="btn btn-ghost btn-small" title="Suche, Filter und Sortierung zurücksetzen">Zurücksetzen</button>
     </div>
 
     <!-- Lazy Loading: beim Scrollen ans Ende laedt die naechste Portion nach -->

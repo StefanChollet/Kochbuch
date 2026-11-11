@@ -261,15 +261,39 @@ function escapeLike(term) {
  * gemeinsam genutzt von der Uebersicht und den Empfehlungen, damit beide
  * exakt denselben Filter meinen. Tabellenalias im Aufrufer: r.
  */
-function buildSearchWhere(term, ownerId = null) {
+/** Wert fuer den Kategorie-Filter "ohne Kategorie". */
+const NO_CATEGORY = "-";
+
+/**
+ * WHERE fuer Uebersicht und Empfehlungen. Die Suche prueft Name,
+ * Kurzbeschreibung, Zutaten, Kategorie und Benutzername. filters.category:
+ * genau diese Kategorie ("-" = ohne Kategorie); filters.createdBy: id des
+ * Benutzers, der das Rezept erstellt hat.
+ */
+function buildSearchWhere(term, ownerId = null, filters = {}) {
   const conditions = [];
   const params = [];
   if (term) {
     const like = `%${escapeLike(term)}%`;
     conditions.push(`(r.name LIKE ? ESCAPE '\\'
        OR r.short_desc LIKE ? ESCAPE '\\'
-       OR EXISTS (SELECT 1 FROM ingredients si WHERE si.recipe_id = r.id AND si.name LIKE ? ESCAPE '\\'))`);
-    params.push(like, like, like);
+       OR EXISTS (SELECT 1 FROM ingredients si WHERE si.recipe_id = r.id AND si.name LIKE ? ESCAPE '\\')
+       OR EXISTS (SELECT 1 FROM recipe_categories sc WHERE sc.recipe_id = r.id AND sc.name LIKE ? ESCAPE '\\')
+       OR EXISTS (SELECT 1 FROM accounts sa WHERE sa.id = r.created_by AND sa.username LIKE ? ESCAPE '\\'))`);
+    params.push(like, like, like, like, like);
+  }
+  const category = filters.category == null ? "" : String(filters.category).trim();
+  if (category === NO_CATEGORY) {
+    conditions.push("NOT EXISTS (SELECT 1 FROM recipe_categories fc WHERE fc.recipe_id = r.id)");
+  } else if (category) {
+    conditions.push("EXISTS (SELECT 1 FROM recipe_categories fc WHERE fc.recipe_id = r.id AND fc.name = ? COLLATE NOCASE)");
+    params.push(category);
+  }
+  if (filters.createdBy != null && filters.createdBy !== "") {
+    const createdBy = Math.trunc(Number(filters.createdBy));
+    if (!Number.isFinite(createdBy)) throw new HttpError(400, 'Feld "createdBy" muss eine Benutzer-id sein.');
+    conditions.push("r.created_by = ?");
+    params.push(createdBy);
   }
   // Nur die eigenen Rezepte (siehe recipeOwnerFilter)
   if (ownerId !== null) {
@@ -292,7 +316,10 @@ function listRecipesPage(options = {}) {
   const page = Math.max(1, Math.trunc(Number(options.page)) || 1);
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.trunc(Number(options.pageSize)) || DEFAULT_PAGE_SIZE));
 
-  const { where, params } = buildSearchWhere(term, options.ownerId ?? null);
+  const { where, params } = buildSearchWhere(term, options.ownerId ?? null, {
+    category: options.category,
+    createdBy: options.createdBy,
+  });
 
   const total = db.prepare(`SELECT COUNT(*) AS n FROM recipes r ${where}`).get(...params).n;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -323,6 +350,29 @@ function listRecipesPage(options = {}) {
   }
 
   return { items, total, page: safePage, pageSize, totalPages };
+}
+
+/**
+ * Auswahl fuer die Filter der Uebersicht - nur was im sichtbaren Bestand
+ * vorkommt: benutzte Kategorien, Benutzer mit Rezepten, und ob es Rezepte
+ * ohne Kategorie gibt.
+ */
+function listRecipeFilters(ownerId = null) {
+  const scope = ownerId === null ? "" : "WHERE r.created_by = ?";
+  const params = ownerId === null ? [] : [ownerId];
+  const categories = db.prepare(`
+    SELECT DISTINCT c.name FROM recipe_categories c JOIN recipes r ON r.id = c.recipe_id
+    ${scope} ORDER BY c.name COLLATE NOCASE
+  `).all(...params).map((row) => row.name);
+  const owners = db.prepare(`
+    SELECT DISTINCT a.id, a.username FROM recipes r JOIN accounts a ON a.id = r.created_by
+    ${scope} ORDER BY a.username COLLATE NOCASE
+  `).all(...params).map((row) => ({ id: row.id, username: row.username }));
+  const withoutCategory = db.prepare(`
+    SELECT COUNT(*) AS n FROM recipes r
+    WHERE ${ownerId === null ? "" : "r.created_by = ? AND "}NOT EXISTS (SELECT 1 FROM recipe_categories c WHERE c.recipe_id = r.id)
+  `).get(...params).n > 0;
+  return { categories, owners, withoutCategory };
 }
 
 function getRecipe(id) {
@@ -1149,6 +1199,7 @@ module.exports = {
   close,
   makeId,
   listRecipesPage,
+  listRecipeFilters,
   getRecipe,
   createRecipe,
   updateRecipe,

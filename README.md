@@ -101,7 +101,8 @@ Fehler kommen einheitlich als `{ "error": "..." }` mit passendem HTTP-Status
 | `POST` | `/api/recipes/:id/views` | neuen Kochansicht-Link erzeugen → `{ code, url }` (Leserecht genügt) |
 | `GET` | `/api/views/:code` | das eine Rezept zum Code (angemeldet + gültiger Code, sonst 401/404) |
 | `GET` | `/api/state` | Zutaten-Katalog + Kategorie-Vorschläge (Startaufbau; der Kühlschrank kommt seitenweise über `/api/fridge`) |
-| `GET` | `/api/recipes` | Rezeptübersicht: Suche, Sortierung, Paging |
+| `GET` | `/api/recipes` | Rezeptübersicht: Suche, Filter, Sortierung, Paging |
+| `GET` | `/api/recipe-filters` | Auswahl für die Filter im sichtbaren Bestand → `{ categories, owners: [{id, username}], withoutCategory }` |
 | `GET` | `/api/recommendations` | Empfehlungen aus Kühlschrank + Suchfilter |
 | `POST` | `/api/recipes` | Rezept anlegen → `201` + `Location` |
 | `GET` | `/api/recipes/:id` | vollständiges Rezept inkl. Zutaten und Bild-URLs |
@@ -129,7 +130,9 @@ Leitung.
 
 | Parameter | Werte | Standard |
 |---|---|---|
-| `search` | Freitext, geprüft gegen Name, Kurzbeschreibung und Zutatennamen | – (kein Filter) |
+| `search` | Freitext, geprüft gegen Name, Kurzbeschreibung, Zutatennamen, Kategorie und Benutzername | – (kein Filter) |
+| `category` | genau diese Kategorie (Gross-/Kleinschreibung egal); `-` = Rezepte ohne Kategorie | – (alle) |
+| `createdBy` | id des Benutzers, der das Rezept erstellt hat | – (alle) |
 | `sortBy` | `name`, `shortDesc`, `updatedAt`, `createdBy` | `name` |
 | `sortDir` | `asc`, `desc` | `asc` |
 | `page` | 1-basiert | `1` |
