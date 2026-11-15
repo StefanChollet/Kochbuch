@@ -1207,14 +1207,25 @@ document.querySelectorAll("dialog [data-close]").forEach(btn => {
 const ROLE_LABELS = { admin: "Admin", rw: "Lesen + Schreiben", r: "Nur lesen" };
 let currentUser = null;
 
-/* ---- Ampel neben "Rezepte": gruen = normaler Modus, rot = nur Sicht ----
-   Im Modus "nur Sicht" laesst sich auf der Hauptseite und im Kochbuch-Detail
-   nichts aendern - auch wer Schreibrechte hat. Reine Anzeige-Einstellung pro
-   Geraet (wie das Farbschema); der Server prueft die Rechte ohnehin selbst. */
-const VIEW_ONLY_KEY = "kochbuch_view_only";
+/* ---- Ampel neben "Rezepte": rot = nur Sicht, gruen = Lesen + Schreiben ----
+   Nach jeder Anmeldung (und in jedem neuen Tab) steht die Ampel auf Rot:
+   auf der Hauptseite und im Kochbuch-Detail laesst sich nichts aendern.
+   Erst ein Klick auf die Ampel (gruen) gibt die Schreibrechte des Benutzers
+   frei - auf allen Seiten, bis zum Abmelden; Neuladen behaelt Gruen.
+   Reine Anzeige-Einstellung; der Server prueft die Rechte ohnehin selbst. */
+const WRITE_MODE_KEY = "kochbuch_write_mode";   // sessionStorage: "1" = gruen
 const viewModeBtn = document.getElementById("viewModeBtn");
-let viewOnly = false;
-try{ viewOnly = window.localStorage.getItem(VIEW_ONLY_KEY) === "1"; }catch{ /* ohne Speicher: normaler Modus */ }
+let viewOnly = true;
+try{
+  viewOnly = window.sessionStorage.getItem(WRITE_MODE_KEY) !== "1";
+  window.localStorage.removeItem("kochbuch_view_only");   // alte, dauerhafte Einstellung
+}catch{ /* ohne Speicher: Start auf Rot */ }
+
+/** Ampel zuruck auf Rot (beim Abmelden). */
+function resetViewMode(){
+  viewOnly = true;
+  try{ window.sessionStorage.removeItem(WRITE_MODE_KEY); }catch{ /* egal */ }
+}
 
 function canWrite(){
   return !!currentUser && currentUser.canWrite && !viewOnly;
@@ -1226,16 +1237,19 @@ function applyViewMode(){
   // Wer ohnehin nur lesen darf, braucht keine Ampel.
   viewModeBtn.hidden = !mayWrite;
   viewModeBtn.setAttribute("aria-pressed", String(viewOnly));
-  viewModeBtn.querySelector(".traffic-light-label").textContent = viewOnly ? "Nur Sicht" : "Bearbeiten";
+  viewModeBtn.querySelector(".traffic-light-label").textContent = viewOnly ? "Nur Sicht" : "Lesen + Schreiben";
   viewModeBtn.title = viewOnly
-    ? "Rot: nur Sicht – nichts kann geändert werden. Klick: normaler Modus"
-    : "Grün: normaler Modus. Klick: nur Sicht (nichts änderbar)";
+    ? "Rot: nur Sicht – nichts kann geändert werden. Klick: Lesen + Schreiben freigeben"
+    : "Grün: Lesen + Schreiben. Klick: zurück auf nur Sicht";
   document.body.classList.toggle("is-readonly", !canWrite());
 }
 
 viewModeBtn.addEventListener("click", () => {
   viewOnly = !viewOnly;
-  try{ window.localStorage.setItem(VIEW_ONLY_KEY, viewOnly ? "1" : "0"); }catch{ /* nur fuer diese Sitzung */ }
+  try{
+    if(viewOnly) window.sessionStorage.removeItem(WRITE_MODE_KEY);
+    else window.sessionStorage.setItem(WRITE_MODE_KEY, "1");
+  }catch{ /* gilt dann nur bis zum Neuladen */ }
   applyViewMode();
   // Liste und Kuehlschrank neu zeichnen: Stift/Loeschen bzw. Auge, Felder gesperrt
   renderRecipeTable();
@@ -1453,6 +1467,7 @@ function setCurrentUser(user){
 
 function showAuthScreen(){
   currentUser = null;
+  resetViewMode();   // jede neue Anmeldung startet mit der Ampel auf Rot
   document.querySelectorAll("dialog[open]").forEach(d => d.close());
   appMain.hidden = true;
   setUserMenuOpen(false);
