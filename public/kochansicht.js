@@ -117,6 +117,19 @@ function render(recipe){
   viewMessage.hidden = true;
   viewMain.hidden = false;
   viewTools.hidden = false;
+  showAmpel();
+}
+
+/** Zeigt die Ampelfarbe, mit der die Kochansicht im Kochbuch geoeffnet wurde. */
+function showAmpel(){
+  const ampel = new URLSearchParams(window.location.search).get("ampel");
+  const el = document.getElementById("viewAmpel");
+  if(ampel !== "rot" && ampel !== "gruen"){ el.hidden = true; return; }
+  const red = ampel === "rot";
+  el.setAttribute("aria-pressed", String(red));
+  el.querySelector(".traffic-light-label").textContent = red ? "Nur Sicht" : "Lesen + Schreiben";
+  el.title = red ? "Ampel im Kochbuch: Rot – nur Sicht" : "Ampel im Kochbuch: Grün – Lesen + Schreiben";
+  el.hidden = false;
 }
 
 /* ---- Bildschirm anlassen (Screen Wake Lock, wo der Browser es kann) ---- */

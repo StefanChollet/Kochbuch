@@ -122,8 +122,10 @@ Fehler kommen einheitlich als `{ "error": "..." }` mit passendem HTTP-Status
 
 Neben dem Titel „Rezepte“ steht für Benutzer mit Schreibrecht ein Ampelknopf.
 Nach jeder Anmeldung (und in jedem neuen Tab) steht er auf **Rot = nur Sicht**:
-Auf der Hauptseite und im Kochbuch-Detail lässt sich nichts ändern (kein
-Anlegen, Bearbeiten, Löschen, kein Kühlschrank-Ändern). Ein Klick schaltet auf
+Auf der Hauptseite lässt sich nichts ändern (kein Anlegen, Bearbeiten, Löschen,
+kein Kühlschrank-Ändern), und statt des Kochbuch-Details öffnet jeder Weg zum
+Rezept (Zeile, Kochbild, Empfehlung) die Kochansicht; der Ansehen-Knopf ist
+ausgeblendet. Die Kochansicht zeigt die Ampelfarbe oben an. Ein Klick schaltet auf
 **Grün = Lesen + Schreiben** – ab dann gelten die Schreibrechte auf allen
 Seiten, bis zum Abmelden (Neuladen behält Grün, Speicher: sessionStorage). Ein
 weiterer Klick geht zurück auf Rot. Nur eine Anzeige-Sperre – die Rechte prüft

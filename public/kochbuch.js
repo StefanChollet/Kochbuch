@@ -293,6 +293,8 @@ newRecommendationsBtn.addEventListener("click", async () => {
 recommendationsRow.addEventListener("click", async (e) => {
   const card = e.target.closest(".recommendation-card");
   if(!card) return;
+  // Ampel rot: statt Kochbuch-Detail die Kochansicht
+  if(isRedMode()){ openCookView(card.dataset.id); return; }
   await guard(async () => {
     openRecipeDialog(await DB.getRecipe(card.dataset.id));
   });
@@ -410,10 +412,12 @@ new IntersectionObserver((entries) => {
  */
 function imageIndicator(recipe){
   const has = recipe.imageCount > 0;
+  // Ampel rot: auch das farbige Kochbild fuehrt zur Kochansicht.
+  const toDetail = has && !isRedMode();
   const label = has
-    ? (recipe.imageCount === 1 ? "1 Bild vorhanden" : `${recipe.imageCount} Bilder vorhanden`) + " – Kochbuch-Detail öffnen"
+    ? (recipe.imageCount === 1 ? "1 Bild vorhanden" : `${recipe.imageCount} Bilder vorhanden`) + (toDetail ? " – Kochbuch-Detail öffnen" : " – Kochansicht öffnen")
     : "Kein Bild – Kochansicht öffnen";
-  return `<button type="button" class="recipe-img-btn" data-action="${has ? "edit" : "cook"}" data-id="${recipe.id}" title="${label}" aria-label="${label}">` +
+  return `<button type="button" class="recipe-img-btn" data-action="${toDetail ? "edit" : "cook"}" data-id="${recipe.id}" title="${label}" aria-label="${label}">` +
     `<svg class="recipe-img-icon ${has ? "has-image" : "no-image"}" width="16" height="16" aria-hidden="true"><use href="#kochbild"/></svg></button>`;
 }
 
@@ -422,6 +426,8 @@ function recipeActions(recipe){
   const btn = (action, icon, label) =>
     `<button class="btn btn-icon menu-icon-btn menu-icon-${icon}" data-action="${action}" data-id="${recipe.id}" title="${label}" aria-label="${label}">` +
     `<svg width="16" height="16" aria-hidden="true"><use href="#icon-${icon}"/></svg></button>`;
+  // Ampel rot: kein Ansehen-Knopf - ein Klick auf die Zeile oeffnet die Kochansicht.
+  if(isRedMode()) return "";
   return canWrite()
     ? btn("edit", "edit", "Bearbeiten") + btn("delete", "delete", "Löschen")
     : btn("edit", "view", "Ansehen");
@@ -432,7 +438,7 @@ function appendRecipeRow(recipe){
   const tr = document.createElement("tr");
   tr.dataset.id = recipe.id;
   tr.tabIndex = 0;
-  tr.title = canWrite() ? "Rezept öffnen und bearbeiten" : "Rezept ansehen";
+  tr.title = isRedMode() ? "Kochansicht öffnen" : canWrite() ? "Rezept öffnen und bearbeiten" : "Rezept ansehen";
   tr.innerHTML = `
     <td class="recipe-name-cell">${imageIndicator(recipe)}${escapeHtml(recipe.name)}</td>
     <td class="col-desc">${truncate(recipe.shortDesc, 100)}</td>
@@ -478,6 +484,8 @@ function updateRecipeFooter(){
 
 let recipeOpening = false;
 async function openRecipeById(id){
+  // Ampel rot: statt Kochbuch-Detail die Kochansicht (Fenster noch im Klick oeffnen).
+  if(isRedMode()) return openCookView(id);
   if(recipeOpening) return;
   recipeOpening = true;
   await guard(async () => openRecipeDialog(await DB.getRecipe(id)));
@@ -909,7 +917,9 @@ async function openCookView(id){
   const win = window.open("", "_blank");
   if(win) win.opener = null;
   const ok = await guard(async () => {
-    const { url } = await API.post(`/recipes/${enc(id)}/views`);
+    let { url } = await API.post(`/recipes/${enc(id)}/views`);
+    // Die Kochansicht zeigt dieselbe Ampelfarbe an (nur fuer Benutzer mit Ampel).
+    if(currentUser && currentUser.canWrite) url += `&ampel=${viewOnly ? "rot" : "gruen"}`;
     if(win){
       win.location.href = url;
     }else{
@@ -1209,7 +1219,9 @@ let currentUser = null;
 
 /* ---- Ampel neben "Rezepte": rot = nur Sicht, gruen = Lesen + Schreiben ----
    Nach jeder Anmeldung (und in jedem neuen Tab) steht die Ampel auf Rot:
-   auf der Hauptseite und im Kochbuch-Detail laesst sich nichts aendern.
+   auf der Hauptseite laesst sich nichts aendern, und statt des
+   Kochbuch-Details oeffnet jeder Weg zum Rezept die Kochansicht (der
+   Ansehen-Knopf ist dann ausgeblendet).
    Erst ein Klick auf die Ampel (gruen) gibt die Schreibrechte des Benutzers
    frei - auf allen Seiten, bis zum Abmelden; Neuladen behaelt Gruen.
    Reine Anzeige-Einstellung; der Server prueft die Rechte ohnehin selbst. */
@@ -1229,6 +1241,12 @@ function resetViewMode(){
 
 function canWrite(){
   return !!currentUser && currentUser.canWrite && !viewOnly;
+}
+
+/** Ampel auf Rot (nur fuer Benutzer, die eine Ampel haben). Dann oeffnet
+    jeder Weg zum Rezept die Kochansicht statt des Kochbuch-Details. */
+function isRedMode(){
+  return viewOnly && !!currentUser && currentUser.canWrite;
 }
 
 /** Ampel und alle Bearbeiten-Elemente an den Modus anpassen. */
@@ -1556,6 +1574,12 @@ async function openRecipeFromUrl(){
   const params = new URLSearchParams(window.location.search);
   const id = params.get("recipe");
   if(!id) return;
+  if(isRedMode()){
+    // Ampel rot: kein Kochbuch-Detail - der Link zeigt nur die Liste.
+    params.delete("recipe");
+    window.history.replaceState(null, "", window.location.pathname + (params.toString() ? `?${params}` : ""));
+    return;
+  }
   params.delete("recipe");
   const rest = params.toString();
   window.history.replaceState(null, "", window.location.pathname + (rest ? `?${rest}` : ""));
