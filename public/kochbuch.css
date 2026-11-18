@@ -751,6 +751,7 @@ input[type="password"]{
 /* ===== Rezepte: Ersteller, Nur-lesen ===== */
 .col-owner{ width: 140px; }
 .owner-cell{ font-size:.85rem; color: var(--ink-soft); }
+.recipe-back-top{ align-self:flex-start; margin-bottom:.6rem; }
 .recipe-owner-info{
   margin:0;
   padding:.55rem .8rem;
