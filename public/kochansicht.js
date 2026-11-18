@@ -130,6 +130,12 @@ function showAmpel(){
   el.querySelector(".traffic-light-label").textContent = red ? "Nur Sicht" : "Lesen + Schreiben";
   el.title = red ? "Ampel im Kochbuch: Rot – nur Sicht" : "Ampel im Kochbuch: Grün – Lesen + Schreiben";
   el.hidden = false;
+  // Ampel rot: der Knopf fuehrt zur Rezepte-Liste, nicht zum Rezept (das Detail ist dann gesperrt).
+  if(red){
+    const back = document.getElementById("backBtn");
+    back.textContent = "← Zurück zur Übersicht";
+    back.title = "Kochansicht schliessen und zurück zur Rezepte-Übersicht";
+  }
 }
 
 /* ---- Bildschirm anlassen (Screen Wake Lock, wo der Browser es kann) ---- */
@@ -168,7 +174,9 @@ document.getElementById("printBtn").addEventListener("click", () => window.print
 let currentRecipeId = null;
 
 document.getElementById("backBtn").addEventListener("click", () => {
-  const fallback = currentRecipeId ? `/?recipe=${encodeURIComponent(currentRecipeId)}` : "/";
+  // Ampel rot: zur Uebersicht statt zum Rezept.
+  const red = new URLSearchParams(window.location.search).get("ampel") === "rot";
+  const fallback = currentRecipeId && !red ? `/?recipe=${encodeURIComponent(currentRecipeId)}` : "/";
   window.close();
   // Ist der Tab noch da, hat der Browser das Schliessen verweigert.
   setTimeout(() => { if(!window.closed) window.location.replace(fallback); }, 150);
