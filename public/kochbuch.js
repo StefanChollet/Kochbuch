@@ -1236,7 +1236,10 @@ try{
 /** Ampel zuruck auf Rot (beim Abmelden). */
 function resetViewMode(){
   viewOnly = true;
-  try{ window.sessionStorage.removeItem(WRITE_MODE_KEY); }catch{ /* egal */ }
+  try{
+    window.sessionStorage.removeItem(WRITE_MODE_KEY);
+    window.localStorage.removeItem("kochbuch_ampel");   // abgemeldet: keine Farbe mehr
+  }catch{ /* egal */ }
 }
 
 function canWrite(){
@@ -1250,8 +1253,16 @@ function isRedMode(){
 }
 
 /** Ampel und alle Bearbeiten-Elemente an den Modus anpassen. */
+const AMPEL_KEY = "kochbuch_ampel";   // localStorage: aktuelle Farbe fuer die Kochansicht
+
 function applyViewMode(){
   const mayWrite = !!currentUser && currentUser.canWrite;
+  // Die Kochansicht (eigener Tab) liest die aktuelle Ampelfarbe von hier -
+  // auch wenn sie neu geladen oder per Link geoeffnet wird.
+  try{
+    if(mayWrite) window.localStorage.setItem(AMPEL_KEY, viewOnly ? "rot" : "gruen");
+    else window.localStorage.removeItem(AMPEL_KEY);
+  }catch{ /* ohne Speicher: Kochansicht nimmt die Farbe aus ihrer Adresse */ }
   // Wer ohnehin nur lesen darf, braucht keine Ampel.
   viewModeBtn.hidden = !mayWrite;
   viewModeBtn.setAttribute("aria-pressed", String(viewOnly));
