@@ -133,7 +133,7 @@ function currentAmpel(){
   return fromUrl === "rot" || fromUrl === "gruen" ? fromUrl : null;
 }
 
-/** Zeigt die Ampelfarbe und passt den Zurueck-Knopf an (rot: zur Uebersicht). */
+/** Passt den Zurueck-Knopf an die Ampel an (rot: zur Uebersicht); die Ampel selbst bleibt ausgeblendet. */
 function showAmpel(){
   const ampel = currentAmpel();
   const el = document.getElementById("viewAmpel");
@@ -145,10 +145,8 @@ function showAmpel(){
     return;
   }
   const red = ampel === "rot";
-  el.setAttribute("aria-pressed", String(red));
-  el.querySelector(".traffic-light-label").textContent = red ? "Nur Sicht" : "Lesen + Schreiben";
-  el.title = red ? "Ampel im Kochbuch: Rot – nur Sicht" : "Ampel im Kochbuch: Grün – Lesen + Schreiben";
-  el.hidden = false;
+  // Die Ampel selbst wird in der Kochansicht nicht angezeigt - sie wirkt nur auf den Zurueck-Knopf.
+  el.hidden = true;
   // Ampel rot: der Knopf fuehrt zur Rezepte-Liste, nicht zum Rezept (das Detail ist dann gesperrt).
   back.textContent = red ? "← Zurück zur Übersicht" : "← Zurück zum Rezept";
   back.title = red ? "Kochansicht schliessen und zurück zur Rezepte-Übersicht" : "Kochansicht schliessen und zurück zum Rezept";
