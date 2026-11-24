@@ -40,7 +40,7 @@ let workingImages = [];      // gespeichert: {key, id, name, url} | neu: {key, n
 /* ---- Zurueck zur Uebersicht - immer die eigene Startseite ---- */
 function backToOverview(){
   leaving = true;
-  window.location.href = "/";
+  window.location.href = "./";
 }
 
 function confirmLeave(){

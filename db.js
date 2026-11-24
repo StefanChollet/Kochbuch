@@ -355,7 +355,7 @@ function getTrip(id) {
   // Bewusst ohne Spalte "data" - die Bytes kommen ueber GET /api/images/:id.
   trip.images = db.prepare(`
     SELECT id, name, mime, bytes FROM images WHERE trip_id = ? ORDER BY position
-  `).all(id).map((img) => ({ ...img, url: `/api/images/${img.id}` }));
+  `).all(id).map((img) => ({ ...img, url: `api/images/${img.id}` }));
 
   return trip;
 }

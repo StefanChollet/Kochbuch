@@ -185,7 +185,7 @@ function updateTripFooter(){
 
 /** Detailseite oeffnen - immer nur eine Travelfy-Seite, nie eine fremde Adresse. */
 function openTrip(id){
-  window.location.href = id ? `/reise.html?id=${enc(id)}` : "/reise.html";
+  window.location.href = id ? `reise.html?id=${enc(id)}` : "reise.html";
 }
 
 tripTableBody.addEventListener("keydown", (e) => {

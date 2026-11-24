@@ -20,6 +20,14 @@ const MAX_BODY_BYTES = 32 * 1024 * 1024; // deckt mehrere Bilder je Reise ab
 // Eigener Name: Cookies unterscheiden nicht nach Port. Laufen Travelfy und
 // eine andere App auf demselben Rechner, darf sich nichts ueberschreiben.
 const SESSION_COOKIE = "travelfy_session";
+// Das Cookie gilt nur fuer den eigenen Unterpfad (z.B. /travelfy/): andere
+// Apps unter demselben Host bekommen die Travelfy-Sitzung nie zu sehen.
+let cookiePath = "/";
+
+/** Vom Server beim Start gesetzt: { base: "/travelfy" } */
+function configure({ base = "" } = {}) {
+  cookiePath = `${base}/`;
+}
 
 const LOGIN_MAX_FAILURES = 10;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
@@ -103,7 +111,7 @@ function setSessionCookie(req, res, token) {
   // SameSite=Strict: Kommt man ueber einen Link von irgendwo anders her,
   // schickt der Browser das Cookie gar nicht erst mit.
   const parts = [
-    `${SESSION_COOKIE}=${token}`, "Path=/", "HttpOnly", "SameSite=Strict",
+    `${SESSION_COOKIE}=${token}`, `Path=${cookiePath}`, "HttpOnly", "SameSite=Strict",
     `Max-Age=${db.SESSION_DAYS * 86400}`,
   ];
   if (isHttps(req)) parts.push("Secure");
@@ -111,7 +119,7 @@ function setSessionCookie(req, res, token) {
 }
 
 function clearSessionCookie(req, res) {
-  const parts = [`${SESSION_COOKIE}=`, "Path=/", "HttpOnly", "SameSite=Strict", "Max-Age=0"];
+  const parts = [`${SESSION_COOKIE}=`, `Path=${cookiePath}`, "HttpOnly", "SameSite=Strict", "Max-Age=0"];
   if (isHttps(req)) parts.push("Secure");
   res.setHeader("Set-Cookie", parts.join("; "));
 }
@@ -248,7 +256,7 @@ const routes = [
 
   ["POST", /^\/api\/trips$/, async (req, res, ctx) => {
     const trip = db.createTrip(await readJson(req), ctx.account.id);
-    res.setHeader("Location", `/api/trips/${trip.id}`);
+    res.setHeader("Location", `trips/${trip.id}`);
     sendJson(res, 201, trip);
   }, "write"],
 
@@ -342,4 +350,4 @@ async function handle(req, res, pathname) {
   return true;
 }
 
-module.exports = { handle, MAX_BODY_BYTES, SESSION_COOKIE };
+module.exports = { handle, configure, MAX_BODY_BYTES, SESSION_COOKIE };

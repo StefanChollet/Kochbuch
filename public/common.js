@@ -6,13 +6,26 @@
    Benutzerverwaltung und Passwort-Dialog.
    ========================================================================= */
 
+/* ---- Unterpfad ----
+   Travelfy laeuft unter einem Unterpfad (auf trex: /travelfy/). Alle Seiten
+   liegen direkt darin, darum ist ihr Verzeichnis die Basis der App. Alle
+   Adressen in Travelfy sind relativ dazu ("api/...", "reise.html"). */
+const APP_BASE = new URL("./", window.location.href).pathname;   // z.B. "/travelfy/"
+
+/** Pfad der aktuellen Seite relativ zur App, z.B. "reise.html?id=..." */
+function currentAppPage(){
+  return window.location.pathname.slice(APP_BASE.length) + window.location.search;
+}
+
 /* ---- Sprung-Sperre im Browser ----
    Travelfy fuehrt nirgendwo anders hin: Links auf eine andere Herkunft
-   (anderer Host oder Port, z.B. das Kochbuch) werden nicht geoeffnet.
-   Der Server sperrt zusaetzlich alles, was von aussen hereinkommt. */
+   oder auf einen anderen Pfad desselben Hosts (z.B. /kochbuch/) werden nicht
+   geoeffnet. Der Server sperrt zusaetzlich alles, was von aussen hereinkommt. */
 function isOwnUrl(href){
-  try{ return new URL(href, window.location.href).origin === window.location.origin; }
-  catch{ return false; }
+  try{
+    const url = new URL(href, window.location.href);
+    return url.origin === window.location.origin && url.pathname.startsWith(APP_BASE);
+  }catch{ return false; }
 }
 
 document.addEventListener("click", (e) => {
@@ -30,7 +43,7 @@ try{ if(window.opener) window.opener = null; }catch{ /* egal */ }
    API — Zugriff auf den Server (REST, JSON).
    ========================================================================= */
 const API = {
-  base: "/api",
+  base: "api",   // relativ: /travelfy/api/...
 
   async request(method, path, body){
     let res;
@@ -108,17 +121,18 @@ function todayIso(){
 }
 
 /* ---- Erlaubte Ziele nach der Anmeldung: nur Seiten von Travelfy selbst ---- */
+// Relativ zur App: "", "index.html" oder "reise.html?id=..." - nie eine
+// andere Adresse, nie eine andere App.
 function safeNext(next){
   const value = String(next || "");
-  if(/^\/(index\.html)?$/.test(value)) return value;
-  if(/^\/reise\.html(\?id=[A-Za-z0-9]{1,40})?$/.test(value)) return value;
-  return "/";
+  if(/^(index\.html)?$/.test(value)) return "./";
+  if(/^reise\.html(\?id=[A-Za-z0-9]{1,40})?$/.test(value)) return value;
+  return "./";
 }
 
 function goToLogin(){
-  if(window.location.pathname === "/login.html") return;
-  const here = window.location.pathname + window.location.search;
-  window.location.replace(`/login.html?next=${enc(safeNext(here))}`);
+  if(currentAppPage().startsWith("login.html")) return;
+  window.location.replace(`login.html?next=${enc(safeNext(currentAppPage()))}`);
 }
 
 /* =========================================================================
@@ -159,7 +173,7 @@ const CHROME_HTML = `
 </svg>
 
 <header class="app-header">
-  <h1 class="app-title"><a href="/" title="Zur Übersicht"><svg aria-hidden="true"><use href="#logo"/></svg>Travelfy</a></h1>
+  <h1 class="app-title"><a href="./" title="Zur Übersicht"><svg aria-hidden="true"><use href="#logo"/></svg>Travelfy</a></h1>
   <div class="header-right">
     <button id="installBtn" class="btn btn-ghost btn-small" type="button" title="Travelfy als App auf diesem Gerät installieren" hidden>📲 App installieren</button>
     <div id="userBar" class="user-bar" hidden>
@@ -414,8 +428,8 @@ async function requireUser(){
 document.getElementById("logoutBtn").addEventListener("click", async () => {
   await guard(() => API.post("/auth/logout"));
   currentUser = null;
-  try{ window.sessionStorage.clear(); }catch{ /* egal */ }
-  window.location.replace("/login.html");
+  try{ ["travelfy_query", "travelfy_flash"].forEach(k => window.sessionStorage.removeItem(k)); }catch{ /* egal */ }
+  window.location.replace("login.html");
 });
 
 /* ---- Benutzerverwaltung (nur Admin) ---- */
@@ -585,7 +599,7 @@ passwordForm.addEventListener("submit", async (e) => {
    ========================================================================= */
 if("serviceWorker" in navigator){
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(err => console.warn("Service Worker:", err));
+    navigator.serviceWorker.register("sw.js").catch(err => console.warn("Service Worker:", err));
   });
 }
 

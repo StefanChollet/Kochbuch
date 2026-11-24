@@ -9,23 +9,25 @@
    werden nicht angefasst.
    ========================================================================= */
 
-const CACHE = "travelfy-shell-v1";
+const CACHE = "travelfy-shell-v2";
+// Basis der App = Verzeichnis dieses Skripts, z.B. "/travelfy/".
+const BASE = new URL("./", self.location.href).pathname;
 const SHELL = [
-  "/",
-  "/login.html",
-  "/reise.html",
-  "/travelfy.css",
-  "/common.js",
-  "/travelfy.js",
-  "/reise.js",
-  "/login.js",
-  "/manifest.webmanifest",
-  "/icons/favicon.svg",
-  "/icons/favicon-32.png",
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
-  "/icons/apple-touch-icon.png",
-];
+  "",
+  "login.html",
+  "reise.html",
+  "travelfy.css",
+  "common.js",
+  "travelfy.js",
+  "reise.js",
+  "login.js",
+  "manifest.webmanifest",
+  "icons/favicon.svg",
+  "icons/favicon-32.png",
+  "icons/icon-192.png",
+  "icons/icon-512.png",
+  "icons/apple-touch-icon.png",
+].map((p) => BASE + p);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -41,7 +43,7 @@ self.addEventListener("activate", (event) => {
 
 /** Cache-Schluessel ohne Query (reise.html?id=... -> /reise.html). */
 function shellKey(url) {
-  return url.pathname === "/index.html" ? "/" : url.pathname;
+  return url.pathname === BASE + "index.html" ? BASE : url.pathname;
 }
 
 self.addEventListener("fetch", (event) => {
@@ -49,7 +51,8 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith("/api/")) return;
+  if (!url.pathname.startsWith(BASE)) return;          // andere Apps auf diesem Host
+  if (url.pathname.startsWith(BASE + "api/")) return;  // private Daten: nie anfassen
 
   const key = shellKey(url);
   if (!SHELL.includes(key)) return;

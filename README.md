@@ -11,14 +11,28 @@ Anwendung**: eigener Server, eigene Datenbank, eigene Benutzer.
 node server.js
 ```
 
-Dann http://localhost:3001/ öffnen. Beim allerersten Start steht das
+Dann http://localhost:3001/travelfy/ öffnen. Beim allerersten Start steht das
 Startpasswort des Admins (`stefan`) einmalig im Server-Log.
+
+Live läuft Travelfy auf trex hinter dem Verteiler unter
+**https://chollet.corvent.ch/travelfy/** (siehe Ast `verteiler`, README dort).
 
 | Variante | Befehl |
 |---|---|
-| Anderer Port | `node server.js 8081` |
+| Anderer Port | `node server.js 8081` oder `TRAVELFY_PORT=8081` |
 | Andere Datenbankdatei | `TRAVELFY_DB=test.sqlite node server.js` |
+| Anderer Unterpfad | `TRAVELFY_BASE=/reisen` (`""` = ohne Unterpfad) |
+| Netzwerkadresse | `TRAVELFY_HOST=0.0.0.0` (Standard `127.0.0.1` = nur lokal/über nginx) |
 | Startpasswort vorgeben | `TRAVELFY_ADMIN_PASSWORD=... node server.js` (nur beim ersten Start) |
+
+### Unterpfad
+
+Alle Adressen im Browser sind relativ (`api/...`, `reise.html`), der Server
+nimmt nur Anfragen unter `/travelfy/` an. Das Cookie `travelfy_session` gilt
+nur für `/travelfy/`, der Service Worker nur für diesen Bereich. Die
+Sprung-Sperre prüft auf dem gemeinsamen Host den Pfad der auslösenden Seite:
+erlaubt sind Travelfy selbst, Seitenaufrufe von der Startseite `/` und direkte
+Aufrufe; Anfragen aus `/kochbuch/` oder anderen Apps → 403.
 
 **Keine Abhängigkeiten** – kein `npm install`. Nur Node.js-Standardmodule inkl.
 `node:sqlite`. Voraussetzung: **Node.js 22 oder neuer** (getestet mit 24.19.0).
