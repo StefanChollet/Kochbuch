@@ -191,6 +191,17 @@ imageInput.addEventListener("change", () => {
   imageInput.value = "";
 });
 
+/* ---- Zeichenblatt: die fertige Zeichnung wird ein neues Bild der Reise ---- */
+document.getElementById("drawBtn").addEventListener("click", () => {
+  if(readOnly) return;
+  Zeichnen.open(({ name, dataUrl }) => {
+    workingImages.push({ key: makeId(), name, dataUrl, isNew: true });
+    dirty = true;
+    renderImageList();
+    showStatus("Zeichnung bei den Bildern eingefügt – mit „Speichern“ in der Reise sichern.", "success");
+  });
+});
+
 /* ---- Lightbox ---- */
 const imageLightbox = document.getElementById("imageLightbox");
 const imageLightboxImg = document.getElementById("imageLightboxImg");

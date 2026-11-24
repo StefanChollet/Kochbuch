@@ -441,6 +441,86 @@ textarea{ resize: vertical; }
   font-size:.85rem;
 }
 
+/* ===== Zeichenblatt ===== */
+.form-actions .action-group{ display:flex; gap:.6rem; flex-wrap:wrap; }
+.app-dialog.draw-dialog{
+  width: 96vw;
+  max-width: 1500px;
+  height: 94vh;
+  max-height: 94vh;
+}
+.draw-body{
+  display:flex;
+  flex-direction:column;
+  gap:.7rem;
+  height:100%;
+  padding: 1rem 1.2rem;
+}
+.draw-head{ display:flex; align-items:center; gap:1rem; }
+.draw-head h2{ font-family: var(--font-display); font-weight:600; margin:0; color: var(--title); }
+.draw-hint{ margin:0 auto 0 0; font-size:.85rem; color: var(--ink-soft); }
+.draw-toolbar{
+  display:flex; flex-wrap:wrap; align-items:center; gap:.6rem 1rem;
+  padding:.5rem .6rem;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.draw-tools{ display:flex; flex-wrap:wrap; gap:.3rem; }
+.draw-tool{
+  font: inherit; font-size:.85rem; font-weight:500;
+  padding:.4rem .7rem;
+  border:1px solid var(--line); border-radius:7px;
+  background: var(--surface); color: var(--ink);
+  cursor:pointer;
+}
+.draw-tool:hover{ border-color: var(--accent); }
+.draw-tool.is-active{ background: var(--primary); border-color: var(--accent); color: var(--accent-contrast); font-weight:700; }
+.draw-tool:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+.draw-options{ display:flex; gap:.8rem; align-items:center; }
+.draw-option{ display:flex; align-items:center; gap:.35rem; font-size:.82rem; color: var(--ink-soft); }
+.draw-option input[type="color"]{ width:36px; height:30px; padding:0; border:1px solid var(--line); border-radius:6px; background:none; cursor:pointer; }
+.draw-option select{ width:auto; padding:.3rem .5rem; }
+.draw-actions{ display:flex; flex-wrap:wrap; gap:.4rem; margin-left:auto; }
+.draw-stage{
+  position:relative;
+  flex:1;
+  min-height:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  overflow:auto;
+  background: repeating-conic-gradient(var(--surface-2) 0 25%, var(--surface) 0 50%) 0 0 / 24px 24px;
+  border-radius: 8px;
+}
+#drawCanvas{
+  display:block;
+  max-width:100%;
+  max-height:100%;
+  aspect-ratio: 16 / 10;
+  background:#fff;
+  box-shadow: var(--shadow);
+  touch-action:none;
+  cursor: crosshair;
+}
+#drawCanvas[data-tool="select"]{ cursor: default; }
+#drawCanvas[data-tool="text"]{ cursor: text; }
+.draw-text-input{
+  position:absolute;
+  z-index:2;
+  min-width: 12rem;
+  padding: 0 .2rem;
+  border: 1px dashed #1e88e5;
+  background: rgba(255,255,255,0.9);
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-weight: 600;
+  line-height: 1.25;
+  resize: none;
+  overflow: hidden;
+  width: auto;
+}
+.draw-dialog .dialog-actions{ padding-top:.7rem; }
+
 /* ===== Bild-Lightbox ===== */
 .image-lightbox{
   position:fixed;

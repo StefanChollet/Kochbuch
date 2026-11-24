@@ -92,13 +92,69 @@
       </fieldset>
 
       <div class="form-actions">
-        <button type="button" id="deleteTripBtn" class="btn btn-danger-ghost push-left write-only" hidden>Reise löschen</button>
+        <div class="push-left action-group">
+          <button type="button" id="deleteTripBtn" class="btn btn-danger-ghost write-only" hidden>Reise löschen</button>
+          <!-- Zeichenblatt: Linien, Text, Formen, Fotos in Formen -> wird ein Bild der Reise -->
+          <button type="button" id="drawBtn" class="btn btn-secondary write-only" title="Zeichenblatt öffnen: Linien, Text, Kreise, Quadrate, Dreiecke und Fotos">🎨 Zeichnen</button>
+        </div>
         <button type="button" id="cancelBtn" class="btn btn-ghost">Abbrechen</button>
         <button type="submit" id="saveTripBtn" class="btn btn-primary write-only">Speichern</button>
       </div>
     </form>
   </section>
 </main>
+
+<!-- ============ Zeichenblatt ============ -->
+<dialog id="drawDialog" class="app-dialog draw-dialog" aria-labelledby="drawTitle">
+  <div class="draw-body">
+    <div class="draw-head">
+      <h2 id="drawTitle">Zeichenblatt</h2>
+      <p class="draw-hint" id="drawHint">Werkzeug wählen und mit der Maus auf dem Blatt ziehen.</p>
+      <button type="button" class="btn btn-ghost" id="drawCloseBtn" aria-label="Schliessen">✕</button>
+    </div>
+
+    <div class="draw-toolbar" role="toolbar" aria-label="Werkzeuge">
+      <div class="draw-tools" role="radiogroup" aria-label="Werkzeug">
+        <button type="button" class="draw-tool" data-tool="select" role="radio" title="Auswählen und verschieben (V)">↖ Auswählen</button>
+        <button type="button" class="draw-tool" data-tool="free" role="radio" title="Freihand zeichnen (F)">✎ Freihand</button>
+        <button type="button" class="draw-tool" data-tool="line" role="radio" title="Gerade Linie (L)">╱ Linie</button>
+        <button type="button" class="draw-tool" data-tool="text" role="radio" title="Text: ins Blatt klicken und tippen (T)">T Text</button>
+        <button type="button" class="draw-tool" data-tool="ellipse" role="radio" title="Kreis – mit Umschalt genau rund (K)">◯ Kreis</button>
+        <button type="button" class="draw-tool" data-tool="rect" role="radio" title="Quadrat – mit Umschalt genau quadratisch (Q)">▢ Quadrat</button>
+        <button type="button" class="draw-tool" data-tool="triangle" role="radio" title="Dreieck (D)">△ Dreieck</button>
+      </div>
+      <div class="draw-options">
+        <label class="draw-option" title="Farbe">Farbe <input type="color" id="drawColor" value="#2d2915"></label>
+        <label class="draw-option" title="Strichstärke / Textgrösse">Stärke
+          <select id="drawWidth">
+            <option value="2">fein</option>
+            <option value="4" selected>mittel</option>
+            <option value="8">dick</option>
+            <option value="14">sehr dick</option>
+          </select>
+        </label>
+      </div>
+      <div class="draw-actions">
+        <button type="button" class="btn btn-secondary btn-small" id="drawPhotoBtn" title="Foto in die gewählte Form einsetzen (oder Strg+V)">🖼 Foto einfügen</button>
+        <input type="file" id="drawPhotoInput" accept="image/*" hidden>
+        <button type="button" class="btn btn-ghost btn-small" id="drawUndoBtn" title="Rückgängig (Strg+Z)">↶ Rückgängig</button>
+        <button type="button" class="btn btn-ghost btn-small" id="drawDeleteBtn" title="Gewähltes Element löschen (Entf)">✕ Element löschen</button>
+        <button type="button" class="btn btn-danger-ghost btn-small" id="drawClearBtn" title="Blatt leeren">Alles leeren</button>
+      </div>
+    </div>
+
+    <p class="app-status dialog-status" role="status" aria-live="polite" hidden></p>
+
+    <div class="draw-stage" id="drawStage">
+      <canvas id="drawCanvas" width="1600" height="1000" aria-label="Zeichenblatt"></canvas>
+    </div>
+
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" id="drawCancelBtn">Abbrechen</button>
+      <button type="button" class="btn btn-primary" id="drawApplyBtn">In Bilder übernehmen</button>
+    </div>
+  </div>
+</dialog>
 
 <!-- Bild-Lightbox: Doppelklick auf ein Bild oeffnet es vergroessert -->
 <div id="imageLightbox" class="image-lightbox" hidden>
@@ -107,6 +163,7 @@
 </div>
 
 <script src="common.js"></script>
+<script src="zeichnen.js"></script>
 <script src="reise.js"></script>
 </body>
 </html>

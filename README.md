@@ -100,6 +100,30 @@ ein Ampelknopf; wer nur lesen darf, sieht ihn nicht.
   gespeicherte Reise führt bei Rot zurück zur Übersicht.
 - Reine Anzeige-Sperre – die Rechte prüft der Server unabhängig davon.
 
+## Zeichenblatt
+
+Auf der Detailseite öffnet **🎨 Zeichnen** (neben *Reise löschen*, nur mit
+Schreibrecht und grüner Ampel) ein grosses Fenster mit einem Blatt von
+1600 × 1000 Punkten (`public/zeichnen.js`).
+
+| Werkzeug | Bedienung |
+|---|---|
+| Auswählen (V) | Element anklicken, ziehen = verschieben, Entf = löschen |
+| Freihand (F), Linie (L) | mit gedrückter Maustaste ziehen |
+| Text (T) | ins Blatt klicken, tippen; Enter oder Klick daneben übernimmt (Umschalt+Enter = neue Zeile) |
+| Kreis (K), Quadrat (Q), Dreieck (D) | Box aufziehen; Kreis/Quadrat mit Umschalt exakt rund/quadratisch |
+
+- Farbe und Stärke gelten für neue Elemente (Stärke bestimmt auch die Textgrösse).
+- **Fotos in Formen:** eine Form auswählen (neu gezeichnete Formen sind gleich
+  ausgewählt), dann *Foto in Form einsetzen* oder **Strg+V** – das Foto füllt die
+  Form und wird auf Kreis, Quadrat oder Dreieck zugeschnitten. Ohne gewählte Form
+  wird das Foto ein eigenes, verschiebbares Element.
+- Rückgängig (Strg+Z), Element löschen, Alles leeren.
+- **In Bilder übernehmen** legt die Zeichnung als PNG (bei sehr grossen Fotos
+  JPEG) bei den Bildern der Reise ab; gesichert wird sie mit *Speichern*.
+  Die Zeichnung ist danach ein normales Bild – einzelne Elemente lassen sich
+  später nicht mehr bearbeiten.
+
 ## Trennung von Kochbuch (Sprung-Sperre)
 
 Ein Wechsel zwischen Kochbuch und Travelfy ist auf Travelfy-Seite unterbunden:
