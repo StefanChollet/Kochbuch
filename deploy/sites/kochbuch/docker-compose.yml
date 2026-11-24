@@ -1,0 +1,25 @@
+# Kochbuch - https://chollet.corvent.ch/kochbuch/
+# ERZEUGT von tools/build.js aus apps.json (Ast "verteiler").
+#
+# KEINE ports: - der Dienst haengt nur am Netz "web" und wird ausschliesslich
+# ueber den Proxy erreicht (/web/proxy/conf.d/chollet.conf).
+# Code (./app) und Daten (./data) sind getrennt gemountet: ein Code-Update
+# fasst die SQLite-Datenbank nicht an.
+services:
+  kochbuch:
+    image: node:22-alpine
+    container_name: kochbuch
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      KOCHBUCH_DB: "/data/kochbuch.sqlite"
+    volumes:
+      - ./app:/app
+      - ./data:/data
+    command: node server.js
+    networks:
+      - web
+
+networks:
+  web:
+    external: true

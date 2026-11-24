@@ -1,117 +1,121 @@
 #!/usr/bin/env bash
 # ==========================================================================
-# Einspielen auf trex: Verteiler-Startseite + Travelfy (+ spaeter weitere Apps)
+# Einspielen auf trex - laeuft auf dem Entwicklungsrechner (Git Bash) und
+# arbeitet ueber SSH. Aufbau auf trex siehe tools/build.js / README.
 #
-# Auf trex ausfuehren (als Benutzer mit sudo):
-#     bash einspielen.sh            # alles
-#     bash einspielen.sh verteiler  # nur Startseite + nginx-Ausschnitt
-#     bash einspielen.sh travelfy   # nur eine App (holt/aktualisiert + Dienst)
+#   bash deploy/einspielen.sh <app-id>    eine App (z.B. kochbuch, travelfy)
+#   bash deploy/einspielen.sh verteiler   Startseite
+#   bash deploy/einspielen.sh proxy       nginx-Konfiguration (chollet.conf)
+#   bash deploy/einspielen.sh alles       Apps, Startseite, Proxy
 #
-# Das Kochbuch wird hier NICHT angefasst - es laeuft live und wird von Hand
-# aktualisiert (Reihenfolge siehe README, Abschnitt "Einspielen").
+# Je App: Code aus dem lokalen Git-Ast (apps.json: ordner/ast) - nur
+# Committetes, nichts Ungespeichertes. Vorher auf trex: Sicherung des alten
+# Codes (app.bak-<zeit>) und der Datenbank (*.sqlite.bak-vor-update-<zeit>).
 # ==========================================================================
 set -euo pipefail
 
-# ---- Einstellungen (bei Bedarf anpassen) ---------------------------------
-REPO="https://github.com/StefanChollet/Kochbuch.git"
-APPS_ROOT="/opt"                      # jede App in /opt/<id>
-APP_USER="${APP_USER:-$(id -un)}"     # Benutzer, unter dem die Apps laufen
-WEB_ROOT="/var/www/verteiler"         # Startseite
-SRC="$APPS_ROOT/verteiler"            # Checkout des Verteiler-Asts
-SNIPPET="/etc/nginx/snippets/chollet-apps.conf"
-# Apps, die dieses Skript verwaltet (id = Ast im Repo = Ordner = Unterpfad)
-MANAGED_APPS=("travelfy")
-# --------------------------------------------------------------------------
+TREX="${TREX:-root@trex}"
+SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_dinosaur}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TS="$(date +%Y%m%d-%H%M%S)"
 
 say()  { printf '\n\033[1;33m==> %s\033[0m\n' "$*"; }
 fail() { printf '\n\033[1;31mFEHLER: %s\033[0m\n' "$*" >&2; exit 1; }
+remote() { ssh -i "$SSH_KEY" -o BatchMode=yes "$TREX" "$@"; }
 
-check_node() {
-  command -v node >/dev/null || fail "Node.js fehlt (benoetigt >= 22)."
-  local major; major=$(node -p 'process.versions.node.split(".")[0]')
-  [ "$major" -ge 22 ] || fail "Node.js $(node -v) ist zu alt - benoetigt >= 22 (node:sqlite)."
+# Feld aus apps.json lesen: app_field <id> <feld>
+app_field() {
+  node -e '
+    const c = require(process.argv[1]);
+    const a = c.apps.find((x) => x.id === process.argv[2]);
+    if (!a) process.exit(2);
+    process.stdout.write(String(a[process.argv[3]] ?? ""));
+  ' "$ROOT/apps.json" "$1" "$2" || fail "App \"$1\" steht nicht in apps.json."
 }
+app_ids() { node -e 'process.stdout.write(require(process.argv[1]).apps.map((a) => a.id).join(" "))' "$ROOT/apps.json"; }
 
-# Holt einen Ast des Repos nach $1 bzw. aktualisiert ihn (nur fast-forward).
-checkout() {
-  local branch="$1" dir="$2"
-  if [ -d "$dir/.git" ]; then
-    git -C "$dir" fetch --quiet origin "$branch"
-    git -C "$dir" merge --ff-only --quiet "origin/$branch"
-  else
-    sudo mkdir -p "$dir"
-    sudo chown "$APP_USER" "$dir"
-    git clone --quiet --branch "$branch" --single-branch "$REPO" "$dir"
+deploy_app() {
+  local id="$1"
+  local ordner ast dir="/web/sites/$1"
+  ordner="$(app_field "$id" ordner)"
+  ast="$(app_field "$id" ast)"
+  [ -f "$ROOT/deploy/sites/$id/docker-compose.yml" ] || fail "deploy/sites/$id fehlt - zuerst: node tools/build.js"
+  git -C "$ordner" rev-parse --verify --quiet "$ast" >/dev/null || fail "Ast $ast fehlt in $ordner."
+
+  say "$id: $(git -C "$ordner" log --oneline -1 "$ast")  (Ast $ast)"
+
+  # Datenbank konsistent sichern (VACUUM INTO im laufenden Container)
+  remote "set -e; d=$dir
+    if docker ps --format '{{.Names}}' | grep -qx '$id'; then
+      for f in \$(cd \$d/data 2>/dev/null && ls *.sqlite 2>/dev/null); do
+        docker exec $id node -e \"new (require('node:sqlite').DatabaseSync)('/data/'+process.argv[1]).exec(\\\"VACUUM INTO '/data/\"+process.argv[1]+\".bak-vor-update-$TS'\\\")\" \"\$f\"
+        echo \"   Sicherung: \$d/data/\$f.bak-vor-update-$TS\"
+      done
+    fi"
+
+  # Neuen Code daneben auspacken, dann tauschen (alter Code -> app.bak-<zeit>)
+  git -C "$ordner" archive --format=tar "$ast" | remote "set -e; d=$dir
+    mkdir -p \$d/data \$d/app.neu-$TS
+    tar -x -C \$d/app.neu-$TS
+    if [ -d \$d/app ]; then mv \$d/app \$d/app.bak-$TS; echo '   alter Code: '\$d/app.bak-$TS; fi
+    mv \$d/app.neu-$TS \$d/app"
+
+  # docker-compose.yml nur anlegen, wenn noch keine da ist
+  if ! remote "test -f $dir/docker-compose.yml"; then
+    remote "cat > $dir/docker-compose.yml" < "$ROOT/deploy/sites/$id/docker-compose.yml"
+    echo "   docker-compose.yml angelegt"
   fi
-  echo "   $dir: $(git -C "$dir" log --oneline -1)"
+
+  remote "set -e; cd $dir; docker compose up -d --quiet-pull; docker restart $id >/dev/null; sleep 3
+    docker ps --filter name=^$id\$ --format '   Container: {{.Names}} {{.Status}}'
+    docker logs --tail 8 $id 2>&1 | sed 's/^/   | /'"
 }
 
 deploy_verteiler() {
-  say "Verteiler: Ast 'verteiler' nach $SRC"
-  checkout verteiler "$SRC"
-
-  say "Startseite nach $WEB_ROOT"
-  sudo mkdir -p "$WEB_ROOT"
-  sudo rsync -a --delete "$SRC/public/" "$WEB_ROOT/"
-
-  say "nginx-Ausschnitt nach $SNIPPET"
-  sudo mkdir -p "$(dirname "$SNIPPET")"
-  sudo cp "$SRC/deploy/chollet-apps.conf" "$SNIPPET"
-
-  if ! sudo grep -rqs "include snippets/chollet-apps.conf" /etc/nginx/sites-enabled /etc/nginx/conf.d; then
-    cat <<EOF
-
-   *** Noch einmalig von Hand: ***
-   In der nginx-Konfiguration von chollet.corvent.ch (server-Block mit
-   "listen 443") das bisherige   location / { proxy_pass ...:3000; ... }
-   ersetzen durch:
-
-       include snippets/chollet-apps.conf;
-
-   Vorlage: $SRC/deploy/chollet.corvent.ch.conf
-   Danach:  sudo nginx -t && sudo systemctl reload nginx
-EOF
-    return
-  fi
-  say "nginx pruefen und neu laden"
-  sudo nginx -t
-  sudo systemctl reload nginx
+  local dir=/web/sites/verteiler
+  say "verteiler: Startseite"
+  tar -C "$ROOT/public" -cf - . | remote "set -e; d=$dir
+    mkdir -p \$d/public.neu-$TS
+    tar -x -C \$d/public.neu-$TS
+    if [ -d \$d/public ]; then mv \$d/public \$d/public.bak-$TS; fi
+    mv \$d/public.neu-$TS \$d/public"
+  remote "cat > $dir/docker-compose.yml" < "$ROOT/deploy/sites/verteiler/docker-compose.yml"
+  remote "set -e; cd $dir; docker compose up -d --quiet-pull
+    docker ps --filter name=^verteiler\$ --format '   Container: {{.Names}} {{.Status}}'"
 }
 
-deploy_app() {
-  local id="$1" dir="$APPS_ROOT/$1"
-  say "$id: Ast '$id' nach $dir"
-  checkout "$id" "$dir"
-
-  say "$id: systemd-Dienst"
-  sed -e "s|@APP_USER@|$APP_USER|g" -e "s|@APPS_ROOT@|$APPS_ROOT|g" \
-    "$SRC/deploy/$id.service" | sudo tee "/etc/systemd/system/$id.service" >/dev/null
-  sudo systemctl daemon-reload
-  sudo systemctl enable --quiet "$id"
-  sudo systemctl restart "$id"
-  sleep 2
-  if ! systemctl is-active --quiet "$id"; then
-    sudo journalctl -u "$id" -n 30 --no-pager
-    fail "$id startet nicht (Log oben)."
-  fi
-  # Beim allerersten Start steht das Admin-Startpasswort im Log.
-  sudo journalctl -u "$id" -n 15 --no-pager | grep -E "laeuft auf|Startpasswort" || true
+deploy_proxy() {
+  say "proxy: /web/proxy/conf.d/chollet.conf"
+  remote "cat > /web/proxy/chollet.conf.neu-$TS" < "$ROOT/deploy/proxy/chollet.conf"
+  remote "set -e; c=/web/proxy/conf.d
+    # Bisherige Dateien ausserhalb von conf.d sichern (nur *.conf wird gelesen)
+    [ -f \$c/chollet.conf ]  && cp \$c/chollet.conf  /web/proxy/chollet.conf.bak-$TS
+    [ -f \$c/kochbuch.conf ] && mv \$c/kochbuch.conf /web/proxy/kochbuch.conf.bak-$TS && echo '   altes kochbuch.conf -> /web/proxy/kochbuch.conf.bak-$TS'
+    mv /web/proxy/chollet.conf.neu-$TS \$c/chollet.conf
+    if docker exec proxy nginx -t 2>&1 | sed 's/^/   | /'; [ \${PIPESTATUS[0]} -eq 0 ]; then
+      docker exec proxy nginx -s reload && echo '   nginx neu geladen'
+    else
+      echo '   nginx -t fehlgeschlagen - stelle den alten Stand wieder her'
+      rm -f \$c/chollet.conf
+      [ -f /web/proxy/chollet.conf.bak-$TS ]  && cp /web/proxy/chollet.conf.bak-$TS \$c/chollet.conf
+      [ -f /web/proxy/kochbuch.conf.bak-$TS ] && mv /web/proxy/kochbuch.conf.bak-$TS \$c/kochbuch.conf
+      exit 1
+    fi"
 }
 
 # --------------------------------------------------------------------------
-check_node
-command -v rsync >/dev/null || fail "rsync fehlt (sudo apt install rsync)."
-target="${1:-alles}"
+command -v node >/dev/null || fail "node fehlt auf diesem Rechner."
+node "$ROOT/tools/build.js" >/dev/null
+target="${1:-}"
+case "$target" in
+  alles)
+    for id in $(app_ids); do deploy_app "$id"; done
+    deploy_verteiler
+    deploy_proxy ;;
+  verteiler) deploy_verteiler ;;
+  proxy)     deploy_proxy ;;
+  "")        fail "Was einspielen? <app-id> | verteiler | proxy | alles" ;;
+  *)         deploy_app "$target" ;;
+esac
 
-# Der Verteiler-Checkout liefert die Dienst-Vorlagen - immer zuerst holen.
-if [ "$target" = "alles" ] || [ "$target" = "verteiler" ]; then
-  deploy_verteiler
-else
-  checkout verteiler "$SRC" >/dev/null
-fi
-
-for id in "${MANAGED_APPS[@]}"; do
-  if [ "$target" = "alles" ] || [ "$target" = "$id" ]; then deploy_app "$id"; fi
-done
-
-say "Fertig. Test:  curl -sI https://chollet.corvent.ch/  und  .../travelfy/"
+say "Fertig."

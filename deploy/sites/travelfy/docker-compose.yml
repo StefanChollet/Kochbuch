@@ -1,0 +1,28 @@
+# Travelfy - https://chollet.corvent.ch/travelfy/
+# ERZEUGT von tools/build.js aus apps.json (Ast "verteiler").
+#
+# KEINE ports: - der Dienst haengt nur am Netz "web" und wird ausschliesslich
+# ueber den Proxy erreicht (/web/proxy/conf.d/chollet.conf).
+# Code (./app) und Daten (./data) sind getrennt gemountet: ein Code-Update
+# fasst die SQLite-Datenbank nicht an.
+services:
+  travelfy:
+    image: node:22-alpine
+    container_name: travelfy
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      TRAVELFY_DB: "/data/travelfy.sqlite"
+      TRAVELFY_HOST: "0.0.0.0"
+      TRAVELFY_PORT: "3001"
+      TRAVELFY_BASE: "/travelfy"
+    volumes:
+      - ./app:/app
+      - ./data:/data
+    command: node server.js
+    networks:
+      - web
+
+networks:
+  web:
+    external: true

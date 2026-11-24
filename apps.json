@@ -7,6 +7,9 @@
       "name": "Kochbuch",
       "beschreibung": "Rezepte, Zutaten und Kühlschrank – mit Kochansicht zum Nachkochen.",
       "port": 3000,
+      "ordner": "C:/develop/Kochbuch",
+      "ast": "master",
+      "env": { "KOCHBUCH_DB": "/data/kochbuch.sqlite" },
       "farbe": "#2F4B3C",
       "icon": "icons/kochbuch.png"
     },
@@ -15,6 +18,14 @@
       "name": "Travelfy",
       "beschreibung": "Reisen erfassen und verwalten – mit Stationen, Bildern und Reisebericht.",
       "port": 3001,
+      "ordner": "C:/develop/Travelfy",
+      "ast": "travelfy",
+      "env": {
+        "TRAVELFY_DB": "/data/travelfy.sqlite",
+        "TRAVELFY_HOST": "0.0.0.0",
+        "TRAVELFY_PORT": "3001",
+        "TRAVELFY_BASE": "/travelfy"
+      },
       "farbe": "#C27A00",
       "icon": "icons/travelfy.png"
     }

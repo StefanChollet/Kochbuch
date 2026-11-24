@@ -1,0 +1,16 @@
+# Verteiler-Startseite - https://chollet.corvent.ch/
+# ERZEUGT von tools/build.js. Statische Dateien aus ./public, ausgeliefert
+# von nginx im eigenen Container (der Proxy leitet "/" hierher).
+services:
+  verteiler:
+    image: nginx:1.29-alpine
+    container_name: verteiler
+    restart: unless-stopped
+    volumes:
+      - ./public:/usr/share/nginx/html:ro
+    networks:
+      - web
+
+networks:
+  web:
+    external: true
