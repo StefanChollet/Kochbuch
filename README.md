@@ -48,6 +48,7 @@ Damit Apps sich einen Host teilen können, ohne sich zu vermischen:
 | Eigener Ordner `C:\develop\<App>`, eigener Ast `<id>` im Repo `StefanChollet/Kochbuch` | unabhängig entwickeln und einspielen |
 | Unterpfad `/<id>` (`<ID>_BASE`), eigener Port im Container (`<ID>_PORT`); im Container auf `0.0.0.0` lauschen (`<ID>_HOST`), keine Host-Ports | erreichbar nur über den Proxy |
 | Alle Adressen im Browser **relativ** (`api/...`, `seite.html`), Manifest `start_url`/`scope` = `./` | läuft unter jedem Unterpfad |
+| Manifest `"id": "<id>"` – **nie** `"./"` | die `id` wird gegen die Wurzel des Hosts aufgelöst: `"./"` ergäbe für alle Apps dieselbe Kennung, und nach der ersten installierten App ließe sich keine weitere mehr installieren. (Ausnahme: Kochbuch behält `"./"`, damit bestehende Installationen gültig bleiben.) |
 | Cookie `<id>_session` mit `Path=/<id>/` | keine App sieht die Anmeldung einer anderen |
 | Service Worker mit Basis = eigenes Verzeichnis, Cache-Namen mit Präfix `<id>-`, nur eigene Caches löschen | Offline-Speicher bleiben getrennt |
 | localStorage/sessionStorage-Schlüssel mit Präfix `<id>_` | keine Überschneidungen |
