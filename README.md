@@ -85,7 +85,7 @@ je IP 15 Minuten Sperre.
 
 ### Ampel „nur Sicht“
 
-In der Kopfzeile steht für Benutzer mit Schreibrecht (Admin, Lesen + Schreiben)
+Neben der Überschrift („Reisen“, auf der Detailseite neben dem Reisenamen) steht für Benutzer mit Schreibrecht (Admin, Lesen + Schreiben)
 ein Ampelknopf; wer nur lesen darf, sieht ihn nicht.
 
 | Ampel | Wirkung auf Übersicht, Detailseiten und Funktionen |

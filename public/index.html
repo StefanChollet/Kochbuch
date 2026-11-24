@@ -24,7 +24,11 @@
   <!-- ============ Uebersicht der Reisen ============ -->
   <section class="panel" aria-labelledby="tripsHeading">
     <div class="panel-head">
-      <h2 id="tripsHeading">Reisen</h2>
+      <div class="panel-title">
+        <h2 id="tripsHeading">Reisen</h2>
+        <!-- Hier setzt common.js die Ampel ein (rot = nur Sicht, gruen = Rechte) -->
+        <span data-ampel-platz></span>
+      </div>
       <button id="createTripBtn" class="btn btn-primary write-only" type="button">+ Reise erfassen</button>
     </div>
 

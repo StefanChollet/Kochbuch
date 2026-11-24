@@ -20,7 +20,11 @@
   <section class="panel">
     <form id="tripForm" class="detail-form" novalidate>
       <div class="detail-head">
-        <h2 id="detailHeading">Reise-Detail</h2>
+        <div class="panel-title">
+          <h2 id="detailHeading">Reise-Detail</h2>
+          <!-- Hier setzt common.js die Ampel ein (rot = nur Sicht, gruen = Rechte) -->
+          <span data-ampel-platz></span>
+        </div>
         <button type="button" class="btn btn-ghost btn-small" id="backBtn">← Zurück zur Übersicht</button>
       </div>
 

@@ -399,6 +399,11 @@ function resetViewMode(){
 }
 
 const modeBtn = document.getElementById("modeBtn");
+// Wie im Kochbuch: die Ampel steht neben der Seitenueberschrift ("Reisen",
+// bzw. dem Namen der Reise). Seiten markieren die Stelle mit data-ampel-platz;
+// ohne Markierung bleibt sie in der Kopfzeile.
+const ampelPlatz = document.querySelector("[data-ampel-platz]");
+if(ampelPlatz) ampelPlatz.replaceWith(modeBtn);
 
 /** Ampel, Benutzerverwaltung und alle Bearbeiten-Elemente an den Modus anpassen. */
 function applyViewMode(){

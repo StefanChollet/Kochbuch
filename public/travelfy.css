@@ -542,6 +542,8 @@ textarea{ resize: vertical; }
 [hidden]{ display:none !important; }
 
 /* ===== Ampel: rot = nur Sicht, gruen = Rechte des Benutzers ===== */
+/* Ueberschrift mit Ampel daneben (Uebersicht "Reisen", Detailseite) */
+.panel-title{ display:flex; align-items:center; gap:.7rem; flex-wrap:wrap; min-width:0; }
 .traffic-light{
   display:inline-flex; align-items:center; gap:.4rem;
   padding: .25rem .65rem .25rem .35rem;
