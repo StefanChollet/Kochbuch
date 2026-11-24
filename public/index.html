@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="referrer" content="same-origin">
+<title>Travelfy</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#F5C518">
+<link rel="icon" type="image/svg+xml" href="/icons/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Travelfy">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/travelfy.css">
+</head>
+<body>
+
+<main class="layout" id="appMain" hidden>
+
+  <!-- ============ Uebersicht der Reisen ============ -->
+  <section class="panel" aria-labelledby="tripsHeading">
+    <div class="panel-head">
+      <h2 id="tripsHeading">Reisen</h2>
+      <button id="createTripBtn" class="btn btn-primary write-only" type="button">+ Reise erfassen</button>
+    </div>
+
+    <div class="trip-toolbar">
+      <div class="trip-search-wrap">
+        <input type="search" id="tripSearchInput" placeholder="Suchen: Reise, Ziel, Station, Reiseart, Benutzer" aria-label="Reisen durchsuchen">
+      </div>
+      <div class="trip-sort-wrap">
+        <label for="tripSortSelect">Sortieren</label>
+        <select id="tripSortSelect">
+          <option value="name-asc">Name (A–Z)</option>
+          <option value="name-desc">Name (Z–A)</option>
+          <option value="destination-asc">Reiseziel (A–Z)</option>
+          <option value="startDate-desc">Reisebeginn (neueste zuerst)</option>
+          <option value="startDate-asc">Reisebeginn (älteste zuerst)</option>
+          <option value="updatedAt-desc">Zuletzt geändert (neueste zuerst)</option>
+          <option value="createdBy-asc">Erfasst von (A–Z)</option>
+        </select>
+      </div>
+      <div class="trip-sort-wrap trip-filter-wrap">
+        <label for="tripCategoryFilter">Reiseart</label>
+        <select id="tripCategoryFilter">
+          <option value="">Alle Reisearten</option>
+        </select>
+      </div>
+      <div class="trip-sort-wrap trip-filter-wrap" id="tripOwnerFilterWrap">
+        <label for="tripOwnerFilter">Benutzer</label>
+        <select id="tripOwnerFilter">
+          <option value="">Alle Benutzer</option>
+        </select>
+      </div>
+      <button type="button" id="tripResetFiltersBtn" class="btn btn-ghost btn-small" title="Suche, Filter und Sortierung zurücksetzen">Zurücksetzen</button>
+    </div>
+
+    <div class="trip-table-scroll" id="tripTableScroll">
+      <table class="trip-table">
+        <thead>
+          <tr>
+            <th>Reise</th>
+            <th class="col-dest">Reiseziel</th>
+            <th>Zeitraum</th>
+            <th class="col-owner">Erfasst von</th>
+            <th class="col-menu">Menu</th>
+          </tr>
+        </thead>
+        <tbody id="tripTableBody"></tbody>
+      </table>
+      <p id="tripEmptyState" class="empty-state" hidden></p>
+      <div id="tripLoadMore" class="trip-load-more" aria-live="polite"></div>
+    </div>
+
+    <div class="trip-pager">
+      <p class="trip-pager-info" id="tripPagerInfo"></p>
+    </div>
+  </section>
+
+  <!-- ============ Seitenleiste: Naechste Reisen ============ -->
+  <aside class="panel panel-upcoming" aria-labelledby="upcomingHeading">
+    <div class="panel-head">
+      <h2 id="upcomingHeading">Nächste Reisen</h2>
+    </div>
+    <p class="panel-sub">Die nächsten fünf Reisen ab heute.</p>
+    <ul id="upcomingList" class="upcoming-list"></ul>
+    <p id="upcomingEmptyState" class="empty-state" hidden>Keine geplanten Reisen.</p>
+  </aside>
+
+</main>
+
+<script src="/common.js"></script>
+<script src="/travelfy.js"></script>
+</body>
+</html>

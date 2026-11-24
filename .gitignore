@@ -1,0 +1,13 @@
+# SQLite-Datenbank und Laufzeitdateien - lokale Daten, gehoeren nicht ins Repo
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Editor/OS
+.DS_Store
+Thumbs.db
+.vscode/

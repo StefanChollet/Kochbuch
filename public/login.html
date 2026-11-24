@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="referrer" content="same-origin">
+<title>Travelfy – Anmelden</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#F5C518">
+<link rel="icon" type="image/svg+xml" href="/icons/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/travelfy.css">
+</head>
+<body>
+
+<section class="auth-screen">
+  <form id="authForm" class="panel auth-panel">
+    <h2>Anmelden</h2>
+    <p class="panel-sub">Bitte Benutzer wählen und Passwort eingeben.</p>
+    <label class="field">
+      <span>Benutzer</span>
+      <select id="authUsername" autocomplete="username" required>
+        <option value="">– Benutzer wählen –</option>
+      </select>
+    </label>
+    <label class="field">
+      <span>Passwort</span>
+      <input type="password" id="authPassword" autocomplete="current-password" required maxlength="200">
+    </label>
+    <p id="authError" class="form-error" hidden></p>
+    <button type="submit" id="authSubmitBtn" class="btn btn-primary">Anmelden</button>
+  </form>
+</section>
+
+<script src="/common.js"></script>
+<script src="/login.js"></script>
+</body>
+</html>

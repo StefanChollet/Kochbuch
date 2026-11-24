@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="referrer" content="same-origin">
+<title>Travelfy – Reise</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#F5C518">
+<link rel="icon" type="image/svg+xml" href="/icons/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/travelfy.css">
+</head>
+<body>
+
+<main class="layout-single" id="appMain" hidden>
+  <section class="panel">
+    <form id="tripForm" class="detail-form" novalidate>
+      <div class="detail-head">
+        <h2 id="detailHeading">Reise-Detail</h2>
+        <button type="button" class="btn btn-ghost btn-small" id="backBtn">← Zurück zur Übersicht</button>
+      </div>
+
+      <p id="tripOwnerInfo" class="trip-owner-info" hidden></p>
+
+      <label class="field">
+        <span>Reisename</span>
+        <input type="text" id="tripName" required maxlength="80" placeholder="z.B. Sommer in der Provence">
+      </label>
+
+      <label class="field">
+        <span>Kurze Beschreibung</span>
+        <input type="text" id="tripShortDesc" maxlength="150" placeholder="Erscheint in der Übersicht">
+      </label>
+
+      <div class="field-row">
+        <label class="field">
+          <span>Reiseziel</span>
+          <input type="text" id="tripDestination" maxlength="80" placeholder="Land, Region oder Stadt">
+        </label>
+        <label class="field">
+          <span>Von</span>
+          <input type="date" id="tripStartDate">
+        </label>
+        <label class="field">
+          <span>Bis</span>
+          <input type="date" id="tripEndDate">
+        </label>
+      </div>
+
+      <!-- Reiseart: hoechstens ein Eintrag -->
+      <fieldset class="field-group">
+        <legend>Reiseart</legend>
+        <div class="add-row" id="categoryAddRow">
+          <input type="text" id="categoryNameInput" list="categoryOptionsList" placeholder="Reiseart wählen oder neu eingeben" maxlength="40">
+          <datalist id="categoryOptionsList"></datalist>
+          <button type="button" id="addCategoryBtn" class="btn btn-secondary btn-small">Hinzufügen</button>
+        </div>
+        <ul id="categoryList" class="item-list"></ul>
+        <p id="categoryEmptyState" class="empty-state empty-state-small" hidden>Noch keine Reiseart erfasst.</p>
+      </fieldset>
+
+      <!-- Stationen: Ort + Datum/Notiz, in Reihenfolge -->
+      <fieldset class="field-group">
+        <legend>Stationen</legend>
+        <div class="add-row">
+          <input type="text" id="stationNameInput" placeholder="Ort / Station" maxlength="80">
+          <input type="text" id="stationNoteInput" placeholder="Datum oder Notiz" maxlength="60">
+          <button type="button" id="addStationBtn" class="btn btn-secondary btn-small">Hinzufügen</button>
+        </div>
+        <ul id="stationList" class="item-list"></ul>
+        <p id="stationEmptyState" class="empty-state empty-state-small" hidden>Noch keine Stationen erfasst.</p>
+      </fieldset>
+
+      <label class="field">
+        <span>Reisebericht / Notizen</span>
+        <textarea id="tripLongText" rows="7" placeholder="Unterkünfte, Erlebnisse, Tipps …"></textarea>
+      </label>
+
+      <fieldset class="field-group">
+        <legend>Bilder</legend>
+        <label class="upload-label" for="imageInput">Bild(er) hochladen</label>
+        <input type="file" id="imageInput" accept="image/png,image/jpeg,image/gif,image/webp,image/avif" multiple>
+        <div id="imageList" class="image-list"></div>
+      </fieldset>
+
+      <div class="form-actions">
+        <button type="button" id="deleteTripBtn" class="btn btn-danger-ghost push-left write-only" hidden>Reise löschen</button>
+        <button type="button" id="cancelBtn" class="btn btn-ghost">Abbrechen</button>
+        <button type="submit" id="saveTripBtn" class="btn btn-primary write-only">Speichern</button>
+      </div>
+    </form>
+  </section>
+</main>
+
+<!-- Bild-Lightbox: Doppelklick auf ein Bild oeffnet es vergroessert -->
+<div id="imageLightbox" class="image-lightbox" hidden>
+  <button type="button" class="image-lightbox-close" id="imageLightboxClose" aria-label="Vergrößerte Ansicht schließen">✕</button>
+  <img id="imageLightboxImg" src="data:," alt="">
+</div>
+
+<script src="/common.js"></script>
+<script src="/reise.js"></script>
+</body>
+</html>
