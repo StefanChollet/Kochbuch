@@ -213,21 +213,54 @@ document.addEventListener("keydown", (e) => {
   if(e.key === "Escape" && !imageLightbox.hidden) closeImageLightbox();
 });
 
-/* ---- Formular fuellen ---- */
-function fillForm(trip, categoryOptions){
+/* ---- Rechte: Rolle + Ampel ---- */
+let loadedTrip = null;
+
+/** Felder sperren oder freigeben - beim Laden und bei jedem Wechsel der Ampel. */
+function applyAccess(){
   readOnly = !canWrite();
   tripForm.classList.toggle("is-readonly", readOnly);
   tripForm.querySelectorAll("input, textarea, select").forEach(el => { el.disabled = readOnly; });
   cancelBtn.textContent = readOnly ? "Schliessen" : "Abbrechen";
+  saveTripBtn.hidden = readOnly;
+  deleteTripBtn.hidden = readOnly || !loadedTrip;
+  if(loadedTrip){
+    const hint = !currentUser.canWrite ? " – du hast nur Leserechte."
+      : viewOnly ? " – Ampel Rot: nur Sicht." : ".";
+    tripOwnerInfo.textContent = `Erfasst von ${loadedTrip.createdByName || "unbekannt"}${hint}`;
+    tripOwnerInfo.hidden = false;
+  }
+  renderCategoryList();
+  renderStationList();
+}
+
+/* Ampel umgeschaltet. Auf Rot gehen ungespeicherte Aenderungen verloren -
+   vorher nachfragen; eine neue Reise laesst sich bei Rot nicht anlegen. */
+beforeViewModeChange = (nextViewOnly) => {
+  if(!nextViewOnly || !dirty) return true;
+  return window.confirm("Auf Rot (nur Sicht) schalten? Ungespeicherte Änderungen gehen verloren.");
+};
+
+document.addEventListener("travelfy:modus", () => {
+  if(viewOnly && !tripId){ dirty = false; backToOverview(); return; }
+  if(viewOnly && dirty){
+    // Verworfene Aenderungen: gespeicherten Stand neu laden (Ampel bleibt Rot).
+    dirty = false;
+    leaving = true;
+    window.location.reload();
+    return;
+  }
+  applyAccess();
+});
+
+/* ---- Formular fuellen ---- */
+function fillForm(trip, categoryOptions){
+  loadedTrip = trip;
   categoryOptionsList.innerHTML = categoryOptions.map(c => `<option value="${escapeHtml(c)}"></option>`).join("");
 
   if(trip){
     detailHeading.textContent = trip.name;
     document.title = `Travelfy – ${trip.name}`;
-    tripOwnerInfo.textContent = `Erfasst von ${trip.createdByName || "unbekannt"}` +
-      (readOnly ? " – du hast nur Leserechte." : ".");
-    tripOwnerInfo.hidden = false;
-    deleteTripBtn.hidden = readOnly;
     tripNameInput.value = trip.name;
     tripShortDescInput.value = trip.shortDesc || "";
     tripDestinationInput.value = trip.destination || "";
@@ -241,8 +274,7 @@ function fillForm(trip, categoryOptions){
     detailHeading.textContent = "Neue Reise";
     document.title = "Travelfy – Neue Reise";
   }
-  renderCategoryList();
-  renderStationList();
+  applyAccess();
   renderImageList();
   dirty = false;
   if(!readOnly) tripNameInput.focus();
@@ -322,7 +354,8 @@ deleteTripBtn.addEventListener("click", async () => {
   const user = await requireUser();
   if(!user) return;
   // Nur-lesen-Benutzer koennen keine neue Reise anlegen.
-  if(!tripId && !user.canWrite){ backToOverview(); return; }
+  // Neue Reise nur mit Schreibrecht und Ampel auf Gruen.
+  if(!tripId && !canWrite()){ backToOverview(); return; }
 
   let trip = null;
   let state = { categoryOptions: [] };

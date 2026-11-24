@@ -176,6 +176,11 @@ const CHROME_HTML = `
   <h1 class="app-title"><a href="./" title="Zur Übersicht"><svg aria-hidden="true"><use href="#logo"/></svg>Travelfy</a></h1>
   <div class="header-right">
     <button id="installBtn" class="btn btn-ghost btn-small" type="button" title="Travelfy als App auf diesem Gerät installieren" hidden>📲 App installieren</button>
+    <!-- Ampel: rot = nur Sicht, gruen = Rechte des Benutzers. Nur fuer Benutzer mit Schreibrecht. -->
+    <button type="button" id="modeBtn" class="traffic-light" aria-pressed="true" hidden>
+      <span class="traffic-light-dot" aria-hidden="true"></span>
+      <span class="traffic-light-label">Nur Sicht</span>
+    </button>
     <div id="userBar" class="user-bar" hidden>
       <button id="userMenuBtn" class="user-menu-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="userMenu" title="Benutzermenü">
         <span class="user-name" id="currentUserName"></span>
@@ -370,9 +375,63 @@ document.getElementById("themeToggle").addEventListener("click", () => {
 const ROLE_LABELS = { admin: "Admin", rw: "Lesen + Schreiben", r: "Nur lesen" };
 let currentUser = null;
 
+/* ---- Ampel: rot = nur Sicht, gruen = die Rechte des Benutzers ----
+   Nach jeder Anmeldung und in jedem neuen Tab steht die Ampel auf Rot:
+   Uebersicht, Detailseiten und alle Funktionen sind dann nur zum Ansehen -
+   kein Erfassen, Bearbeiten, Loeschen, keine Benutzerverwaltung.
+   Gruen gibt die Rechte der Rolle frei (Admin / Lesen + Schreiben); sie
+   gelten auf allen Seiten bis zum Abmelden, Neuladen behaelt Gruen
+   (sessionStorage). Wer ohnehin nur lesen darf, sieht keine Ampel.
+   Reine Anzeige-Sperre - die Rechte prueft der Server unabhaengig davon. */
+const WRITE_MODE_KEY = "travelfy_write_mode";   // sessionStorage: "1" = gruen
+let viewOnly = true;
+try{ viewOnly = window.sessionStorage.getItem(WRITE_MODE_KEY) !== "1"; }catch{ /* ohne Speicher: Rot */ }
+
+/** Schreiben erlaubt? Nur mit Schreibrecht UND Ampel auf Gruen. */
 function canWrite(){
-  return !!currentUser && currentUser.canWrite;
+  return !!currentUser && currentUser.canWrite && !viewOnly;
 }
+
+/** Ampel zurueck auf Rot (Anmelden, Abmelden). */
+function resetViewMode(){
+  viewOnly = true;
+  try{ window.sessionStorage.removeItem(WRITE_MODE_KEY); }catch{ /* egal */ }
+}
+
+const modeBtn = document.getElementById("modeBtn");
+
+/** Ampel, Benutzerverwaltung und alle Bearbeiten-Elemente an den Modus anpassen. */
+function applyViewMode(){
+  const mayWrite = !!currentUser && currentUser.canWrite;
+  modeBtn.hidden = !mayWrite;
+  modeBtn.setAttribute("aria-pressed", String(viewOnly));
+  modeBtn.querySelector(".traffic-light-label").textContent = viewOnly ? "Nur Sicht" : "Lesen + Schreiben";
+  modeBtn.title = viewOnly
+    ? "Rot: nur Sicht – nichts kann geändert werden. Klick: Rechte freigeben (Grün)"
+    : "Grün: Rechte freigegeben. Klick: zurück auf nur Sicht (Rot)";
+  document.getElementById("usersBtn").hidden = !currentUser || currentUser.role !== "admin" || viewOnly;
+  if(viewOnly && document.getElementById("usersDialog").open) document.getElementById("usersDialog").close();
+  document.body.classList.toggle("is-readonly", !canWrite());
+}
+
+/**
+ * Seiten koennen hier pruefen, ob gewechselt werden darf (z.B. bei
+ * ungespeicherten Aenderungen); false = Ampel bleibt, wie sie ist.
+ */
+let beforeViewModeChange = null;
+
+modeBtn.addEventListener("click", () => {
+  const next = !viewOnly;
+  if(beforeViewModeChange && beforeViewModeChange(next) === false) return;
+  viewOnly = next;
+  try{
+    if(viewOnly) window.sessionStorage.removeItem(WRITE_MODE_KEY);
+    else window.sessionStorage.setItem(WRITE_MODE_KEY, "1");
+  }catch{ /* gilt dann nur bis zum Neuladen */ }
+  applyViewMode();
+  // Seiten zeichnen ihre Bearbeiten-Elemente neu.
+  document.dispatchEvent(new CustomEvent("travelfy:modus", { detail: { viewOnly } }));
+});
 
 const userBar = document.getElementById("userBar");
 const userMenuBtn = document.getElementById("userMenuBtn");
@@ -400,9 +459,8 @@ function setCurrentUser(user){
   role.textContent = ROLE_LABELS[user.role] || user.role;
   role.className = `role-badge role-${user.role}`;
   role.title = user.canWrite ? "Darf lesen und schreiben" : "Darf nur lesen";
-  document.getElementById("usersBtn").hidden = user.role !== "admin";
-  document.body.classList.toggle("is-readonly", !user.canWrite);
   userBar.hidden = false;
+  applyViewMode();
 }
 
 /**
@@ -428,6 +486,7 @@ async function requireUser(){
 document.getElementById("logoutBtn").addEventListener("click", async () => {
   await guard(() => API.post("/auth/logout"));
   currentUser = null;
+  resetViewMode();
   try{ ["travelfy_query", "travelfy_flash"].forEach(k => window.sessionStorage.removeItem(k)); }catch{ /* egal */ }
   window.location.replace("login.html");
 });

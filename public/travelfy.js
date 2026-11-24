@@ -343,6 +343,8 @@ upcomingList.addEventListener("keydown", (e) => {
   const user = await requireUser();
   if(!user) return;
   onUsersChanged = () => Promise.all([loadTrips({ keepLoaded: true }), loadUpcoming()]);
+  // Ampel umgeschaltet: Bearbeiten/Loeschen bzw. Ansehen in jeder Zeile neu zeichnen.
+  document.addEventListener("travelfy:modus", renderTripTable);
   document.getElementById("appMain").hidden = false;
   restoreQuery();
   showFlash();

@@ -83,6 +83,23 @@ Benutzermenü oben rechts: *Benutzerverwaltung* (nur Admin), *Passwort ändern*,
 *Abmelden*. Passwörter als scrypt-Hash, Sitzung 30 Tage, nach 10 Fehlversuchen
 je IP 15 Minuten Sperre.
 
+### Ampel „nur Sicht“
+
+In der Kopfzeile steht für Benutzer mit Schreibrecht (Admin, Lesen + Schreiben)
+ein Ampelknopf; wer nur lesen darf, sieht ihn nicht.
+
+| Ampel | Wirkung auf Übersicht, Detailseiten und Funktionen |
+|---|---|
+| **Rot = nur Sicht** | Alles nur zum Ansehen: kein *Reise erfassen*, kein Bearbeiten oder Löschen, Detailseiten gesperrt, keine Benutzerverwaltung. *Passwort ändern* und *Abmelden* bleiben. |
+| **Grün = Rechte der Rolle** | Es gelten die Rechte des Benutzers: Admin alles inkl. Benutzerverwaltung, Lesen + Schreiben die eigenen Reisen. |
+
+- Nach jeder Anmeldung und in jedem neuen Tab steht die Ampel auf **Rot**.
+- Grün gilt auf allen Seiten bis zum Abmelden; Neuladen behält Grün (sessionStorage).
+- Wechsel auf Rot mit ungespeicherten Änderungen auf der Detailseite: Rückfrage,
+  danach wird der gespeicherte Stand neu geladen. Eine neue, noch nicht
+  gespeicherte Reise führt bei Rot zurück zur Übersicht.
+- Reine Anzeige-Sperre – die Rechte prüft der Server unabhängig davon.
+
 ## Trennung von Kochbuch (Sprung-Sperre)
 
 Ein Wechsel zwischen Kochbuch und Travelfy ist auf Travelfy-Seite unterbunden:

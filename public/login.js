@@ -33,6 +33,7 @@ authForm.addEventListener("submit", async (e) => {
       username: authUsername.value.trim(),
       password: authPassword.value
     });
+    resetViewMode();   // jede neue Anmeldung startet mit der Ampel auf Rot
     window.location.replace(nextPage);
   }catch(err){
     authError.textContent = err.message;
