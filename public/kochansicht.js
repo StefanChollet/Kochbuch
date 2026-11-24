@@ -195,7 +195,7 @@ let currentRecipeId = null;
 document.getElementById("backBtn").addEventListener("click", () => {
   // Ampel rot: zur Uebersicht statt zum Rezept.
   const red = currentAmpel() === "rot";
-  const fallback = currentRecipeId && !red ? `/?recipe=${encodeURIComponent(currentRecipeId)}` : "/";
+  const fallback = currentRecipeId && !red ? `./?recipe=${encodeURIComponent(currentRecipeId)}` : "./";
   window.close();
   // Ist der Tab noch da, hat der Browser das Schliessen verweigert.
   setTimeout(() => { if(!window.closed) window.location.replace(fallback); }, 150);
@@ -203,7 +203,7 @@ document.getElementById("backBtn").addEventListener("click", () => {
 
 // PWA: derselbe Service Worker wie im Kochbuch (speichert nur die Huelle, nie den Code oder Daten).
 if("serviceWorker" in navigator){
-  navigator.serviceWorker.register("/sw.js").catch(() => { /* ohne SW laeuft die Seite genauso */ });
+  navigator.serviceWorker.register("sw.js").catch(() => { /* ohne SW laeuft die Seite genauso */ });
 }
 
 /* ---- Start ---- */
@@ -214,14 +214,14 @@ if("serviceWorker" in navigator){
     return;
   }
   try{
-    const status = await getJson("/api/auth/status");
+    const status = await getJson("api/auth/status");
     if(!status.payload.user){
       // Nach der Anmeldung kommt das Kochbuch direkt hierher zurueck.
-      const next = encodeURIComponent(window.location.pathname + window.location.search);
-      showMessage(`Bitte zuerst <a href="/?next=${next}">im Kochbuch anmelden</a> – danach geht es hier weiter.`, "info");
+      const next = encodeURIComponent("kochansicht.html" + window.location.search);
+      showMessage(`Bitte zuerst <a href="./?next=${next}">im Kochbuch anmelden</a> – danach geht es hier weiter.`, "info");
       return;
     }
-    const view = await getJson(`/api/views/${encodeURIComponent(code)}`);
+    const view = await getJson(`api/views/${encodeURIComponent(code)}`);
     if(!view.ok){
       showMessage(escapeHtml(view.payload.error || `Fehler (HTTP ${view.status}).`));
       return;

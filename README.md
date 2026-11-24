@@ -10,12 +10,27 @@ Die Daten liegen in einer SQLite-Datenbank auf dem Server, der Browser greift
 node server.js
 ```
 
-Dann http://localhost:3000/ öffnen.
+Dann http://localhost:3000/kochbuch/ öffnen (`/` leitet dorthin um).
+
+Live läuft das Kochbuch auf trex hinter dem Verteiler unter
+**https://chollet.corvent.ch/kochbuch/** (siehe Ast `verteiler`, README dort).
 
 | Variante | Befehl |
 |---|---|
 | Anderer Port | `node server.js 8080` |
 | Andere Datenbankdatei | `KOCHBUCH_DB=test.sqlite node server.js` |
+| Anderer Unterpfad | `KOCHBUCH_BASE=/rezepte` (`""` = ohne Unterpfad, wie früher) |
+| Netzwerkadresse | `KOCHBUCH_HOST=127.0.0.1` (auf trex: nur über nginx erreichbar) |
+
+### Unterpfad /kochbuch
+
+Alle Adressen im Browser sind relativ (`api/...`, `kochansicht.html`), der
+Server nimmt nur Anfragen unter `/kochbuch/` an. Das Cookie
+`kochbuch_session` gilt nur für `/kochbuch/`; ein altes Cookie für `/` aus der
+Zeit vor dem Umzug wird beim Anmelden und Abmelden gelöscht. Der Service
+Worker arbeitet nur in `/kochbuch/` und löscht nur eigene Caches
+(`kochbuch-…`). Alte Kochansicht-Links `/kochansicht.html?code=…` leiten auf
+`/kochbuch/kochansicht.html?code=…` um.
 
 **Keine Abhängigkeiten** – kein `npm install`, kein `node_modules`. Das Projekt
 nutzt ausschließlich Node.js-Standardmodule, inklusive des eingebauten
@@ -346,9 +361,12 @@ Link geöffnet), lädt der Button stattdessen `/?recipe=<id>` – das Kochbuch
 Das Kochbuch lässt sich nicht aus einer anderen Anwendung heraus öffnen.
 `server.js` prüft jede Anfrage vor allem anderen:
 
-- Erlaubt sind nur Aufrufe aus dem Kochbuch selbst (`Sec-Fetch-Site:
-  same-origin`) und direkte Aufrufe über Adresszeile, Lesezeichen oder die
-  installierte App (`none`).
+- Erlaubt sind nur Aufrufe aus dem Kochbuch selbst und direkte Aufrufe über
+  Adresszeile, Lesezeichen oder die installierte App (`Sec-Fetch-Site: none`).
+- Auf trex teilen sich alle Apps den Host `chollet.corvent.ch` – für den
+  Browser ist das eine Herkunft. Deshalb zählt der **Pfad der auslösenden
+  Seite** (Referer): `/kochbuch/…` ist erlaubt, von der Startseite `/` nur
+  Seitenaufrufe (Kachel), alles aus `/travelfy/` oder anderen Apps → `403`.
 - `same-site` (anderer Port desselben Rechners, z. B. Travelfy auf
   `localhost:3001`) und `cross-site` bekommen `403 Wechsel gesperrt` – bei
   Seiten ohne Link, bei `/api` als JSON. Das gilt für Links, Formulare,

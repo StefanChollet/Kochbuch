@@ -18,6 +18,14 @@ const { HttpError } = db;
 
 const MAX_BODY_BYTES = 32 * 1024 * 1024; // deckt mehrere Bilder je Rezept ab
 const SESSION_COOKIE = "kochbuch_session";
+// Das Cookie gilt nur fuer den eigenen Unterpfad (z.B. /kochbuch/): andere
+// Apps unter demselben Host bekommen die Kochbuch-Sitzung nie zu sehen.
+let cookiePath = "/";
+
+/** Vom Server beim Start gesetzt: { base: "/kochbuch" } */
+function configure({ base = "" } = {}) {
+  cookiePath = `${base}/`;
+}
 
 // Schutz gegen Passwort-Raten: hoechstens so viele Fehlversuche je IP im Zeitfenster.
 const LOGIN_MAX_FAILURES = 10;
@@ -94,17 +102,30 @@ function isHttps(req) {
 
 function setSessionCookie(req, res, token) {
   const parts = [
-    `${SESSION_COOKIE}=${token}`, "Path=/", "HttpOnly", "SameSite=Lax",
+    `${SESSION_COOKIE}=${token}`, `Path=${cookiePath}`, "HttpOnly", "SameSite=Lax",
     `Max-Age=${db.SESSION_DAYS * 86400}`,
   ];
   if (isHttps(req)) parts.push("Secure");
-  res.setHeader("Set-Cookie", parts.join("; "));
+  res.setHeader("Set-Cookie", [parts.join("; "), ...legacyCookieCleanup(req)]);
 }
 
 function clearSessionCookie(req, res) {
+  const parts = [`${SESSION_COOKIE}=`, `Path=${cookiePath}`, "HttpOnly", "SameSite=Lax", "Max-Age=0"];
+  if (isHttps(req)) parts.push("Secure");
+  res.setHeader("Set-Cookie", [parts.join("; "), ...legacyCookieCleanup(req)]);
+}
+
+/**
+ * Vor dem Umzug unter /kochbuch/ galt das Cookie fuer "/" (den ganzen Host).
+ * Beim Anmelden und Abmelden wird dieses alte Cookie geloescht - sonst
+ * bliebe man nach dem Abmelden ueber das alte Cookie angemeldet, und es
+ * ginge weiter an alle anderen Apps auf dem Host.
+ */
+function legacyCookieCleanup(req) {
+  if (cookiePath === "/") return [];
   const parts = [`${SESSION_COOKIE}=`, "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=0"];
   if (isHttps(req)) parts.push("Secure");
-  res.setHeader("Set-Cookie", parts.join("; "));
+  return [parts.join("; ")];
 }
 
 function clientIp(req) {
@@ -279,7 +300,7 @@ const routes = [
 
   ["POST", /^\/api\/recipes$/, async (req, res, ctx) => {
     const recipe = db.createRecipe(await readJson(req), ctx.account.id);
-    res.setHeader("Location", `/api/recipes/${recipe.id}`);
+    res.setHeader("Location", `recipes/${recipe.id}`);
     sendJson(res, 201, recipe);
   }, "write"],
 
@@ -305,7 +326,7 @@ const routes = [
   ["POST", /^\/api\/recipes\/([^/]+)\/views$/, async (req, res, ctx, id) => {
     requireRecipeAccess(ctx, id);
     const code = db.createRecipeView(id, ctx.account.id);
-    sendJson(res, 201, { code, url: `/kochansicht.html?code=${code}` });
+    sendJson(res, 201, { code, url: `kochansicht.html?code=${code}` });
   }],
 
   // Liefert genau das eine Rezept zum Code - sonst nichts.
@@ -432,4 +453,4 @@ async function handle(req, res, pathname) {
   return true;
 }
 
-module.exports = { handle, MAX_BODY_BYTES };
+module.exports = { handle, configure, MAX_BODY_BYTES };

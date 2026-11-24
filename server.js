@@ -3,16 +3,23 @@
 /*
   Webserver fuer das Kochbuch-Projekt.
 
-  Zwei Aufgaben:
-    1. /api/...  -> REST-API (siehe api.js), Daten liegen in SQLite (siehe db.js)
-    2. alles andere -> statische Dateien aus ./public
+  Das Kochbuch laeuft unter einem Unterpfad (Standard /kochbuch) - auf trex
+  hinter dem Verteiler: https://chollet.corvent.ch/kochbuch/
+
+  Aufgaben:
+    1. Sprung-Sperre: Anfragen anderer Anwendungen werden abgewiesen
+    2. /kochbuch/api/...  -> REST-API (siehe api.js), Daten in SQLite (db.js)
+    3. /kochbuch/...      -> statische Dateien aus ./public
 
   Nur Node.js-Standardmodule, keine Abhaengigkeiten, kein npm install.
 
-  Start:  node server.js          (Port 3000)
+  Start:  node server.js          (Port 3000, http://localhost:3000/kochbuch/)
           node server.js 8080     (anderer Port)
   Umgebung:
-          KOCHBUCH_DB=pfad.sqlite node server.js
+          KOCHBUCH_DB=pfad.sqlite      Datenbankdatei
+          KOCHBUCH_BASE=/kochbuch      Unterpfad ("" = ohne Unterpfad)
+          KOCHBUCH_HOST=127.0.0.1      Netzwerkadresse (Standard: alle; auf
+                                       trex 127.0.0.1 = nur ueber nginx)
           KOCHBUCH_ADMIN_PASSWORD=...  Startpasswort des Admins, nur beim
                                        allerersten Start (sonst zufaellig,
                                        steht dann einmalig im Log)
@@ -32,6 +39,19 @@ const DB_FILE = process.env.KOCHBUCH_DB
   ? path.resolve(process.env.KOCHBUCH_DB)
   : path.join(__dirname, "kochbuch.sqlite");
 const INDEX = "kochbuch.html";
+const HOST = process.env.KOCHBUCH_HOST || undefined;   // undefined = alle Schnittstellen
+// Unterpfad ohne Schraegstrich am Ende: "/kochbuch" (oder "" fuer die Wurzel).
+const BASE = normalizeBase(process.env.KOCHBUCH_BASE ?? "/kochbuch");
+
+function normalizeBase(value) {
+  const trimmed = String(value).trim().replace(/\/+$/, "");
+  if (!trimmed) return "";
+  if (!/^\/[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/.test(trimmed)) {
+    console.error(`Ungueltiger Unterpfad KOCHBUCH_BASE="${value}" - erwartet z.B. /kochbuch`);
+    process.exit(1);
+  }
+  return trimmed;
+}
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -78,35 +98,67 @@ function hostOf(url) {
   try { return new URL(url).host.toLowerCase(); } catch { return null; }
 }
 
+/** Pfad einer URL, wenn sie auf den eigenen Host zeigt - sonst null. */
+function ownPathOf(url, host) {
+  try {
+    const u = new URL(url);
+    return u.host.toLowerCase() === host ? u.pathname : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Seite des Kochbuchs selbst? (Ohne Unterpfad gehoert der ganze Host dem Kochbuch.) */
+function isOwnPath(p) {
+  return p !== null && (BASE === "" || p === BASE || p.startsWith(BASE + "/"));
+}
+
+/** Die Startseite des Verteilers (https://chollet.corvent.ch/). */
+function isVerteilerPath(p) {
+  return BASE !== "" && (p === "/" || p === "/index.html");
+}
+
 /**
  * Wurde die Anfrage von einer anderen Anwendung ausgeloest? Dann liefert
  * die Funktion den Grund, sonst null.
  *
- * Moderne Browser schicken Sec-Fetch-Site mit:
- *   "same-origin" - vom Kochbuch selbst            -> erlaubt
- *   "none"        - Adresszeile, Lesezeichen, App  -> erlaubt
- *   "same-site"   - anderer Port/Subdomain desselben Rechners,
- *                   z.B. Travelfy auf localhost:3001  -> gesperrt
- *   "cross-site"  - beliebige fremde Seite         -> gesperrt
- * Fehlt die Kopfzeile (alte Browser), entscheiden Origin und Referer.
+ * Auf trex teilen sich alle Apps einen Host (chollet.corvent.ch/<app>/).
+ * Fuer den Browser ist das EINE Herkunft - deshalb zaehlt hier der Pfad
+ * der ausloesenden Seite (Referer), nicht nur der Host:
+ *   Sec-Fetch-Site "none"         Adresszeile, Lesezeichen, App -> erlaubt
+ *   "same-site" / "cross-site"    anderer Host/Port             -> gesperrt
+ *   gleicher Host, Referer ...
+ *     /kochbuch/...               das Kochbuch selbst           -> erlaubt
+ *     /  (Verteiler-Startseite)   nur Seitenaufruf (Kachel)     -> erlaubt
+ *     /travelfy/... o.ae.         andere App                    -> gesperrt
+ * Alte Browser ohne Sec-Fetch-Site: dieselbe Pruefung ueber Origin/Referer.
  */
 function foreignOrigin(req) {
   const site = req.headers["sec-fetch-site"];
-  if (site) {
-    return site === "same-origin" || site === "none" ? null : `Sec-Fetch-Site: ${site}`;
-  }
+  if (site === "none") return null;
+  if (site && site !== "same-origin") return `Sec-Fetch-Site: ${site}`;
+
   const host = ownHost(req);
   const origin = req.headers.origin;
   if (origin === "null") return "Origin: null";
   if (origin && hostOf(origin) !== host) return `Origin: ${origin}`;
+
+  const navigate = req.headers["sec-fetch-mode"] === "navigate";
   const referer = req.headers.referer;
-  if (referer && hostOf(referer) !== host) return `Referer: ${referer}`;
+  if (referer) {
+    const from = ownPathOf(referer, host);
+    if (isOwnPath(from)) return null;
+    if (isVerteilerPath(from) && (navigate || !site)) return null;
+    return `Referer: ${referer}`;
+  }
+  // Ohne Referer (Neuladen mit F5, Service-Worker-Aktualisierung): erlaubt.
+  // Keine der Apps erzeugt Links ohne Referer (rel=noreferrer).
   return null;
 }
 
 function rejectForeign(req, res, pathname, reason) {
   console.warn(`Sprung-Sperre: ${req.method} ${pathname} abgewiesen (${reason})`);
-  if (pathname.startsWith("/api/")) {
+  if (pathname.startsWith(`${BASE}/api/`)) {
     res.writeHead(403, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
     res.end(JSON.stringify({ error: "Anfrage aus einer anderen Anwendung abgelehnt." }));
     return;
@@ -191,9 +243,25 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Unterpfad: /kochbuch -> /kochbuch/ ; "/" und alte Kochansicht-Links von
+  // vor dem Umzug (/kochansicht.html?code=...) auf die neue Adresse umleiten.
+  if (BASE && (pathname === BASE || pathname === "/" || pathname === "/kochansicht.html")) {
+    const query = new URL(req.url, "http://internal").search;
+    const target = pathname === "/kochansicht.html" ? `${BASE}/kochansicht.html${query}` : `${BASE}/`;
+    res.writeHead(302, { Location: target, "Cache-Control": "no-store" });
+    res.end();
+    return;
+  }
+  if (BASE && !pathname.startsWith(BASE + "/")) {
+    res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Nicht gefunden");
+    return;
+  }
+  const appPath = pathname.slice(BASE.length);
+
   try {
-    const handledByApi = await api.handle(req, res, pathname);
-    if (!handledByApi) await serveStatic(req, res, pathname);
+    const handledByApi = await api.handle(req, res, appPath);
+    if (!handledByApi) await serveStatic(req, res, appPath);
   } catch (err) {
     console.error(`Unbehandelter Fehler bei ${req.method} ${pathname}:`, err);
     if (!res.headersSent) {
@@ -226,9 +294,11 @@ try {
   process.exit(1);
 }
 
-server.listen(PORT, () => {
+api.configure({ base: BASE });
+
+server.listen(PORT, HOST, () => {
   const stats = db.getStats();
-  console.log(`Kochbuch laeuft auf http://localhost:${PORT}/`);
+  console.log(`Kochbuch laeuft auf http://${HOST && HOST !== "127.0.0.1" ? HOST : "localhost"}:${PORT}${BASE}/`);
   console.log(`Datenbank: ${DB_FILE}`);
   console.log(
     `Bestand:   ${stats.recipes} Rezepte, ${stats.images} Bilder ` +

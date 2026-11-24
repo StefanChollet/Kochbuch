@@ -5,7 +5,7 @@
    Netzwerk- und HTTP-Fehler kommen einheitlich als Error mit lesbarem Text.
    ========================================================================= */
 const API = {
-  base: "/api",
+  base: "api",   // relativ: /kochbuch/api/...
 
   async request(method, path, body){
     let res;
@@ -923,7 +923,7 @@ async function openCookView(id){
     if(win){
       win.location.href = url;
     }else{
-      showStatus(`Kochansicht: ${window.location.origin}${url}`, "info");
+      showStatus(`Kochansicht: ${new URL(url, window.location.href).href}`, "info");
     }
   });
   if(!ok && win) win.close();
@@ -1536,7 +1536,8 @@ authForm.addEventListener("submit", async (e) => {
     // Kam die Anmeldung von einer Kochansicht, dorthin zurueck - nur auf
     // genau diese eigene Seite, damit ?next= nirgendwo sonst hinfuehrt.
     const next = new URLSearchParams(window.location.search).get("next") || "";
-    if(/^\/kochansicht\.html\?code=[A-Za-z0-9]{24,30}$/.test(next)){
+    // Relativ zur App (kochansicht.html?code=...), damit es unter /kochbuch/ bleibt.
+    if(/^kochansicht\.html\?code=[A-Za-z0-9]{24,30}$/.test(next)){
       window.location.replace(next);
       return;
     }
@@ -1603,7 +1604,7 @@ async function openRecipeFromUrl(){
    ========================================================================= */
 if("serviceWorker" in navigator){
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(err => console.warn("Service Worker:", err));
+    navigator.serviceWorker.register("sw.js").catch(err => console.warn("Service Worker:", err));
   });
 }
 

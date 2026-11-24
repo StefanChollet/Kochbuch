@@ -13,38 +13,41 @@
    nur ohne Netz kommt die zuletzt gespeicherte Fassung.
    ========================================================================= */
 
-const CACHE = "kochbuch-shell-v29";
+const CACHE = "kochbuch-shell-v30";
+// Basis der App = Verzeichnis dieses Skripts, z.B. "/kochbuch/".
+const BASE = new URL("./", self.location.href).pathname;
 const SHELL = [
-  "/",
-  "/kochbuch.css",
-  "/kochbuch.js",
-  "/kochansicht.html",
-  "/kochansicht.css",
-  "/kochansicht.js",
-  "/manifest.webmanifest",
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
-  "/icons/apple-touch-icon.png",
-  "/icons/favicon-32.png",
-];
+  "",
+  "kochbuch.css",
+  "kochbuch.js",
+  "kochansicht.html",
+  "kochansicht.css",
+  "kochansicht.js",
+  "manifest.webmanifest",
+  "icons/icon-192.png",
+  "icons/icon-512.png",
+  "icons/apple-touch-icon.png",
+  "icons/favicon-32.png",
+].map((p) => BASE + p);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (event) => {
-  // Alte Huellen-Versionen wegraeumen.
+  // Alte Huellen-Versionen wegraeumen - nur die eigenen: auf demselben Host
+  // liegen auch die Speicher anderer Apps (z.B. Travelfy).
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith("kochbuch-") && k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
 
-/** Cache-Schluessel ohne Query: /kochansicht.html?code=... landet als /kochansicht.html -
+/** Cache-Schluessel ohne Query: kochansicht.html?code=... landet als kochansicht.html -
     der Zugangscode wird so nie im Cache abgelegt. */
 function shellKey(url) {
-  return url.pathname === "/kochbuch.html" ? "/" : url.pathname;
+  return url.pathname === BASE + "kochbuch.html" ? BASE : url.pathname;
 }
 
 self.addEventListener("fetch", (event) => {
@@ -52,7 +55,8 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;  // z.B. Google Fonts: Browser regelt das
-  if (url.pathname.startsWith("/api/")) return;      // private Daten: nie anfassen
+  if (!url.pathname.startsWith(BASE)) return;          // andere Apps auf diesem Host
+  if (url.pathname.startsWith(BASE + "api/")) return;  // private Daten: nie anfassen
 
   const key = shellKey(url);
   if (!SHELL.includes(key)) return;

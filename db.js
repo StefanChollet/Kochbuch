@@ -345,7 +345,7 @@ function listRecipesPage(options = {}) {
   // Rezepts, falls vorhanden. Die Bytes selbst kommen wie ueberall ueber
   // GET /api/images/:id - hier wird nur die id in eine URL uebersetzt.
   for (const item of items) {
-    item.thumbnailUrl = item.firstImageId ? `/api/images/${item.firstImageId}` : null;
+    item.thumbnailUrl = item.firstImageId ? `api/images/${item.firstImageId}` : null;
     delete item.firstImageId;
   }
 
@@ -396,7 +396,7 @@ function getRecipe(id) {
   // Bewusst ohne Spalte "data" - die Bytes kommen ueber GET /api/images/:id.
   recipe.images = db.prepare(`
     SELECT id, name, mime, bytes FROM images WHERE recipe_id = ? ORDER BY position
-  `).all(id).map((img) => ({ ...img, url: `/api/images/${img.id}` }));
+  `).all(id).map((img) => ({ ...img, url: `api/images/${img.id}` }));
 
   return recipe;
 }
@@ -1181,7 +1181,7 @@ function getRecommendations(options = {}) {
       totalIngredients: r.totalIngredients,
       matched: r.matched,
       missing: r.missing,
-      thumbnailUrl: thumbByRecipe.has(r.id) ? `/api/images/${thumbByRecipe.get(r.id)}` : null,
+      thumbnailUrl: thumbByRecipe.has(r.id) ? `api/images/${thumbByRecipe.get(r.id)}` : null,
     })),
     basedOnFridge: picked.some((r) => r.reason === "fridge"),
     fridgeItems: fridge.length,
