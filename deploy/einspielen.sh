@@ -48,7 +48,11 @@ deploy_app() {
   remote "set -e; d=$dir
     if docker ps --format '{{.Names}}' | grep -qx '$id'; then
       for f in \$(cd \$d/data 2>/dev/null && ls *.sqlite 2>/dev/null); do
-        docker exec $id node -e \"new (require('node:sqlite').DatabaseSync)('/data/'+process.argv[1]).exec(\\\"VACUUM INTO '/data/\"+process.argv[1]+\".bak-vor-update-$TS'\\\")\" \"\$f\"
+        # Dateiname per Umgebungsvariable, nicht im Code - kein Quoting-Salat.
+        docker exec -e F=\"\$f\" -e T=$TS $id node --no-warnings -e '
+          const f = process.env.F, ziel = \"/data/\" + f + \".bak-vor-update-\" + process.env.T;
+          new (require(\"node:sqlite\").DatabaseSync)(\"/data/\" + f).exec(\"VACUUM INTO \x27\" + ziel + \"\x27\");'
+        test -s \"\$d/data/\$f.bak-vor-update-$TS\" || { echo \"   Sicherung von \$f fehlgeschlagen\"; exit 1; }
         echo \"   Sicherung: \$d/data/\$f.bak-vor-update-$TS\"
       done
     fi"
