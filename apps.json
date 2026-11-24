@@ -1,0 +1,22 @@
+{
+  "titel": "Chollet Apps",
+  "host": "chollet.corvent.ch",
+  "apps": [
+    {
+      "id": "kochbuch",
+      "name": "Kochbuch",
+      "beschreibung": "Rezepte, Zutaten und Kühlschrank – mit Kochansicht zum Nachkochen.",
+      "port": 3000,
+      "farbe": "#2F4B3C",
+      "icon": "icons/kochbuch.png"
+    },
+    {
+      "id": "travelfy",
+      "name": "Travelfy",
+      "beschreibung": "Reisen erfassen und verwalten – mit Stationen, Bildern und Reisebericht.",
+      "port": 3001,
+      "farbe": "#C27A00",
+      "icon": "icons/travelfy.png"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "titel": "Chollet Apps",
+  "apps": [
+    {
+      "id": "kochbuch",
+      "name": "Kochbuch",
+      "beschreibung": "Rezepte, Zutaten und Kühlschrank – mit Kochansicht zum Nachkochen.",
+      "farbe": "#2F4B3C",
+      "icon": "icons/kochbuch.png"
+    },
+    {
+      "id": "travelfy",
+      "name": "Travelfy",
+      "beschreibung": "Reisen erfassen und verwalten – mit Stationen, Bildern und Reisebericht.",
+      "farbe": "#C27A00",
+      "icon": "icons/travelfy.png"
+    }
+  ]
+}

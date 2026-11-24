@@ -1,0 +1,95 @@
+:root{
+  --bg: #F7F5EE;
+  --surface: #FFFFFF;
+  --ink: #2A2A24;
+  --ink-soft: #6B695E;
+  --line: #E2DED0;
+  --shadow: 0 8px 24px rgba(40, 38, 20, 0.08);
+  --font-display: "Source Serif 4", Georgia, serif;
+  --font-body: "IBM Plex Sans", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg: #1A1A16;
+    --surface: #24241F;
+    --ink: #EEECE2;
+    --ink-soft: #ABA894;
+    --line: #3C3B32;
+    --shadow: 0 8px 28px rgba(0,0,0,0.45);
+  }
+}
+
+*{ box-sizing: border-box; }
+body{
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  line-height: 1.5;
+}
+
+.head{
+  padding: 3rem 1.5rem 1rem;
+  text-align: center;
+}
+.head h1{
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 2rem;
+  margin: 0;
+}
+.sub{ margin: .3rem 0 0; color: var(--ink-soft); }
+
+main{ flex: 1; padding: 1.5rem; }
+.apps{
+  list-style: none;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 900px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1.25rem;
+}
+
+.app{
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  height: 100%;
+  padding: 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-top: 5px solid var(--app-farbe, var(--ink-soft));
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  color: inherit;
+  text-decoration: none;
+  transition: transform .1s ease, box-shadow .15s ease;
+}
+.app:hover{ transform: translateY(-3px); box-shadow: 0 12px 30px rgba(40, 38, 20, 0.14); }
+.app:focus-visible{ outline: 3px solid var(--app-farbe, var(--ink)); outline-offset: 3px; }
+.app-icon{ width: 64px; height: 64px; flex: 0 0 auto; border-radius: 50%; }
+.app-text{ display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+.app-name{
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.3rem;
+  color: var(--app-farbe, var(--ink));
+}
+@media (prefers-color-scheme: dark){
+  .app-name{ color: var(--ink); }
+}
+.app-desc{ font-size: .88rem; color: var(--ink-soft); }
+.app-url{ font-size: .75rem; color: var(--ink-soft); opacity: .8; }
+
+.fehler{ color: #A3402F; text-align: center; }
+
+.foot{
+  padding: 1.5rem;
+  text-align: center;
+  font-size: .8rem;
+  color: var(--ink-soft);
+}
