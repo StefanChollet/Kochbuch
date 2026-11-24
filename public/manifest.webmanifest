@@ -3,7 +3,7 @@
   "short_name": "Travelfy",
   "description": "Reisen erfassen und verwalten – mit Stationen, Bildern und Reisebericht.",
   "lang": "de",
-  "id": "./",
+  "id": "travelfy",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
