@@ -341,6 +341,27 @@ Link geöffnet), lädt der Button stattdessen `/?recipe=<id>` – das Kochbuch
   darüber nichts. In der Datenbank liegt nur sein SHA-256. Wird das Rezept
   gelöscht, sind seine Links ungültig.
 
+## Sprung-Sperre (Trennung von anderen Apps, z. B. Travelfy)
+
+Das Kochbuch lässt sich nicht aus einer anderen Anwendung heraus öffnen.
+`server.js` prüft jede Anfrage vor allem anderen:
+
+- Erlaubt sind nur Aufrufe aus dem Kochbuch selbst (`Sec-Fetch-Site:
+  same-origin`) und direkte Aufrufe über Adresszeile, Lesezeichen oder die
+  installierte App (`none`).
+- `same-site` (anderer Port desselben Rechners, z. B. Travelfy auf
+  `localhost:3001`) und `cross-site` bekommen `403 Wechsel gesperrt` – bei
+  Seiten ohne Link, bei `/api` als JSON. Das gilt für Links, Formulare,
+  eingebettete Bilder und Skripte.
+- Alte Browser ohne `Sec-Fetch-Site`: ein fremder `Origin` oder `Referer`
+  führt ebenso zu `403`.
+- Zusätzliche Kopfzeilen: `Content-Security-Policy: frame-ancestors 'none'`,
+  `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`,
+  `Cross-Origin-Opener-Policy` und `Cross-Origin-Resource-Policy: same-origin`.
+
+Die Kochansicht (neuer Tab aus dem Kochbuch) ist ein Aufruf aus dem Kochbuch
+selbst und funktioniert unverändert.
+
 ## Benutzer und Rechte
 
 | Rolle | Wer | Darf |

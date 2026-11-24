@@ -51,6 +51,78 @@ const MIME = {
   ".txt": "text/plain; charset=utf-8",
 };
 
+/* ---------------------------------------------------- Sprung-Sperre */
+
+// Abschottung gegen andere Anwendungen (z.B. Travelfy auf localhost:3001):
+//  - frame-ancestors/X-Frame-Options: das Kochbuch laesst sich nirgends einbetten
+//  - Referrer-Policy same-origin: verlaesst man das Kochbuch, erfaehrt das Ziel
+//    nicht, woher man kommt
+//  - COOP same-origin: kein Fenster einer anderen App behaelt einen Griff
+//    (window.opener) auf das Kochbuch und umgekehrt
+//  - CORP same-origin: Bilder/Skripte des Kochbuchs laden nur im Kochbuch
+const SECURITY_HEADERS = {
+  "Content-Security-Policy": "frame-ancestors 'none'",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "same-origin",
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "Cross-Origin-Resource-Policy": "same-origin",
+  "X-Content-Type-Options": "nosniff",
+};
+
+/** Host, unter dem das Kochbuch gerade angesprochen wird (hinter nginx: X-Forwarded-Host). */
+function ownHost(req) {
+  return String(req.headers["x-forwarded-host"] || req.headers.host || "").toLowerCase();
+}
+
+function hostOf(url) {
+  try { return new URL(url).host.toLowerCase(); } catch { return null; }
+}
+
+/**
+ * Wurde die Anfrage von einer anderen Anwendung ausgeloest? Dann liefert
+ * die Funktion den Grund, sonst null.
+ *
+ * Moderne Browser schicken Sec-Fetch-Site mit:
+ *   "same-origin" - vom Kochbuch selbst            -> erlaubt
+ *   "none"        - Adresszeile, Lesezeichen, App  -> erlaubt
+ *   "same-site"   - anderer Port/Subdomain desselben Rechners,
+ *                   z.B. Travelfy auf localhost:3001  -> gesperrt
+ *   "cross-site"  - beliebige fremde Seite         -> gesperrt
+ * Fehlt die Kopfzeile (alte Browser), entscheiden Origin und Referer.
+ */
+function foreignOrigin(req) {
+  const site = req.headers["sec-fetch-site"];
+  if (site) {
+    return site === "same-origin" || site === "none" ? null : `Sec-Fetch-Site: ${site}`;
+  }
+  const host = ownHost(req);
+  const origin = req.headers.origin;
+  if (origin === "null") return "Origin: null";
+  if (origin && hostOf(origin) !== host) return `Origin: ${origin}`;
+  const referer = req.headers.referer;
+  if (referer && hostOf(referer) !== host) return `Referer: ${referer}`;
+  return null;
+}
+
+function rejectForeign(req, res, pathname, reason) {
+  console.warn(`Sprung-Sperre: ${req.method} ${pathname} abgewiesen (${reason})`);
+  if (pathname.startsWith("/api/")) {
+    res.writeHead(403, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+    res.end(JSON.stringify({ error: "Anfrage aus einer anderen Anwendung abgelehnt." }));
+    return;
+  }
+  // Bewusst ohne Link: auch nicht zum Kochbuch selbst - sonst waere der
+  // Wechsel nur einen Klick weiter doch moeglich.
+  res.writeHead(403, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+  res.end(
+    "<!DOCTYPE html><html lang=de><meta charset=utf-8><title>Kochbuch – Wechsel gesperrt</title>" +
+    "<body><h1>Wechsel gesperrt</h1>" +
+    "<p>Das Kochbuch lässt sich nicht aus einer anderen Anwendung heraus öffnen.</p>" +
+    "<p>Bitte das Kochbuch direkt über die Adresszeile, ein Lesezeichen oder die installierte App starten.</p>" +
+    "</body></html>"
+  );
+}
+
 /* ------------------------------------------------- statische Dateien */
 
 async function serveStatic(req, res, pathname) {
@@ -110,6 +182,14 @@ const server = http.createServer(async (req, res) => {
   res.on("finish", () => {
     console.log(`${req.method} ${pathname} -> ${res.statusCode} (${Date.now() - started} ms)`);
   });
+
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
+
+  const reason = foreignOrigin(req);
+  if (reason) {
+    rejectForeign(req, res, pathname, reason);
+    return;
+  }
 
   try {
     const handledByApi = await api.handle(req, res, pathname);
