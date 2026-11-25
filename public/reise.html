@@ -199,11 +199,13 @@
             </label>
             <label class="draw-color-row">Farben
               <select id="drawWaFill">
-                <option value="solid">eine Farbe („Farbe“)</option>
+                <option value="solid">eine Farbe</option>
                 <option value="gradient">Verlauf</option>
                 <option value="rainbow">Regenbogen</option>
               </select>
             </label>
+            <!-- Eigene WordArt-Farbe: Vorlagen aendern nur sie, nie die allgemeine "Farbe" -->
+            <label class="draw-color-row" id="drawWaC1Row"><span id="drawWaC1Label">Farbe</span> <input type="color" id="drawWaC1" value="#2d2915"></label>
             <label class="draw-color-row" id="drawWaC2Row">bis <input type="color" id="drawWaC2" value="#c0392b">
               <select id="drawWaDir" aria-label="Richtung des Verlaufs">
                 <option value="h">→ waagrecht</option>

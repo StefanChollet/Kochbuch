@@ -131,11 +131,14 @@ Schreibrecht und grüner Ampel) ein grosses Fenster mit einem Blatt von
   Pfeilen im Feld in Einzelschritten.
 - **✨ WordArt** (Text): Text verformen – *Bogen oben*, *Bogen unten*, *Kreis*,
   *Welle*, *Schräg*, *Aufblähen*, *Perspektive* mit Stärke 0–100 %; Farben *eine
-  Farbe* (Knopf *Farbe*), *Verlauf* (waagrecht/senkrecht, von *Farbe* bis zweite
+  Farbe*, *Verlauf* (waagrecht/senkrecht, von der WordArt-Farbe bis zu einer zweiten
   Farbe) oder *Regenbogen*; *Kontur* (Farbe, Breite 0–12) und *Schatten*. Sechs
   Vorlagen (Regenbogen, Gold, Meereswelle, Feuer, Stempel, Kreis) setzen alles auf
   einmal. Die Buchstaben werden einzeln entlang der Form gesetzt; der Verlauf
   läuft glatt über den ganzen Schriftzug.
+  WordArt hat eine **eigene Farbe**: Vorlagen ändern nur sie, nie die allgemeine
+  *Farbe*. Ist WordArt aus, hat der Text wieder seine normale Farbe – ein heller
+  Vorlagen-Ton (z. B. Weiss bei „Stempel“) kann so keinen späteren Text unsichtbar machen.
 - **Drehen** (Quadrat/Rechteck, Dreieck, Kreis, Foto): am runden Griff ↻ über der
   ausgewählten Form ziehen (Umschalt = 15°-Schritte) oder Gradzahl −180…180 im
   Feld *Drehen*. Füllung, Foto und abgeflachte Ecken drehen mit.

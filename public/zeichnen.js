@@ -113,6 +113,7 @@ const Zeichnen = (() => {
   const waShape = document.getElementById("drawWaShape");
   const waAmount = document.getElementById("drawWaAmount");
   const waFill = document.getElementById("drawWaFill");
+  const waC1 = document.getElementById("drawWaC1");
   const waC2 = document.getElementById("drawWaC2");
   const waDir = document.getElementById("drawWaDir");
   const waOutline = document.getElementById("drawWaOutline");
@@ -121,7 +122,7 @@ const Zeichnen = (() => {
   /** WordArt-Einstellung als eigenes (unveraenderliches) Objekt. */
   const currentWa = () => ({
     shape: waShape.value, amount: Number(waAmount.value) / 100,
-    fill: waFill.value, c2: waC2.value, dir: waDir.value,
+    fill: waFill.value, c1: waC1.value, c2: waC2.value, dir: waDir.value,
     outline: waOutline.value, outlineWidth: Number(waOutlineWidth.value), shadow: waShadow.checked,
   });
   /** Nichts Besonderes eingestellt: Text wird wie bisher gezeichnet. */
@@ -462,7 +463,7 @@ const Zeichnen = (() => {
       o.translate(g.x, g.y);
       o.rotate(g.angle);
       o.scale(g.sx, g.sy);
-      o.fillStyle = wa.fill === "rainbow" ? `hsl(${Math.round(i / Math.max(1, glyphs.length - 1) * 300)}, 85%, 50%)` : el.color;
+      o.fillStyle = wa.fill === "rainbow" ? `hsl(${Math.round(i / Math.max(1, glyphs.length - 1) * 300)}, 85%, 50%)` : (wa.c1 || el.color);
       o.fillText(g.ch, 0, 0);
       o.restore();
     });
@@ -470,7 +471,7 @@ const Zeichnen = (() => {
       o.setTransform(1, 0, 0, 1, 0, 0);
       o.globalCompositeOperation = "source-in";
       const grad = wa.dir === "v" ? o.createLinearGradient(0, 0, 0, off.height) : o.createLinearGradient(0, 0, off.width, 0);
-      grad.addColorStop(0, el.color);
+      grad.addColorStop(0, wa.c1 || el.color);
       grad.addColorStop(1, wa.c2);
       o.fillStyle = grad;
       o.fillRect(0, 0, off.width, off.height);
@@ -720,7 +721,7 @@ const Zeichnen = (() => {
         if(selected.type === "text"){
           fontSelect.value = selected.font || DEFAULT_FONT;
           fontSizeInput.value = String(Math.round(selected.size));
-          setWaControls(selected.wa);
+          setWaControls(selected.wa, selected.color);
         }
       }
     }
@@ -843,23 +844,25 @@ const Zeichnen = (() => {
   const waBtn = document.getElementById("drawWaBtn");
   const waPop = document.getElementById("drawWaPop");
   const WA_SHAPE_LABELS = { none: "", arcUp: "Bogen oben", arcDown: "Bogen unten", circle: "Kreis", wave: "Welle", slant: "Schräg", bulge: "Aufblähen", perspective: "Perspektive" };
-  /** Fertige Vorlagen - setzen auch die Grundfarbe ("Farbe"). */
+  /** Fertige Vorlagen - mit eigener WordArt-Farbe c1; die allgemeine "Farbe" bleibt unberuehrt. */
   const WA_PRESETS = [
-    { name: "Regenbogen", color: "#e74c3c", wa: { shape: "arcUp", amount: 0.55, fill: "rainbow", c2: "#c0392b", dir: "h", outline: "#ffffff", outlineWidth: 2, shadow: true } },
-    { name: "Gold", color: "#ffe259", wa: { shape: "perspective", amount: 0.4, fill: "gradient", c2: "#b8860b", dir: "v", outline: "#6b4e00", outlineWidth: 2, shadow: true } },
-    { name: "Meereswelle", color: "#00c6ff", wa: { shape: "wave", amount: 0.6, fill: "gradient", c2: "#0049b7", dir: "h", outline: "#002a5c", outlineWidth: 1, shadow: false } },
-    { name: "Feuer", color: "#ffd200", wa: { shape: "bulge", amount: 0.55, fill: "gradient", c2: "#e52d27", dir: "v", outline: "#7a0000", outlineWidth: 2, shadow: true } },
-    { name: "Stempel", color: "#ffffff", wa: { shape: "slant", amount: 0.45, fill: "solid", c2: "#c0392b", dir: "h", outline: "#1b1b1b", outlineWidth: 3, shadow: true } },
-    { name: "Kreis", color: "#2d2915", wa: { shape: "circle", amount: 1, fill: "solid", c2: "#c0392b", dir: "h", outline: "#ffffff", outlineWidth: 0, shadow: false } },
+    { name: "Regenbogen", wa: { c1: "#e74c3c", shape: "arcUp", amount: 0.55, fill: "rainbow", c2: "#c0392b", dir: "h", outline: "#ffffff", outlineWidth: 2, shadow: true } },
+    { name: "Gold", wa: { c1: "#ffe259", shape: "perspective", amount: 0.4, fill: "gradient", c2: "#b8860b", dir: "v", outline: "#6b4e00", outlineWidth: 2, shadow: true } },
+    { name: "Meereswelle", wa: { c1: "#00c6ff", shape: "wave", amount: 0.6, fill: "gradient", c2: "#0049b7", dir: "h", outline: "#002a5c", outlineWidth: 1, shadow: false } },
+    { name: "Feuer", wa: { c1: "#ffd200", shape: "bulge", amount: 0.55, fill: "gradient", c2: "#e52d27", dir: "v", outline: "#7a0000", outlineWidth: 2, shadow: true } },
+    { name: "Stempel", wa: { c1: "#ffffff", shape: "slant", amount: 0.45, fill: "solid", c2: "#c0392b", dir: "h", outline: "#1b1b1b", outlineWidth: 3, shadow: true } },
+    { name: "Kreis", wa: { c1: "#2d2915", shape: "circle", amount: 1, fill: "solid", c2: "#c0392b", dir: "h", outline: "#ffffff", outlineWidth: 0, shadow: false } },
   ];
   document.getElementById("drawWaPresets").innerHTML = WA_PRESETS.map((p, i) =>
     `<button type="button" class="draw-wa-preset" data-preset="${i}">${p.name}</button>`).join("");
 
-  function setWaControls(wa){
+  function setWaControls(wa, fallbackColor){
     const w = wa || { shape: "none", amount: 0.5, fill: "solid", c2: waC2.value, dir: "h", outline: waOutline.value, outlineWidth: 0, shadow: false };
     waShape.value = w.shape;
     waAmount.value = String(Math.round((w.amount ?? 0.5) * 100));
     waFill.value = w.fill;
+    // WordArt-Farbe: eigene, sonst (aeltere Texte, WordArt aus) die Textfarbe
+    waC1.value = w.c1 || fallbackColor || colorInput.value;
     if(w.c2) waC2.value = w.c2;
     waDir.value = w.dir === "v" ? "v" : "h";
     if(w.outline) waOutline.value = w.outline;
@@ -872,6 +875,8 @@ const Zeichnen = (() => {
     document.getElementById("drawWaLabel").textContent = isPlainWa(wa) ? "aus" : (WA_SHAPE_LABELS[wa.shape] || "an");
     document.getElementById("drawWaAmountRow").hidden = wa.shape === "none";
     document.getElementById("drawWaAmountOut").textContent = `${waAmount.value} %`;
+    document.getElementById("drawWaC1Row").hidden = wa.fill === "rainbow";
+    document.getElementById("drawWaC1Label").textContent = wa.fill === "gradient" ? "von" : "Farbe";
     document.getElementById("drawWaC2Row").hidden = wa.fill !== "gradient";
     document.getElementById("drawWaOutlineOut").textContent = waOutlineWidth.value;
     document.getElementById("drawWaNote").textContent = selected && selected.type === "text"
@@ -880,7 +885,7 @@ const Zeichnen = (() => {
   }
 
   const applyWa = () => applyStyle(el => { el.wa = currentWa(); }, isText);
-  [waAmount, waC2, waOutline, waOutlineWidth].forEach(inp => {
+  [waAmount, waC1, waC2, waOutline, waOutlineWidth].forEach(inp => {
     inp.addEventListener("input", applyWa);
     inp.addEventListener("change", () => { styleSnapshotDone = false; });
   });
@@ -892,9 +897,9 @@ const Zeichnen = (() => {
     const btn = e.target.closest("[data-preset]");
     if(!btn) return;
     const preset = WA_PRESETS[Number(btn.dataset.preset)];
-    colorInput.value = preset.color;
+    // Nur die WordArt-Farbe - die allgemeine "Farbe" bleibt, wie sie ist.
     setWaControls(preset.wa);
-    applyStyle(el => { el.color = preset.color; el.wa = currentWa(); }, isText);
+    applyStyle(el => { el.wa = currentWa(); }, isText);
     styleSnapshotDone = false;
   });
 
@@ -903,7 +908,11 @@ const Zeichnen = (() => {
     waBtn.setAttribute("aria-expanded", String(open));
     if(open) waShape.focus();
   }
-  waBtn.addEventListener("click", () => { setColorPopOpen(false); setFillPopOpen(false); setWaPopOpen(waPop.hidden); });
+  waBtn.addEventListener("click", () => {
+    // WordArt noch aus: mit der aktuellen Textfarbe beginnen
+    if(waPop.hidden && isPlainWa(currentWa()) && !(selected && selected.type === "text")) waC1.value = colorInput.value;
+    setColorPopOpen(false); setFillPopOpen(false); setWaPopOpen(waPop.hidden);
+  });
 
   /* ---- Schrift ---- */
   const fontWrap = document.getElementById("drawFontWrap");
