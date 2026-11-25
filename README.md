@@ -109,7 +109,7 @@ Schreibrecht und grüner Ampel) ein grosses Fenster mit einem Blatt von
 | Werkzeug | Bedienung |
 |---|---|
 | Spline (S) – ganz links | krumme Linie zeichnen; beim Loslassen wird sie geglättet und zur glatten Kurve (Catmull-Rom-Spline durch gleichmässig verteilte Stützpunkte). Ist eine Freihand-Linie ausgewählt, macht ein Klick auf *Spline* aus ihr einen Spline. |
-| Auswählen (V) | Element anklicken, ziehen = verschieben, Entf = löschen |
+| Auswählen (V) | Klick wählt ein Objekt. **Umrunden:** auf freier Fläche eine Schlinge um mehrere Objekte ziehen – alles, dessen Mitte darin liegt, wird ausgewählt (mit Umschalt: zur Auswahl dazu). **Umschalt+Klick** fügt ein Objekt hinzu oder nimmt es heraus, **Strg+A** wählt alles, Klick ins Leere hebt die Auswahl auf. Ziehen verschiebt alle Ausgewählten, Entf löscht alle; Farbe, Deckkraft, Füllung, Ecken, Schrift, WordArt und Drehen gelten für alle passenden Objekte der Auswahl (ein Rückgängig-Schritt). Der Drehgriff erscheint nur bei einer einzelnen Form. |
 | Freihand (F), Linie (L) | mit gedrückter Maustaste ziehen |
 | Text (T) | ins Blatt klicken, tippen; Enter oder Klick daneben übernimmt (Umschalt+Enter = neue Zeile) |
 | Kreis (K), Quadrat (Q), Dreieck (D) | Box aufziehen; Kreis/Quadrat mit Umschalt exakt rund/quadratisch |

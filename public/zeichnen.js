@@ -28,7 +28,7 @@ const Zeichnen = (() => {
 
   const HINTS = {
     spline: "Krumme Linie zeichnen – beim Loslassen wird daraus eine glatte Kurve (Spline).",
-    select: "Element anklicken zum Auswählen, ziehen zum Verschieben. Entf löscht es.",
+    select: "Klick wählt ein Objekt; auf freier Fläche ziehen umrundet mehrere. Umschalt+Klick: hinzufügen/entfernen. Ziehen verschiebt, Entf löscht.",
     free: "Mit gedrückter Maustaste frei zeichnen.",
     line: "Vom Anfangs- zum Endpunkt ziehen.",
     text: "Ins Blatt klicken, Text tippen, Enter übernimmt.",
@@ -41,7 +41,30 @@ const Zeichnen = (() => {
   let elements = [];      // die Zeichnung
   let history = [];       // fruehere Staende fuer "Rueckgaengig"
   let tool = "rect";
-  let selected = null;    // gewaehltes Element
+  let selected = null;    // gewaehltes Element (bei Mehrfachauswahl: das zuletzt dazugekommene)
+  let multi = [];         // Mehrfachauswahl (mindestens zwei Elemente), sonst leer
+
+  /** Alle ausgewaehlten Elemente - eins, mehrere oder keins. */
+  const selection = () => multi.length ? multi : (selected ? [selected] : []);
+  const isSelected = (el) => el === selected || multi.includes(el);
+  /** Genau dieses eine Element auswaehlen (null = nichts). */
+  function selectOnly(el){ selected = el || null; multi = []; }
+  /** Mehrere Elemente auswaehlen; das letzte steuert die Anzeige der Einstellungen. */
+  function selectMany(list){
+    const uniq = [...new Set(list)];
+    if(uniq.length <= 1){ selectOnly(uniq[0]); return; }
+    multi = uniq;
+    selected = uniq[uniq.length - 1];
+  }
+  /** Liegt der Punkt innerhalb der Schlinge (Strahl-Methode)? */
+  function inPolygon(pt, poly){
+    let inside = false;
+    for(let i = 0, j = poly.length - 1; i < poly.length; j = i++){
+      const [xi, yi] = poly[i], [xj, yj] = poly[j];
+      if((yi > pt.y) !== (yj > pt.y) && pt.x < (xj - xi) * (pt.y - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
   let action = null;      // laufende Mausaktion
   let textInput = null;   // offenes Textfeld
   let onDone = null;
@@ -641,37 +664,54 @@ const Zeichnen = (() => {
     ctx.fillRect(0, 0, W, H);
     elements.forEach(el => drawElement(ctx, el));
     if(action && action.preview) drawElement(ctx, action.preview);
-    if(selected && elements.includes(selected)){
+    // Ausgewaehlte Objekte: gestrichelter Rahmen; Drehgriff nur bei genau einer Form
+    const sel = selection().filter(el => elements.includes(el));
+    for(const el of sel){
       ctx.save();
       ctx.strokeStyle = "#1e88e5";
       ctx.lineWidth = 2;
-      if(ROTATABLE.has(selected.type)){
-        // Mitgedrehter Rahmen + runder Drehgriff ueber der Oberkante
-        const el = selected, m = centerOf(el);
+      if(ROTATABLE.has(el.type)){
+        const m = centerOf(el);
         ctx.translate(m.x, m.y);
         ctx.rotate(rad(el.rotation || 0));
         ctx.setLineDash([10, 6]);
         ctx.strokeRect(-el.w / 2 - 8, -el.h / 2 - 8, el.w + 16, el.h + 16);
-        ctx.setLineDash([]);
-        ctx.beginPath();
-        ctx.moveTo(0, -el.h / 2 - 8);
-        ctx.lineTo(0, -el.h / 2 - 8 - HANDLE_GAP + 11);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(0, -el.h / 2 - 8 - HANDLE_GAP, 11, 0, Math.PI * 2);
-        ctx.fillStyle = "#ffffff";
-        ctx.fill();
-        ctx.stroke();
-        ctx.font = "16px system-ui, sans-serif";
-        ctx.fillStyle = "#1e88e5";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText("↻", 0, -el.h / 2 - 8 - HANDLE_GAP + 1);
+        if(sel.length === 1){
+          ctx.setLineDash([]);
+          ctx.beginPath();
+          ctx.moveTo(0, -el.h / 2 - 8);
+          ctx.lineTo(0, -el.h / 2 - 8 - HANDLE_GAP + 11);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(0, -el.h / 2 - 8 - HANDLE_GAP, 11, 0, Math.PI * 2);
+          ctx.fillStyle = "#ffffff";
+          ctx.fill();
+          ctx.stroke();
+          ctx.font = "16px system-ui, sans-serif";
+          ctx.fillStyle = "#1e88e5";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("↻", 0, -el.h / 2 - 8 - HANDLE_GAP + 1);
+        }
       }else{
-        const b = bounds(selected);
+        const b = bounds(el);
         ctx.setLineDash([10, 6]);
         ctx.strokeRect(b.x - 8, b.y - 8, b.w + 16, b.h + 16);
       }
+      ctx.restore();
+    }
+    // Schlinge beim Umrunden
+    if(action && action.kind === "lasso" && action.points.length > 1){
+      ctx.save();
+      ctx.beginPath();
+      action.points.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+      ctx.closePath();
+      ctx.fillStyle = "rgba(30, 136, 229, 0.08)";
+      ctx.fill();
+      ctx.setLineDash([8, 6]);
+      ctx.strokeStyle = "#1e88e5";
+      ctx.lineWidth = 2;
+      ctx.stroke();
       ctx.restore();
     }
     updateButtons();
@@ -679,7 +719,13 @@ const Zeichnen = (() => {
 
   function updateButtons(){
     document.getElementById("drawUndoBtn").disabled = history.length === 0;
-    document.getElementById("drawDeleteBtn").disabled = !selected;
+    const count = selection().length;
+    const delBtn = document.getElementById("drawDeleteBtn");
+    delBtn.disabled = count === 0;
+    delBtn.textContent = count > 1 ? `✕ ${count} Elemente löschen` : "✕ Element löschen";
+    if(tool === "select") hint.textContent = count > 1
+      ? `${count} Objekte ausgewählt – ziehen verschiebt alle, Entf löscht alle. Umschalt+Klick: hinzufügen/entfernen.`
+      : HINTS.select;
     document.getElementById("drawClearBtn").disabled = elements.length === 0;
     const photoBtn = document.getElementById("drawPhotoBtn");
     photoBtn.textContent = selected && FILLABLE.has(selected.type) ? "🖼 Foto in Form einsetzen" : "🖼 Foto einfügen";
@@ -726,13 +772,15 @@ const Zeichnen = (() => {
       }
     }
     // Drehen: nur bei einer ausgewaehlten Form; die Gradzahl folgt auch dem Drehgriff
-    const rotateOn = !!selected && ROTATABLE.has(selected.type);
+    // Bei Mehrfachauswahl: aktiv, sobald mindestens ein passendes Objekt dabei ist
+    const anySel = (pred) => selection().some(el => pred(el.type));
+    const rotateOn = anySel(t => ROTATABLE.has(t));
     rotateWrap.classList.toggle("is-disabled", !rotateOn);
     rotateInput.disabled = !rotateOn;
     if(rotateOn && document.activeElement !== rotateInput) rotateInput.value = String(selected.rotation || 0);
     if(!rotateOn) rotateInput.value = "0";
     // Groesse und WordArt nur bei Text
-    const textOn = selected ? selected.type === "text" : tool === "text";
+    const textOn = selected ? anySel(t => t === "text") : tool === "text";
     fontSizeWrap.classList.toggle("is-disabled", !textOn);
     fontSizeInput.disabled = !textOn;
     waWrap.classList.toggle("is-disabled", !textOn);
@@ -740,16 +788,16 @@ const Zeichnen = (() => {
     if(!textOn && !waPop.hidden) setWaPopOpen(false);
     syncWaControls();
     // Fuellung nur bei Formen, Schrift nur bei Text: Werkzeug aktiv oder solch ein Objekt ausgewaehlt
-    const fillOn = selected ? SHAPES.has(selected.type) : SHAPES.has(tool);
+    const fillOn = selected ? anySel(t => SHAPES.has(t)) : SHAPES.has(tool);
     fillWrap.classList.toggle("is-disabled", !fillOn);
     fillBtn.disabled = !fillOn;
     if(!fillOn && !fillPop.hidden) setFillPopOpen(false);
-    const fontOn = selected ? selected.type === "text" : tool === "text";
+    const fontOn = selected ? anySel(t => t === "text") : tool === "text";
     fontWrap.classList.toggle("is-disabled", !fontOn);
     fontSelect.disabled = !fontOn;
     syncFillControls();
     // Ecken nur bei Quadrat/Rechteck: Werkzeug aktiv oder ein Quadrat ausgewaehlt
-    const cornersOn = selected ? selected.type === "rect" : tool === "rect";
+    const cornersOn = selected ? anySel(t => t === "rect") : tool === "rect";
     cornerWrap.classList.toggle("is-disabled", !cornersOn);
     cornerInput.disabled = !cornersOn;
     cornerStyleSelect.disabled = !cornersOn;
@@ -766,9 +814,11 @@ const Zeichnen = (() => {
 
   /** Aenderung am ausgewaehlten Objekt - pro Einstellvorgang ein Rueckgaengig-Schritt. */
   function applyStyle(change, appliesTo = () => true){
-    if(selected && appliesTo(selected)){
+    // Fuer alle ausgewaehlten Objekte, zu denen die Einstellung passt
+    const targets = selection().filter(appliesTo);
+    if(targets.length){
       if(!styleSnapshotDone){ snapshot(); styleSnapshotDone = true; }
-      change(selected);
+      targets.forEach(change);
     }
     render();
   }
@@ -968,7 +1018,7 @@ const Zeichnen = (() => {
     });
     canvas.dataset.tool = name;
     hint.textContent = HINTS[name];
-    if(name !== "select") selected = null;
+    if(name !== "select") selectOnly(null);
     render();   // u.a. Regler "Ecken" je nach Werkzeug an/aus
   }
 
@@ -988,8 +1038,8 @@ const Zeichnen = (() => {
     }
 
     if(tool === "select"){
-      // Drehgriff der ausgewaehlten Form angefasst?
-      if(selected && ROTATABLE.has(selected.type)){
+      // Drehgriff der ausgewaehlten Form angefasst? (nur bei Einzelauswahl)
+      if(selected && !multi.length && ROTATABLE.has(selected.type)){
         const h = handlePos(selected);
         if(Math.hypot(p.x - h.x, p.y - h.y) <= 18){
           snapshot();
@@ -999,12 +1049,27 @@ const Zeichnen = (() => {
           return;
         }
       }
-      selected = hitTest(p);
-      if(selected){
+      const hit = hitTest(p);
+      if(hit && e.shiftKey){
+        // Umschalt+Klick: Objekt zur Auswahl hinzufuegen bzw. herausnehmen
+        const list = selection();
+        selectMany(isSelected(hit) ? list.filter(el => el !== hit) : [...list, hit]);
+        render();
+        return;
+      }
+      if(hit){
+        // Klick auf ein schon ausgewaehltes Objekt: alle Ausgewaehlten zusammen verschieben
+        if(!isSelected(hit)) selectOnly(hit);
         snapshot();
         action = { kind: "move", last: p, moved: false };
         try{ canvas.setPointerCapture(e.pointerId); }catch{ /* z.B. Stift ohne Erfassung - geht auch so */ }
+        render();
+        return;
       }
+      // Freie Stelle: Schlinge ziehen - alles darin wird ausgewaehlt
+      action = { kind: "lasso", points: [[p.x, p.y]], add: e.shiftKey, before: e.shiftKey ? selection() : [] };
+      if(!e.shiftKey) selectOnly(null);
+      try{ canvas.setPointerCapture(e.pointerId); }catch{ /* geht auch so */ }
       render();
       return;
     }
@@ -1021,7 +1086,7 @@ const Zeichnen = (() => {
     const p = toCanvas(e);
     if(!action){
       // Ueber dem Drehgriff: Hand als Mauszeiger
-      const overHandle = tool === "select" && selected && ROTATABLE.has(selected.type)
+      const overHandle = tool === "select" && selected && !multi.length && ROTATABLE.has(selected.type)
         && Math.hypot(p.x - handlePos(selected).x, p.y - handlePos(selected).y) <= 18;
       canvas.classList.toggle("is-rotate-handle", !!overHandle);
       return;
@@ -1034,8 +1099,13 @@ const Zeichnen = (() => {
       render();
       return;
     }
+    if(action.kind === "lasso"){
+      action.points.push([p.x, p.y]);
+      render();
+      return;
+    }
     if(action.kind === "move"){
-      moveElement(selected, p.x - action.last.x, p.y - action.last.y);
+      for(const el of selection()) moveElement(el, p.x - action.last.x, p.y - action.last.y);
       action.last = p;
       action.moved = true;
     }else if(tool === "free" || tool === "spline"){
@@ -1050,7 +1120,18 @@ const Zeichnen = (() => {
 
   function endAction(){
     if(!action) return;
-    if(action.kind === "move" || action.kind === "rotate"){
+    if(action.kind === "lasso"){
+      // Ausgewaehlt wird, was innerhalb der Schlinge liegt (Mitte des Objekts)
+      const poly = action.points;
+      const xs = poly.map(q => q[0]), ys = poly.map(q => q[1]);
+      const big = poly.length > 2 && (Math.max(...xs) - Math.min(...xs) > 6 || Math.max(...ys) - Math.min(...ys) > 6);
+      const found = big ? elements.filter(el => {
+        const b = bounds(el);
+        return inPolygon({ x: b.x + b.w / 2, y: b.y + b.h / 2 }, poly);
+      }) : [];
+      selectMany(action.add ? [...action.before, ...found] : found);
+      if(multi.length) showStatus(`${multi.length} Objekte ausgewählt – gemeinsam verschieben, einstellen oder löschen.`, "info");
+    }else if(action.kind === "move" || action.kind === "rotate"){
       if(!action.moved) history.pop();   // nur angeklickt: kein Rueckgaengig-Schritt
     }else if(action.preview){
       let el = action.preview;
@@ -1065,7 +1146,7 @@ const Zeichnen = (() => {
         snapshot();
         elements.push(el);
         // Neue Form gleich auswaehlen - so kann direkt ein Foto hinein.
-        if(FILLABLE.has(el.type)) selected = el;
+        if(FILLABLE.has(el.type)) selectOnly(el);
       }
     }
     action = null;
@@ -1155,9 +1236,9 @@ const Zeichnen = (() => {
       const w = img.naturalWidth * scale, h = img.naturalHeight * scale;
       const el = { type: "image", x: (W - w) / 2, y: (H - h) / 2, w, h, img, ...newStyle() };
       elements.push(el);
-      selected = el;
+      selectOnly(el);
       setTool("select");
-      selected = el;
+      selectOnly(el);
     }
     render();
   }
@@ -1189,15 +1270,25 @@ const Zeichnen = (() => {
     commitText();
     if(!history.length) return;
     elements = history.pop();
-    selected = null;
+    selectOnly(null);
     render();
   }
 
+  /** Loescht alle ausgewaehlten Objekte auf einmal (ein Rueckgaengig-Schritt). */
   function deleteSelected(){
-    if(!selected) return;
+    const sel = selection();
+    if(!sel.length) return;
     snapshot();
-    elements = elements.filter(el => el !== selected);
-    selected = null;
+    elements = elements.filter(el => !sel.includes(el));
+    selectOnly(null);
+    render();
+  }
+
+  /** Alles auf dem Blatt auswaehlen (Strg+A im Werkzeug "Auswaehlen"). */
+  function selectAll(){
+    if(!elements.length) return;
+    if(tool !== "select") setTool("select");
+    selectMany([...elements]);
     render();
   }
 
@@ -1207,7 +1298,7 @@ const Zeichnen = (() => {
     if(!elements.length || !window.confirm("Das ganze Blatt leeren?")) return;
     snapshot();
     elements = [];
-    selected = null;
+    selectOnly(null);
     render();
   });
 
@@ -1215,6 +1306,7 @@ const Zeichnen = (() => {
   dialog.addEventListener("keydown", (e) => {
     if(textInput || e.target.matches("input, select, textarea")) return;
     if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z"){ e.preventDefault(); undo(); return; }
+    if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a"){ e.preventDefault(); selectAll(); return; }
     if(e.key === "Delete" || e.key === "Backspace"){ e.preventDefault(); deleteSelected(); return; }
     if(!e.ctrlKey && !e.metaKey && !e.altKey && SHORTCUTS[e.key.toLowerCase()]) setTool(SHORTCUTS[e.key.toLowerCase()]);
   });
@@ -1275,7 +1367,7 @@ const Zeichnen = (() => {
     onDone = done;
     elements = [];
     history = [];
-    selected = null;
+    selectOnly(null);
     action = null;
     changed = false;
     loadWebFonts();
