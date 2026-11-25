@@ -105,13 +105,52 @@ const Zeichnen = (() => {
   /** Fuellung als eigenes (unveraenderliches) Objekt - Rueckgaengig bleibt sauber. */
   const currentFill = () => ({ type: fillTypeSelect.value, c1: fillC1.value, c2: fillC2.value, dir: fillDirSelect.value });
 
-  /** Gemeinsame Eigenschaften neuer Objekte: Farbe, Staerke, Deckkraft, Ecken, Fuellung, Schrift. */
+  /* ---- Schriftgroesse: eigenes Zahlenfeld, Einzelschritte ---- */
+  const fontSizeInput = document.getElementById("drawFontSize");
+  const textSize = () => Math.min(400, Math.max(6, Math.round(Number(fontSizeInput.value) || 32)));
+
+  /* ---- WordArt: Verformung, Farben, Kontur, Schatten ---- */
+  const waShape = document.getElementById("drawWaShape");
+  const waAmount = document.getElementById("drawWaAmount");
+  const waFill = document.getElementById("drawWaFill");
+  const waC2 = document.getElementById("drawWaC2");
+  const waDir = document.getElementById("drawWaDir");
+  const waOutline = document.getElementById("drawWaOutline");
+  const waOutlineWidth = document.getElementById("drawWaOutlineWidth");
+  const waShadow = document.getElementById("drawWaShadow");
+  /** WordArt-Einstellung als eigenes (unveraenderliches) Objekt. */
+  const currentWa = () => ({
+    shape: waShape.value, amount: Number(waAmount.value) / 100,
+    fill: waFill.value, c2: waC2.value, dir: waDir.value,
+    outline: waOutline.value, outlineWidth: Number(waOutlineWidth.value), shadow: waShadow.checked,
+  });
+  /** Nichts Besonderes eingestellt: Text wird wie bisher gezeichnet. */
+  const isPlainWa = (wa) => !wa || (wa.shape === "none" && wa.fill === "solid" && !(wa.outlineWidth > 0) && !wa.shadow);
+
+  /* ---- Drehen: Quadrat/Rechteck, Dreieck, Kreis, Foto ---- */
+  const ROTATABLE = new Set(["rect", "ellipse", "triangle", "image"]);
+  const rotateInput = document.getElementById("drawRotate");
+  const HANDLE_GAP = 46;   // Abstand des Drehgriffs ueber der Form (Blatt-Punkte)
+  const rad = (deg) => deg * Math.PI / 180;
+  const centerOf = (el) => ({ x: el.x + el.w / 2, y: el.y + el.h / 2 });
+  function rotatePoint(p, c, angle){
+    const s = Math.sin(angle), co = Math.cos(angle);
+    const dx = p.x - c.x, dy = p.y - c.y;
+    return { x: c.x + dx * co - dy * s, y: c.y + dx * s + dy * co };
+  }
+  /** Winkel auf -180..180 Grad bringen. */
+  const normDeg = (d) => { let a = ((d + 180) % 360 + 360) % 360 - 180; return a === -180 ? 180 : a; };
+  /** Position des runden Drehgriffs (ueber der Mitte der Oberkante, mitgedreht). */
+  function handlePos(el){
+    return rotatePoint({ x: el.x + el.w / 2, y: el.y - 8 - HANDLE_GAP }, centerOf(el), rad(el.rotation || 0));
+  }
+
+  /** Gemeinsame Eigenschaften neuer Objekte: Farbe, Staerke, Deckkraft, Ecken, Fuellung, Schrift, WordArt. */
   const newStyle = () => ({
     color: colorInput.value, width: strokeWidth(), opacity: currentOpacity(),
     corner: currentCorner(), cornerStyle: cornerStyleSelect.value,
-    fill: currentFill(), font: fontSelect.value,
+    fill: currentFill(), font: fontSelect.value, wa: currentWa(), rotation: 0,
   });
-  const textSize = () => 16 + strokeWidth() * 4;
 
   function toCanvas(e){
     const r = canvas.getBoundingClientRect();
@@ -321,6 +360,149 @@ const Zeichnen = (() => {
     return g;
   }
 
+  /* ------------------------------------------------------------ WordArt */
+
+  /**
+   * Lage eines Buchstabens in der verformten Zeile. t = Mitte des Buchstabens
+   * (0..1 ueber die Zeile), cx = seine Mitte in Punkten, total = Zeilenbreite.
+   * Liefert Versatz zur Grundlinie, Drehung und Skalierung.
+   */
+  function warpGlyph(wa, t, cx, total, size){
+    const a = Math.min(1, Math.max(0, wa.amount ?? 0.5));
+    const flat = { x: cx, y: 0, angle: 0, sx: 1, sy: 1 };
+    switch(wa.shape){
+      case "arcUp":
+      case "arcDown":
+      case "circle": {
+        const theta = wa.shape === "circle" ? Math.PI * (1 + a) : Math.max(0.02, a * Math.PI);
+        if(theta < 0.02) return flat;
+        const r = total / theta;
+        const phi = (t - 0.5) * theta;
+        const up = wa.shape !== "arcDown";
+        return { x: total / 2 + r * Math.sin(phi), y: (up ? 1 : -1) * r * (1 - Math.cos(phi)), angle: up ? phi : -phi, sx: 1, sy: 1 };
+      }
+      case "wave": {
+        const amp = size * 0.9 * a;
+        const slope = Math.cos(t * Math.PI * 2) * Math.PI * 2 * amp / total;
+        return { x: cx, y: Math.sin(t * Math.PI * 2) * amp, angle: Math.atan(slope), sx: 1, sy: 1 };
+      }
+      case "slant":
+        return { x: cx, y: -(t - 0.5) * total * a * 0.6, angle: Math.atan(-a * 0.6), sx: 1, sy: 1 };
+      case "bulge": {
+        const sy = 1 + a * 1.2 * Math.sin(t * Math.PI);
+        return { x: cx, y: (sy - 1) * size * 0.35, angle: 0, sx: 1, sy };
+      }
+      case "perspective": {
+        const sy = 1 - a * 0.5 + t * a * 1.5;
+        return { x: cx, y: (sy - 1) * size * 0.35, angle: 0, sx: 1, sy };
+      }
+      default:
+        return flat;
+    }
+  }
+
+  /** Alle Buchstaben eines WordArt-Textes mit Lage im Blatt. */
+  function layoutText(el){
+    ctx.font = textFont(el);
+    const lineH = el.size * 1.25;
+    const glyphs = [];
+    el.text.split("\n").forEach((line, li) => {
+      const chars = [...line];
+      const widths = chars.map(ch => ctx.measureText(ch).width);
+      const total = widths.reduce((s, w) => s + w, 0) || 1;
+      const baseY = el.y + li * lineH + el.size * 0.85;
+      let acc = 0;
+      chars.forEach((ch, i) => {
+        const w = widths[i];
+        const cx = acc + w / 2;
+        acc += w;
+        const g = warpGlyph(el.wa, cx / total, cx, total, el.size);
+        glyphs.push({ ch, w, x: el.x + g.x, y: baseY + g.y, angle: g.angle, sx: g.sx, sy: g.sy });
+      });
+    });
+    return glyphs;
+  }
+
+  /** Umgebendes Rechteck aller (gedrehten, gestreckten) Buchstaben. */
+  function wordArtBox(el, glyphs){
+    const pad = (el.wa.outlineWidth || 0) / 2 + 2;
+    let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+    for(const g of glyphs){
+      const corners = [[-g.w / 2, -el.size * 0.9 * g.sy], [g.w / 2, -el.size * 0.9 * g.sy], [g.w / 2, el.size * 0.3 * g.sy], [-g.w / 2, el.size * 0.3 * g.sy]];
+      for(const [lx, ly] of corners){
+        const p = rotatePoint({ x: g.x + lx, y: g.y + ly }, { x: g.x, y: g.y }, g.angle);
+        x1 = Math.min(x1, p.x); y1 = Math.min(y1, p.y); x2 = Math.max(x2, p.x); y2 = Math.max(y2, p.y);
+      }
+    }
+    if(!isFinite(x1)) return { x: el.x, y: el.y, w: 1, h: el.size };
+    return { x: x1 - pad, y: y1 - pad, w: x2 - x1 + 2 * pad, h: y2 - y1 + 2 * pad };
+  }
+
+  /**
+   * WordArt zeichnen: Buchstaben einzeln entlang der Form. Die Fuellung
+   * (eine Farbe, Verlauf, Regenbogen) entsteht auf einem Hilfsblatt, damit
+   * ein Verlauf glatt ueber alle Buchstaben laeuft; der Schatten faellt auf
+   * die ganze Schrift, die Kontur liegt obenauf.
+   */
+  function drawWordArt(c, el){
+    const wa = el.wa;
+    const glyphs = layoutText(el);
+    if(!glyphs.length) return;
+    const b = wordArtBox(el, glyphs);
+    const off = document.createElement("canvas");
+    off.width = Math.max(1, Math.ceil(b.w));
+    off.height = Math.max(1, Math.ceil(b.h));
+    const o = off.getContext("2d");
+    o.translate(-b.x, -b.y);
+    o.font = textFont(el);
+    o.textAlign = "center";
+    o.textBaseline = "alphabetic";
+    glyphs.forEach((g, i) => {
+      o.save();
+      o.translate(g.x, g.y);
+      o.rotate(g.angle);
+      o.scale(g.sx, g.sy);
+      o.fillStyle = wa.fill === "rainbow" ? `hsl(${Math.round(i / Math.max(1, glyphs.length - 1) * 300)}, 85%, 50%)` : el.color;
+      o.fillText(g.ch, 0, 0);
+      o.restore();
+    });
+    if(wa.fill === "gradient"){
+      o.setTransform(1, 0, 0, 1, 0, 0);
+      o.globalCompositeOperation = "source-in";
+      const grad = wa.dir === "v" ? o.createLinearGradient(0, 0, 0, off.height) : o.createLinearGradient(0, 0, off.width, 0);
+      grad.addColorStop(0, el.color);
+      grad.addColorStop(1, wa.c2);
+      o.fillStyle = grad;
+      o.fillRect(0, 0, off.width, off.height);
+    }
+    c.save();
+    if(wa.shadow){
+      c.shadowColor = "rgba(0, 0, 0, 0.4)";
+      c.shadowOffsetX = c.shadowOffsetY = Math.max(2, el.size * 0.06);
+      c.shadowBlur = Math.max(2, el.size * 0.08);
+    }
+    c.drawImage(off, b.x, b.y);
+    c.restore();
+    if(wa.outlineWidth > 0){
+      c.save();
+      c.font = textFont(el);
+      c.textAlign = "center";
+      c.textBaseline = "alphabetic";
+      c.strokeStyle = wa.outline;
+      c.lineJoin = "round";
+      glyphs.forEach(g => {
+        c.save();
+        c.translate(g.x, g.y);
+        c.rotate(g.angle);
+        c.scale(g.sx, g.sy);
+        c.lineWidth = wa.outlineWidth / Math.max(g.sx, g.sy);
+        c.strokeText(g.ch, 0, 0);
+        c.restore();
+      });
+      c.restore();
+    }
+  }
+
   function drawElement(c, el){
     c.save();
     // Deckkraft je Objekt: 0 = unsichtbar, 1 = deckend (gilt auch fuer Fotos in Formen)
@@ -346,10 +528,21 @@ const Zeichnen = (() => {
       c.lineTo(el.x2, el.y2);
       c.stroke();
     }else if(el.type === "text"){
-      c.font = textFont(el);
-      c.textBaseline = "top";
-      el.text.split("\n").forEach((line, i) => c.fillText(line, el.x, el.y + i * el.size * 1.25));
+      if(isPlainWa(el.wa)){
+        c.font = textFont(el);
+        c.textBaseline = "top";
+        el.text.split("\n").forEach((line, i) => c.fillText(line, el.x, el.y + i * el.size * 1.25));
+      }else{
+        drawWordArt(c, el);
+      }
     }else{
+      // Gedrehte Form: um ihre Mitte drehen - Fuellung, Foto und Umriss drehen mit
+      if(ROTATABLE.has(el.type) && el.rotation){
+        const m = centerOf(el);
+        c.translate(m.x, m.y);
+        c.rotate(rad(el.rotation));
+        c.translate(-m.x, -m.y);
+      }
       // Fuellung (Farbe oder Verlauf) unter einem eventuellen Foto
       const fillStyle = SHAPES.has(el.type) ? makeFill(c, el) : null;
       if(fillStyle){
@@ -383,9 +576,18 @@ const Zeichnen = (() => {
       return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
     }
     if(el.type === "text"){
+      if(!isPlainWa(el.wa)) return wordArtBox(el, layoutText(el));
       ctx.font = textFont(el);
       const lines = el.text.split("\n");
       return { x: el.x, y: el.y, w: Math.max(...lines.map(l => ctx.measureText(l).width)), h: lines.length * el.size * 1.25 };
+    }
+    if(ROTATABLE.has(el.type) && el.rotation){
+      // Gedrehte Form: Rechteck um die gedrehten Ecken
+      const m = centerOf(el), a = rad(el.rotation);
+      const pts = [[el.x, el.y], [el.x + el.w, el.y], [el.x + el.w, el.y + el.h], [el.x, el.y + el.h]]
+        .map(([x, y]) => rotatePoint({ x, y }, m, a));
+      const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+      return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
     }
     return { x: el.x, y: el.y, w: el.w, h: el.h };
   }
@@ -415,9 +617,11 @@ const Zeichnen = (() => {
         const b = bounds(el);
         if(p.x >= b.x - 6 && p.x <= b.x + b.w + 6 && p.y >= b.y - 6 && p.y <= b.y + b.h + 6) return el;
       }else{
+        // Gedrehte Form: Punkt zurueckdrehen und gegen die ungedrehte Form pruefen
+        const q = ROTATABLE.has(el.type) && el.rotation ? rotatePoint(p, centerOf(el), -rad(el.rotation)) : p;
         shapePath(ctx, el);
         ctx.lineWidth = el.width + 16;
-        if(ctx.isPointInPath(p.x, p.y) || ctx.isPointInStroke(p.x, p.y)) return el;
+        if(ctx.isPointInPath(q.x, q.y) || ctx.isPointInStroke(q.x, q.y)) return el;
       }
     }
     return null;
@@ -437,12 +641,36 @@ const Zeichnen = (() => {
     elements.forEach(el => drawElement(ctx, el));
     if(action && action.preview) drawElement(ctx, action.preview);
     if(selected && elements.includes(selected)){
-      const b = bounds(selected);
       ctx.save();
-      ctx.setLineDash([10, 6]);
       ctx.strokeStyle = "#1e88e5";
       ctx.lineWidth = 2;
-      ctx.strokeRect(b.x - 8, b.y - 8, b.w + 16, b.h + 16);
+      if(ROTATABLE.has(selected.type)){
+        // Mitgedrehter Rahmen + runder Drehgriff ueber der Oberkante
+        const el = selected, m = centerOf(el);
+        ctx.translate(m.x, m.y);
+        ctx.rotate(rad(el.rotation || 0));
+        ctx.setLineDash([10, 6]);
+        ctx.strokeRect(-el.w / 2 - 8, -el.h / 2 - 8, el.w + 16, el.h + 16);
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(0, -el.h / 2 - 8);
+        ctx.lineTo(0, -el.h / 2 - 8 - HANDLE_GAP + 11);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(0, -el.h / 2 - 8 - HANDLE_GAP, 11, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+        ctx.stroke();
+        ctx.font = "16px system-ui, sans-serif";
+        ctx.fillStyle = "#1e88e5";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("↻", 0, -el.h / 2 - 8 - HANDLE_GAP + 1);
+      }else{
+        const b = bounds(selected);
+        ctx.setLineDash([10, 6]);
+        ctx.strokeRect(b.x - 8, b.y - 8, b.w + 16, b.h + 16);
+      }
       ctx.restore();
     }
     updateButtons();
@@ -489,9 +717,27 @@ const Zeichnen = (() => {
           if(f.c2) fillC2.value = f.c2;
           if(f.dir) fillDirSelect.value = f.dir;
         }
-        if(selected.type === "text") fontSelect.value = selected.font || DEFAULT_FONT;
+        if(selected.type === "text"){
+          fontSelect.value = selected.font || DEFAULT_FONT;
+          fontSizeInput.value = String(Math.round(selected.size));
+          setWaControls(selected.wa);
+        }
       }
     }
+    // Drehen: nur bei einer ausgewaehlten Form; die Gradzahl folgt auch dem Drehgriff
+    const rotateOn = !!selected && ROTATABLE.has(selected.type);
+    rotateWrap.classList.toggle("is-disabled", !rotateOn);
+    rotateInput.disabled = !rotateOn;
+    if(rotateOn && document.activeElement !== rotateInput) rotateInput.value = String(selected.rotation || 0);
+    if(!rotateOn) rotateInput.value = "0";
+    // Groesse und WordArt nur bei Text
+    const textOn = selected ? selected.type === "text" : tool === "text";
+    fontSizeWrap.classList.toggle("is-disabled", !textOn);
+    fontSizeInput.disabled = !textOn;
+    waWrap.classList.toggle("is-disabled", !textOn);
+    waBtn.disabled = !textOn;
+    if(!textOn && !waPop.hidden) setWaPopOpen(false);
+    syncWaControls();
     // Fuellung nur bei Formen, Schrift nur bei Text: Werkzeug aktiv oder solch ein Objekt ausgewaehlt
     const fillOn = selected ? SHAPES.has(selected.type) : SHAPES.has(tool);
     fillWrap.classList.toggle("is-disabled", !fillOn);
@@ -575,6 +821,90 @@ const Zeichnen = (() => {
   }
   fillBtn.addEventListener("click", () => setFillPopOpen(fillPop.hidden));
 
+  /* ---- Schriftgroesse ---- */
+  const fontSizeWrap = document.getElementById("drawFontSizeWrap");
+  const isText = (el) => el.type === "text";
+  fontSizeInput.addEventListener("input", () => {
+    if(textInput) textInput.style.fontSize = `${textSize() * (canvas.getBoundingClientRect().width / W)}px`;
+    applyStyle(el => { el.size = textSize(); }, isText);
+  });
+  fontSizeInput.addEventListener("change", () => { fontSizeInput.value = String(textSize()); styleSnapshotDone = false; });
+
+  /* ---- Drehen per Gradzahl ---- */
+  const rotateWrap = document.getElementById("drawRotateWrap");
+  rotateInput.addEventListener("input", () => {
+    const deg = normDeg(Math.round(Number(rotateInput.value) || 0));
+    applyStyle(el => { el.rotation = deg; }, el => ROTATABLE.has(el.type));
+  });
+  rotateInput.addEventListener("change", () => { styleSnapshotDone = false; });
+
+  /* ---- WordArt ---- */
+  const waWrap = document.getElementById("drawWaWrap");
+  const waBtn = document.getElementById("drawWaBtn");
+  const waPop = document.getElementById("drawWaPop");
+  const WA_SHAPE_LABELS = { none: "", arcUp: "Bogen oben", arcDown: "Bogen unten", circle: "Kreis", wave: "Welle", slant: "Schräg", bulge: "Aufblähen", perspective: "Perspektive" };
+  /** Fertige Vorlagen - setzen auch die Grundfarbe ("Farbe"). */
+  const WA_PRESETS = [
+    { name: "Regenbogen", color: "#e74c3c", wa: { shape: "arcUp", amount: 0.55, fill: "rainbow", c2: "#c0392b", dir: "h", outline: "#ffffff", outlineWidth: 2, shadow: true } },
+    { name: "Gold", color: "#ffe259", wa: { shape: "perspective", amount: 0.4, fill: "gradient", c2: "#b8860b", dir: "v", outline: "#6b4e00", outlineWidth: 2, shadow: true } },
+    { name: "Meereswelle", color: "#00c6ff", wa: { shape: "wave", amount: 0.6, fill: "gradient", c2: "#0049b7", dir: "h", outline: "#002a5c", outlineWidth: 1, shadow: false } },
+    { name: "Feuer", color: "#ffd200", wa: { shape: "bulge", amount: 0.55, fill: "gradient", c2: "#e52d27", dir: "v", outline: "#7a0000", outlineWidth: 2, shadow: true } },
+    { name: "Stempel", color: "#ffffff", wa: { shape: "slant", amount: 0.45, fill: "solid", c2: "#c0392b", dir: "h", outline: "#1b1b1b", outlineWidth: 3, shadow: true } },
+    { name: "Kreis", color: "#2d2915", wa: { shape: "circle", amount: 1, fill: "solid", c2: "#c0392b", dir: "h", outline: "#ffffff", outlineWidth: 0, shadow: false } },
+  ];
+  document.getElementById("drawWaPresets").innerHTML = WA_PRESETS.map((p, i) =>
+    `<button type="button" class="draw-wa-preset" data-preset="${i}">${p.name}</button>`).join("");
+
+  function setWaControls(wa){
+    const w = wa || { shape: "none", amount: 0.5, fill: "solid", c2: waC2.value, dir: "h", outline: waOutline.value, outlineWidth: 0, shadow: false };
+    waShape.value = w.shape;
+    waAmount.value = String(Math.round((w.amount ?? 0.5) * 100));
+    waFill.value = w.fill;
+    if(w.c2) waC2.value = w.c2;
+    waDir.value = w.dir === "v" ? "v" : "h";
+    if(w.outline) waOutline.value = w.outline;
+    waOutlineWidth.value = String(w.outlineWidth || 0);
+    waShadow.checked = !!w.shadow;
+  }
+
+  function syncWaControls(){
+    const wa = currentWa();
+    document.getElementById("drawWaLabel").textContent = isPlainWa(wa) ? "aus" : (WA_SHAPE_LABELS[wa.shape] || "an");
+    document.getElementById("drawWaAmountRow").hidden = wa.shape === "none";
+    document.getElementById("drawWaAmountOut").textContent = `${waAmount.value} %`;
+    document.getElementById("drawWaC2Row").hidden = wa.fill !== "gradient";
+    document.getElementById("drawWaOutlineOut").textContent = waOutlineWidth.value;
+    document.getElementById("drawWaNote").textContent = selected && selected.type === "text"
+      ? "Gilt für den ausgewählten Text und für neue Texte."
+      : "Gilt für neue Texte. Zum Ändern: Text mit „Auswählen“ anklicken.";
+  }
+
+  const applyWa = () => applyStyle(el => { el.wa = currentWa(); }, isText);
+  [waAmount, waC2, waOutline, waOutlineWidth].forEach(inp => {
+    inp.addEventListener("input", applyWa);
+    inp.addEventListener("change", () => { styleSnapshotDone = false; });
+  });
+  [waShape, waFill, waDir, waShadow].forEach(inp => inp.addEventListener("change", () => {
+    applyWa();
+    styleSnapshotDone = false;
+  }));
+  document.getElementById("drawWaPresets").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-preset]");
+    if(!btn) return;
+    const preset = WA_PRESETS[Number(btn.dataset.preset)];
+    colorInput.value = preset.color;
+    setWaControls(preset.wa);
+    applyStyle(el => { el.color = preset.color; el.wa = currentWa(); }, isText);
+    styleSnapshotDone = false;
+  });
+
+  function setWaPopOpen(open){
+    waPop.hidden = !open;
+    waBtn.setAttribute("aria-expanded", String(open));
+    if(open) waShape.focus();
+  }
+  waBtn.addEventListener("click", () => { setColorPopOpen(false); setFillPopOpen(false); setWaPopOpen(waPop.hidden); });
+
   /* ---- Schrift ---- */
   const fontWrap = document.getElementById("drawFontWrap");
   fontSelect.addEventListener("change", () => {
@@ -600,12 +930,13 @@ const Zeichnen = (() => {
     if(open) opacityInput.focus();
   }
 
-  colorBtn.addEventListener("click", () => { setFillPopOpen(false); setColorPopOpen(colorPop.hidden); });
-  fillBtn.addEventListener("click", () => { if(!fillPop.hidden) setColorPopOpen(false); });
+  colorBtn.addEventListener("click", () => { setFillPopOpen(false); setWaPopOpen(false); setColorPopOpen(colorPop.hidden); });
+  fillBtn.addEventListener("click", () => { if(!fillPop.hidden){ setColorPopOpen(false); setWaPopOpen(false); } });
   // Klick ausserhalb schliesst das jeweilige Fenster
   document.addEventListener("pointerdown", (e) => {
     if(!colorPop.hidden && !colorBtn.parentElement.contains(e.target)) setColorPopOpen(false);
     if(!fillPop.hidden && !fillWrap.contains(e.target)) setFillPopOpen(false);
+    if(!waPop.hidden && !waWrap.contains(e.target)) setWaPopOpen(false);
   });
 
   function setTool(name){
@@ -648,6 +979,17 @@ const Zeichnen = (() => {
     }
 
     if(tool === "select"){
+      // Drehgriff der ausgewaehlten Form angefasst?
+      if(selected && ROTATABLE.has(selected.type)){
+        const h = handlePos(selected);
+        if(Math.hypot(p.x - h.x, p.y - h.y) <= 18){
+          snapshot();
+          const m = centerOf(selected);
+          action = { kind: "rotate", center: m, startAngle: Math.atan2(p.y - m.y, p.x - m.x), startRot: selected.rotation || 0, moved: false };
+          try{ canvas.setPointerCapture(e.pointerId); }catch{ /* geht auch so */ }
+          return;
+        }
+      }
       selected = hitTest(p);
       if(selected){
         snapshot();
@@ -667,8 +1009,22 @@ const Zeichnen = (() => {
   });
 
   canvas.addEventListener("pointermove", (e) => {
-    if(!action) return;
     const p = toCanvas(e);
+    if(!action){
+      // Ueber dem Drehgriff: Hand als Mauszeiger
+      const overHandle = tool === "select" && selected && ROTATABLE.has(selected.type)
+        && Math.hypot(p.x - handlePos(selected).x, p.y - handlePos(selected).y) <= 18;
+      canvas.classList.toggle("is-rotate-handle", !!overHandle);
+      return;
+    }
+    if(action.kind === "rotate"){
+      let deg = action.startRot + (Math.atan2(p.y - action.center.y, p.x - action.center.x) - action.startAngle) * 180 / Math.PI;
+      if(e.shiftKey) deg = Math.round(deg / 15) * 15;     // Umschalt: 15-Grad-Schritte
+      selected.rotation = normDeg(Math.round(deg));
+      action.moved = true;
+      render();
+      return;
+    }
     if(action.kind === "move"){
       moveElement(selected, p.x - action.last.x, p.y - action.last.y);
       action.last = p;
@@ -685,7 +1041,7 @@ const Zeichnen = (() => {
 
   function endAction(){
     if(!action) return;
-    if(action.kind === "move"){
+    if(action.kind === "move" || action.kind === "rotate"){
       if(!action.moved) history.pop();   // nur angeklickt: kein Rueckgaengig-Schritt
     }else if(action.preview){
       let el = action.preview;
@@ -871,6 +1227,7 @@ const Zeichnen = (() => {
     if(textInput){ e.preventDefault(); cancelText(); return; }
     if(!colorPop.hidden){ e.preventDefault(); setColorPopOpen(false); colorBtn.focus(); return; }
     if(!fillPop.hidden){ e.preventDefault(); setFillPopOpen(false); fillBtn.focus(); return; }
+    if(!waPop.hidden){ e.preventDefault(); setWaPopOpen(false); waBtn.focus(); return; }
     if(!confirmDiscard()) e.preventDefault();
     else cancelText();
   });

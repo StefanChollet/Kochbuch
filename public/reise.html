@@ -168,9 +168,59 @@
             <p class="draw-color-note" id="drawFillNote">Gilt für neue Formen.</p>
           </div>
         </div>
-        <!-- Schrift: fuer Text (Werkzeug aktiv oder Text ausgewaehlt) -->
+        <!-- Schrift, Groesse, WordArt: fuer Text (Werkzeug aktiv oder Text ausgewaehlt) -->
         <label class="draw-option draw-font" id="drawFontWrap" title="Schriftart für Text">Schrift
           <select id="drawFont"></select>
+        </label>
+        <label class="draw-option draw-font" id="drawFontSizeWrap" title="Schriftgrösse in Punkten – Pfeiltasten ändern in Einzelschritten">Grösse
+          <input type="number" id="drawFontSize" min="6" max="400" step="1" value="32" inputmode="numeric">
+        </label>
+        <div class="draw-color" id="drawWaWrap">
+          <button type="button" class="draw-color-btn" id="drawWaBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="drawWaPop" title="WordArt: Text verformen, mehrfarbig, Kontur, Schatten">
+            ✨ WordArt <span class="draw-color-value" id="drawWaLabel">aus</span>
+          </button>
+          <div class="draw-color-pop draw-wa-pop" id="drawWaPop" role="group" aria-label="WordArt" hidden>
+            <div class="draw-wa-presets" id="drawWaPresets" aria-label="Vorlagen"></div>
+            <label class="draw-color-row">Form
+              <select id="drawWaShape">
+                <option value="none">normal</option>
+                <option value="arcUp">Bogen oben ⌒</option>
+                <option value="arcDown">Bogen unten ⌣</option>
+                <option value="circle">Kreis ◯</option>
+                <option value="wave">Welle ∿</option>
+                <option value="slant">Schräg ⟋</option>
+                <option value="bulge">Aufblähen</option>
+                <option value="perspective">Perspektive</option>
+              </select>
+            </label>
+            <label class="draw-color-row" id="drawWaAmountRow">Stärke
+              <input type="range" id="drawWaAmount" min="0" max="100" step="1" value="50">
+              <output id="drawWaAmountOut" for="drawWaAmount">50 %</output>
+            </label>
+            <label class="draw-color-row">Farben
+              <select id="drawWaFill">
+                <option value="solid">eine Farbe („Farbe“)</option>
+                <option value="gradient">Verlauf</option>
+                <option value="rainbow">Regenbogen</option>
+              </select>
+            </label>
+            <label class="draw-color-row" id="drawWaC2Row">bis <input type="color" id="drawWaC2" value="#c0392b">
+              <select id="drawWaDir" aria-label="Richtung des Verlaufs">
+                <option value="h">→ waagrecht</option>
+                <option value="v">↓ senkrecht</option>
+              </select>
+            </label>
+            <label class="draw-color-row">Kontur <input type="color" id="drawWaOutline" value="#ffffff">
+              <input type="range" id="drawWaOutlineWidth" min="0" max="12" step="1" value="0" aria-label="Breite der Kontur">
+              <output id="drawWaOutlineOut" for="drawWaOutlineWidth">0</output>
+            </label>
+            <label class="draw-color-row draw-wa-check"><input type="checkbox" id="drawWaShadow"> Schatten</label>
+            <p class="draw-color-note" id="drawWaNote">Gilt für neue Texte.</p>
+          </div>
+        </div>
+        <!-- Drehen: Quadrat/Rechteck, Dreieck, Kreis, Foto - auch mit dem Griff an der Auswahl -->
+        <label class="draw-option draw-font" id="drawRotateWrap" title="Drehen in Grad – oder am runden Griff über der Auswahl ziehen (Umschalt: 15°-Schritte)">Drehen
+          <input type="number" id="drawRotate" min="-180" max="180" step="1" value="0" inputmode="numeric"> °
         </label>
         <!-- Ecken abflachen: nur fuer Quadrat/Rechteck (Werkzeug aktiv oder Quadrat ausgewaehlt) -->
         <div class="draw-corner" id="drawCornerWrap" title="Ecken abflachen – für Quadrat und Rechteck">

@@ -489,6 +489,22 @@ textarea{ resize: vertical; }
 /* Fuellung "keine": weisses Feld mit rotem Schraegstrich */
 .draw-fill-none{ background: linear-gradient(to top right, #fff 45%, #d83a2b 46%, #d83a2b 54%, #fff 55%) !important; }
 .draw-color-row select{ flex:1; width:auto; padding:.3rem .45rem; font-size:.85rem; }
+/* Zahlenfelder Groesse / Drehen */
+.draw-font input[type="number"]{ width: 4.6rem; padding:.3rem .45rem; font: inherit; font-size:.9rem;
+  color: var(--ink); background: var(--surface); border:1px solid var(--line); border-radius:6px; }
+/* Drehgriff unter der Maus */
+#drawCanvas.is-rotate-handle{ cursor: grab; }
+/* WordArt-Fenster */
+.draw-wa-pop{ width: 320px; }
+.draw-wa-presets{ display:grid; grid-template-columns: repeat(3, 1fr); gap:.35rem; }
+.draw-wa-preset{
+  font: inherit; font-size:.78rem; font-weight:600;
+  padding:.35rem .3rem; border-radius:6px; cursor:pointer;
+  border:1px solid var(--line); background: var(--surface-2); color: var(--ink);
+}
+.draw-wa-preset:hover{ border-color: var(--accent); background: color-mix(in srgb, var(--primary) 25%, var(--surface)); }
+.draw-wa-check{ gap:.4rem; }
+.draw-color-row input[type="range"] + output{ min-width:2.6rem; }
 /* Schriftauswahl: jede Schrift in sich selbst dargestellt */
 .draw-font select{ width: 190px; padding:.3rem .5rem; font-size:.9rem; }
 /* Farbe-Knopf mit Deckkraft: Farbfeld (auf Schachbrett = Transparenz sichtbar) + Prozent */
