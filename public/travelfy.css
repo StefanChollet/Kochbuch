@@ -479,6 +479,12 @@ textarea{ resize: vertical; }
 .draw-tool:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
 .draw-options{ display:flex; gap:.8rem; align-items:center; }
 .draw-option{ display:flex; align-items:center; gap:.35rem; font-size:.82rem; color: var(--ink-soft); }
+/* Ecken abflachen (nur Quadrat/Rechteck) */
+.draw-corner{ display:flex; align-items:center; gap:.4rem; }
+.draw-corner input[type="range"]{ width: 110px; accent-color: var(--accent); }
+.draw-corner output{ min-width:3rem; font-size:.78rem; color: var(--ink-soft); white-space:nowrap; font-variant-numeric: tabular-nums; }
+.draw-corner select{ width:auto; padding:.3rem .5rem; font-size:.82rem; }
+.draw-corner.is-disabled{ opacity:.45; }
 /* Farbe-Knopf mit Deckkraft: Farbfeld (auf Schachbrett = Transparenz sichtbar) + Prozent */
 .draw-color{ position:relative; }
 .draw-color-btn{

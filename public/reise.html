@@ -140,6 +140,16 @@
             <p class="draw-color-note" id="drawColorNote">Gilt für neue Objekte.</p>
           </div>
         </div>
+        <!-- Ecken abflachen: nur fuer Quadrat/Rechteck (Werkzeug aktiv oder Quadrat ausgewaehlt) -->
+        <div class="draw-corner" id="drawCornerWrap" title="Ecken abflachen – für Quadrat und Rechteck">
+          <label class="draw-option" for="drawCorner">Ecken</label>
+          <input type="range" id="drawCorner" min="0" max="100" step="1" value="0" aria-label="Ecken abflachen in Prozent">
+          <output id="drawCornerOut" for="drawCorner">0 %</output>
+          <select id="drawCornerStyle" aria-label="Art der Ecken">
+            <option value="round">rund</option>
+            <option value="chamfer">schräg</option>
+          </select>
+        </div>
         <label class="draw-option" title="Strichstärke / Textgrösse">Stärke
           <select id="drawWidth">
             <option value="2">fein</option>

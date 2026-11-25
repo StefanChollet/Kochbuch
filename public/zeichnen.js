@@ -52,8 +52,14 @@ const Zeichnen = (() => {
   const opacityInput = document.getElementById("drawOpacity");
   const strokeWidth = () => Number(widthSelect.value) || 4;
   const currentOpacity = () => Math.min(100, Math.max(0, Number(opacityInput.value))) / 100;
-  /** Gemeinsame Eigenschaften neuer Objekte: Farbe, Staerke, Deckkraft. */
-  const newStyle = () => ({ color: colorInput.value, width: strokeWidth(), opacity: currentOpacity() });
+  const cornerInput = document.getElementById("drawCorner");
+  const cornerStyleSelect = document.getElementById("drawCornerStyle");
+  const currentCorner = () => Math.min(100, Math.max(0, Number(cornerInput.value)));
+  /** Gemeinsame Eigenschaften neuer Objekte: Farbe, Staerke, Deckkraft, Ecken (nur Quadrat). */
+  const newStyle = () => ({
+    color: colorInput.value, width: strokeWidth(), opacity: currentOpacity(),
+    corner: currentCorner(), cornerStyle: cornerStyleSelect.value,
+  });
   const textSize = () => 16 + strokeWidth() * 4;
 
   function toCanvas(e){
@@ -205,7 +211,29 @@ const Zeichnen = (() => {
   /** Umriss einer Form als Pfad (fuer Zeichnen, Zuschneiden, Treffer). */
   function shapePath(c, el){
     c.beginPath();
-    if(el.type === "rect" || el.type === "image"){
+    if(el.type === "rect" && el.corner > 0){
+      // Ecken abflachen: corner % der halben kuerzeren Seite, rund oder schraeg
+      const r = Math.min(el.w, el.h) / 2 * (el.corner / 100);
+      const { x, y, w, h } = el;
+      if(el.cornerStyle === "chamfer"){
+        c.moveTo(x + r, y);
+        c.lineTo(x + w - r, y);
+        c.lineTo(x + w, y + r);
+        c.lineTo(x + w, y + h - r);
+        c.lineTo(x + w - r, y + h);
+        c.lineTo(x + r, y + h);
+        c.lineTo(x, y + h - r);
+        c.lineTo(x, y + r);
+        c.closePath();
+      }else{
+        c.moveTo(x + r, y);
+        c.arcTo(x + w, y, x + w, y + h, r);
+        c.arcTo(x + w, y + h, x, y + h, r);
+        c.arcTo(x, y + h, x, y, r);
+        c.arcTo(x, y, x + w, y, r);
+        c.closePath();
+      }
+    }else if(el.type === "rect" || el.type === "image"){
       c.rect(el.x, el.y, el.w, el.h);
     }else if(el.type === "ellipse"){
       c.ellipse(el.x + el.w / 2, el.y + el.h / 2, Math.max(el.w / 2, 0.5), Math.max(el.h / 2, 0.5), 0, 0, Math.PI * 2);
@@ -361,6 +389,8 @@ const Zeichnen = (() => {
   const opacityLabel = document.getElementById("drawOpacityLabel");
   const opacityOut = document.getElementById("drawOpacityOut");
   const colorNote = document.getElementById("drawColorNote");
+  const cornerWrap = document.getElementById("drawCornerWrap");
+  const cornerOut = document.getElementById("drawCornerOut");
   let styleTarget = null;     // Objekt, dessen Farbe/Deckkraft gerade eingestellt wird
   let styleSnapshotDone = false;
 
@@ -372,8 +402,18 @@ const Zeichnen = (() => {
       if(selected){
         if(selected.type !== "image") colorInput.value = selected.color;
         opacityInput.value = String(Math.round((selected.opacity ?? 1) * 100));
+        if(selected.type === "rect"){
+          cornerInput.value = String(selected.corner ?? 0);
+          cornerStyleSelect.value = selected.cornerStyle === "chamfer" ? "chamfer" : "round";
+        }
       }
     }
+    // Ecken nur bei Quadrat/Rechteck: Werkzeug aktiv oder ein Quadrat ausgewaehlt
+    const cornersOn = selected ? selected.type === "rect" : tool === "rect";
+    cornerWrap.classList.toggle("is-disabled", !cornersOn);
+    cornerInput.disabled = !cornersOn;
+    cornerStyleSelect.disabled = !cornersOn;
+    cornerOut.textContent = `${cornerInput.value} %`;
     const pct = `${opacityInput.value} %`;
     opacityLabel.textContent = pct;
     opacityOut.textContent = pct;
@@ -385,8 +425,8 @@ const Zeichnen = (() => {
   }
 
   /** Aenderung am ausgewaehlten Objekt - pro Einstellvorgang ein Rueckgaengig-Schritt. */
-  function applyStyle(change){
-    if(selected){
+  function applyStyle(change, appliesTo = () => true){
+    if(selected && appliesTo(selected)){
       if(!styleSnapshotDone){ snapshot(); styleSnapshotDone = true; }
       change(selected);
     }
@@ -398,6 +438,15 @@ const Zeichnen = (() => {
   // Neuer Einstellvorgang = neuer Rueckgaengig-Schritt
   colorInput.addEventListener("change", () => { styleSnapshotDone = false; });
   opacityInput.addEventListener("change", () => { styleSnapshotDone = false; });
+
+  // Ecken abflachen (nur Quadrat/Rechteck)
+  const isRect = (el) => el.type === "rect";
+  cornerInput.addEventListener("input", () => applyStyle(el => { el.corner = currentCorner(); }, isRect));
+  cornerInput.addEventListener("change", () => { styleSnapshotDone = false; });
+  cornerStyleSelect.addEventListener("change", () => {
+    applyStyle(el => { el.cornerStyle = cornerStyleSelect.value; }, isRect);
+    styleSnapshotDone = false;
+  });
 
   function setColorPopOpen(open){
     colorPop.hidden = !open;
@@ -430,7 +479,8 @@ const Zeichnen = (() => {
     });
     canvas.dataset.tool = name;
     hint.textContent = HINTS[name];
-    if(name !== "select"){ selected = null; render(); }
+    if(name !== "select") selected = null;
+    render();   // u.a. Regler "Ecken" je nach Werkzeug an/aus
   }
 
   /* ----------------------------------------------------------- Maus */

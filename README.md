@@ -118,6 +118,11 @@ Schreibrecht und grüner Ampel) ein grosses Fenster mit einem Blatt von
   0–100 % (0 % = unsichtbar, 100 % = deckend). Sie gelten für neue Elemente und
   für das ausgewählte Element – so lässt sich jedes Objekt einzeln einstellen,
   auch Fotos in Formen. Jeder Einstellvorgang ist ein Rückgängig-Schritt.
+- **Ecken abflachen** (nur Quadrat/Rechteck): Regler *Ecken* 0–100 % (Anteil der
+  halben kürzeren Seite; 100 % = ganz rund bzw. Achteck) und Art *rund* oder
+  *schräg*. Aktiv, solange das Werkzeug *Quadrat* gewählt oder ein Quadrat
+  ausgewählt ist; gilt wie Farbe/Deckkraft für neue und für das ausgewählte
+  Quadrat. Fotos darin werden mit zugeschnitten.
 - Stärke gilt für neue Elemente (bestimmt auch die Textgrösse).
 - **Fotos in Formen:** eine Form auswählen (neu gezeichnete Formen sind gleich
   ausgewählt), dann *Foto in Form einsetzen* oder **Strg+V** – das Foto füllt die
