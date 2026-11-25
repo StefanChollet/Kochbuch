@@ -55,10 +55,61 @@ const Zeichnen = (() => {
   const cornerInput = document.getElementById("drawCorner");
   const cornerStyleSelect = document.getElementById("drawCornerStyle");
   const currentCorner = () => Math.min(100, Math.max(0, Number(cornerInput.value)));
-  /** Gemeinsame Eigenschaften neuer Objekte: Farbe, Staerke, Deckkraft, Ecken (nur Quadrat). */
+  /* ---- Schriften fuer Text: Google Fonts (beim ersten Oeffnen geladen) + Systemschriften ---- */
+  const FONT_GROUPS = [
+    ["Serifenlos", ["IBM Plex Sans", "Roboto", "Open Sans", "Lato", "Montserrat", "Raleway", "Nunito", "Poppins", "Work Sans", "Oswald", "Comfortaa"]],
+    ["Mit Serifen", ["Source Serif 4", "Playfair Display", "Merriweather", "Lora", "Libre Baskerville", "EB Garamond", "Cinzel"]],
+    ["Handschrift", ["Caveat", "Dancing Script", "Pacifico", "Great Vibes", "Indie Flower", "Shadows Into Light", "Satisfy", "Kalam", "Permanent Marker", "Amatic SC"]],
+    ["Auffällig", ["Lobster", "Bebas Neue", "Righteous", "Abril Fatface", "Bangers", "Special Elite", "Press Start 2P"]],
+    ["Systemschriften", ["Arial", "Verdana", "Tahoma", "Trebuchet MS", "Georgia", "Times New Roman", "Courier New", "Impact", "Comic Sans MS"]],
+  ];
+  const SYSTEM_FONTS = new Set(FONT_GROUPS[FONT_GROUPS.length - 1][1]);
+  const DEFAULT_FONT = "IBM Plex Sans";
+  const fontSelect = document.getElementById("drawFont");
+  fontSelect.innerHTML = FONT_GROUPS.map(([group, fonts]) =>
+    `<optgroup label="${group}">${fonts.map(f => `<option value="${f}">${f}</option>`).join("")}</optgroup>`).join("");
+  fontSelect.value = DEFAULT_FONT;
+  // Jede Option in ihrer eigenen Schrift zeigen (CSSOM - kein style-Attribut wegen CSP)
+  fontSelect.querySelectorAll("option").forEach(o => { o.style.fontFamily = `"${o.value}", sans-serif`; });
+
+  /** Google Fonts nur einmal und erst beim Oeffnen des Zeichenblatts laden. */
+  let fontsRequested = false;
+  function loadWebFonts(){
+    if(fontsRequested) return;
+    fontsRequested = true;
+    const families = FONT_GROUPS.flatMap(([, f]) => f)
+      .filter(f => !SYSTEM_FONTS.has(f) && f !== "IBM Plex Sans" && f !== "Source Serif 4")
+      .map(f => `family=${encodeURIComponent(f).replace(/%20/g, "+")}`).join("&");
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = `https://fonts.googleapis.com/css2?${families}&display=swap`;
+    document.head.appendChild(link);
+  }
+  /** Schrift fuer den Canvas sicher laden; danach neu zeichnen. */
+  function ensureFont(family){
+    if(!document.fonts || SYSTEM_FONTS.has(family)) return Promise.resolve();
+    return document.fonts.load(`40px "${family}"`).then(() => { if(dialog.open) render(); }).catch(() => {});
+  }
+  /** CSS-Font eines Textes; die Standardschrift wie bisher halbfett. */
+  function textFont(el){
+    const family = el.font || DEFAULT_FONT;
+    return `${family === DEFAULT_FONT ? 600 : 400} ${el.size}px "${family}", system-ui, sans-serif`;
+  }
+
+  /* ---- Fuellung fuer Kreis, Quadrat/Rechteck, Dreieck ---- */
+  const SHAPES = new Set(["rect", "ellipse", "triangle"]);
+  const fillTypeSelect = document.getElementById("drawFillType");
+  const fillC1 = document.getElementById("drawFillC1");
+  const fillC2 = document.getElementById("drawFillC2");
+  const fillDirSelect = document.getElementById("drawFillDir");
+  /** Fuellung als eigenes (unveraenderliches) Objekt - Rueckgaengig bleibt sauber. */
+  const currentFill = () => ({ type: fillTypeSelect.value, c1: fillC1.value, c2: fillC2.value, dir: fillDirSelect.value });
+
+  /** Gemeinsame Eigenschaften neuer Objekte: Farbe, Staerke, Deckkraft, Ecken, Fuellung, Schrift. */
   const newStyle = () => ({
     color: colorInput.value, width: strokeWidth(), opacity: currentOpacity(),
     corner: currentCorner(), cornerStyle: cornerStyleSelect.value,
+    fill: currentFill(), font: fontSelect.value,
   });
   const textSize = () => 16 + strokeWidth() * 4;
 
@@ -252,6 +303,24 @@ const Zeichnen = (() => {
     c.drawImage(img, el.x + (el.w - w) / 2, el.y + (el.h - h) / 2, w, h);
   }
 
+  /** Fuellfarbe bzw. Farbverlauf einer Form, ausgerichtet an ihrer Box - oder null. */
+  function makeFill(c, el){
+    const f = el.fill;
+    if(!f || f.type === "none") return null;
+    if(f.type === "solid") return f.c1;
+    const { x, y, w, h } = el;
+    let g;
+    if(f.type === "radial"){
+      g = c.createRadialGradient(x + w / 2, y + h / 2, 0, x + w / 2, y + h / 2, Math.max(w, h) / 2);
+    }else{
+      const lines = { h: [x, y, x + w, y], v: [x, y, x, y + h], d: [x, y, x + w, y + h], u: [x, y + h, x + w, y] };
+      g = c.createLinearGradient(...(lines[f.dir] || lines.h));
+    }
+    g.addColorStop(0, f.c1);
+    g.addColorStop(1, f.c2);
+    return g;
+  }
+
   function drawElement(c, el){
     c.save();
     // Deckkraft je Objekt: 0 = unsichtbar, 1 = deckend (gilt auch fuer Fotos in Formen)
@@ -277,10 +346,17 @@ const Zeichnen = (() => {
       c.lineTo(el.x2, el.y2);
       c.stroke();
     }else if(el.type === "text"){
-      c.font = `600 ${el.size}px "IBM Plex Sans", system-ui, sans-serif`;
+      c.font = textFont(el);
       c.textBaseline = "top";
       el.text.split("\n").forEach((line, i) => c.fillText(line, el.x, el.y + i * el.size * 1.25));
     }else{
+      // Fuellung (Farbe oder Verlauf) unter einem eventuellen Foto
+      const fillStyle = SHAPES.has(el.type) ? makeFill(c, el) : null;
+      if(fillStyle){
+        shapePath(c, el);
+        c.fillStyle = fillStyle;
+        c.fill();
+      }
       if(el.img){
         c.save();
         shapePath(c, el);
@@ -307,7 +383,7 @@ const Zeichnen = (() => {
       return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
     }
     if(el.type === "text"){
-      ctx.font = `600 ${el.size}px "IBM Plex Sans", system-ui, sans-serif`;
+      ctx.font = textFont(el);
       const lines = el.text.split("\n");
       return { x: el.x, y: el.y, w: Math.max(...lines.map(l => ctx.measureText(l).width)), h: lines.length * el.size * 1.25 };
     }
@@ -406,8 +482,25 @@ const Zeichnen = (() => {
           cornerInput.value = String(selected.corner ?? 0);
           cornerStyleSelect.value = selected.cornerStyle === "chamfer" ? "chamfer" : "round";
         }
+        if(SHAPES.has(selected.type)){
+          const f = selected.fill || { type: "none" };
+          fillTypeSelect.value = f.type;
+          if(f.c1) fillC1.value = f.c1;
+          if(f.c2) fillC2.value = f.c2;
+          if(f.dir) fillDirSelect.value = f.dir;
+        }
+        if(selected.type === "text") fontSelect.value = selected.font || DEFAULT_FONT;
       }
     }
+    // Fuellung nur bei Formen, Schrift nur bei Text: Werkzeug aktiv oder solch ein Objekt ausgewaehlt
+    const fillOn = selected ? SHAPES.has(selected.type) : SHAPES.has(tool);
+    fillWrap.classList.toggle("is-disabled", !fillOn);
+    fillBtn.disabled = !fillOn;
+    if(!fillOn && !fillPop.hidden) setFillPopOpen(false);
+    const fontOn = selected ? selected.type === "text" : tool === "text";
+    fontWrap.classList.toggle("is-disabled", !fontOn);
+    fontSelect.disabled = !fontOn;
+    syncFillControls();
     // Ecken nur bei Quadrat/Rechteck: Werkzeug aktiv oder ein Quadrat ausgewaehlt
     const cornersOn = selected ? selected.type === "rect" : tool === "rect";
     cornerWrap.classList.toggle("is-disabled", !cornersOn);
@@ -439,6 +532,59 @@ const Zeichnen = (() => {
   colorInput.addEventListener("change", () => { styleSnapshotDone = false; });
   opacityInput.addEventListener("change", () => { styleSnapshotDone = false; });
 
+  /* ---- Fuellung ---- */
+  const fillWrap = document.getElementById("drawFillWrap");
+  const fillBtn = document.getElementById("drawFillBtn");
+  const fillPop = document.getElementById("drawFillPop");
+  const fillSwatch = document.getElementById("drawFillSwatch");
+  const FILL_LABELS = { none: "keine", solid: "Farbe", linear: "Verlauf", radial: "Verlauf rund" };
+  const LINEAR_CSS = { h: "to right", v: "to bottom", d: "to bottom right", u: "to top right" };
+
+  /** Knopf-Vorschau und sichtbare Felder je nach Art der Fuellung. */
+  function syncFillControls(){
+    const f = currentFill();
+    document.getElementById("drawFillLabel").textContent = FILL_LABELS[f.type];
+    document.getElementById("drawFillC1Label").textContent = f.type === "solid" ? "Farbe" : "von";
+    document.getElementById("drawFillC1Row").hidden = f.type === "none";
+    document.getElementById("drawFillC2Row").hidden = f.type === "none" || f.type === "solid";
+    document.getElementById("drawFillDirRow").hidden = f.type !== "linear";
+    fillSwatch.className = f.type === "none" ? "draw-fill-none" : "";
+    fillSwatch.style.background = f.type === "solid" ? f.c1
+      : f.type === "linear" ? `linear-gradient(${LINEAR_CSS[f.dir]}, ${f.c1}, ${f.c2})`
+      : f.type === "radial" ? `radial-gradient(circle, ${f.c1}, ${f.c2})` : "";
+    document.getElementById("drawFillNote").textContent = selected && SHAPES.has(selected.type)
+      ? "Gilt für die ausgewählte Form und für neue Formen."
+      : "Gilt für neue Formen (Kreis, Quadrat/Rechteck, Dreieck).";
+  }
+
+  const isShape = (el) => SHAPES.has(el.type);
+  const applyFill = () => applyStyle(el => { el.fill = currentFill(); }, isShape);
+  [fillC1, fillC2].forEach(inp => {
+    inp.addEventListener("input", applyFill);
+    inp.addEventListener("change", () => { styleSnapshotDone = false; });
+  });
+  [fillTypeSelect, fillDirSelect].forEach(sel => sel.addEventListener("change", () => {
+    applyFill();
+    styleSnapshotDone = false;
+  }));
+
+  function setFillPopOpen(open){
+    fillPop.hidden = !open;
+    fillBtn.setAttribute("aria-expanded", String(open));
+    if(open) fillTypeSelect.focus();
+  }
+  fillBtn.addEventListener("click", () => setFillPopOpen(fillPop.hidden));
+
+  /* ---- Schrift ---- */
+  const fontWrap = document.getElementById("drawFontWrap");
+  fontSelect.addEventListener("change", () => {
+    const family = fontSelect.value;
+    ensureFont(family);
+    if(textInput) textInput.style.fontFamily = `"${family}", sans-serif`;
+    applyStyle(el => { el.font = family; }, el => el.type === "text");
+    styleSnapshotDone = false;
+  });
+
   // Ecken abflachen (nur Quadrat/Rechteck)
   const isRect = (el) => el.type === "rect";
   cornerInput.addEventListener("input", () => applyStyle(el => { el.corner = currentCorner(); }, isRect));
@@ -454,9 +600,12 @@ const Zeichnen = (() => {
     if(open) opacityInput.focus();
   }
 
-  colorBtn.addEventListener("click", () => setColorPopOpen(colorPop.hidden));
+  colorBtn.addEventListener("click", () => { setFillPopOpen(false); setColorPopOpen(colorPop.hidden); });
+  fillBtn.addEventListener("click", () => { if(!fillPop.hidden) setColorPopOpen(false); });
+  // Klick ausserhalb schliesst das jeweilige Fenster
   document.addEventListener("pointerdown", (e) => {
-    if(!colorPop.hidden && !e.target.closest(".draw-color")) setColorPopOpen(false);
+    if(!colorPop.hidden && !colorBtn.parentElement.contains(e.target)) setColorPopOpen(false);
+    if(!fillPop.hidden && !fillWrap.contains(e.target)) setFillPopOpen(false);
   });
 
   function setTool(name){
@@ -581,6 +730,8 @@ const Zeichnen = (() => {
     textInput.style.top = `${r.top - s.top + stage.scrollTop + p.y * scale}px`;
     textInput.style.fontSize = `${textSize() * scale}px`;
     textInput.style.color = colorInput.value;
+    textInput.style.fontFamily = `"${fontSelect.value}", sans-serif`;
+    textInput.style.fontWeight = fontSelect.value === DEFAULT_FONT ? "600" : "400";
     textInput.dataset.x = p.x;
     textInput.dataset.y = p.y;
     stage.appendChild(textInput);
@@ -594,9 +745,11 @@ const Zeichnen = (() => {
       input.style.width = `${Math.max(12, input.value.split("\n").reduce((m, l) => Math.max(m, l.length), 0) + 2)}ch`;
       input.rows = Math.max(1, input.value.split("\n").length);
     });
+    // Sofort fokussieren - auch sehr schnell Getipptes landet im Feld.
+    input.focus();
     setTimeout(() => {
       if(textInput !== input) return;
-      input.focus();
+      if(document.activeElement !== input) input.focus();
       // Erst nach dem Fokussieren: Klick daneben uebernimmt den Text.
       input.addEventListener("blur", () => setTimeout(() => { if(textInput === input) commitText(); }, 0));
     }, 0);
@@ -717,6 +870,7 @@ const Zeichnen = (() => {
   dialog.addEventListener("cancel", (e) => {        // Esc
     if(textInput){ e.preventDefault(); cancelText(); return; }
     if(!colorPop.hidden){ e.preventDefault(); setColorPopOpen(false); colorBtn.focus(); return; }
+    if(!fillPop.hidden){ e.preventDefault(); setFillPopOpen(false); fillBtn.focus(); return; }
     if(!confirmDiscard()) e.preventDefault();
     else cancelText();
   });
@@ -735,9 +889,13 @@ const Zeichnen = (() => {
     return dataUrl;
   }
 
-  document.getElementById("drawApplyBtn").addEventListener("click", () => {
+  document.getElementById("drawApplyBtn").addEventListener("click", async () => {
     commitText();
     if(!elements.length){ showStatus("Das Blatt ist noch leer.", "error"); return; }
+    // Alle verwendeten Schriften muessen geladen sein, sonst landet eine Ersatzschrift im Bild.
+    const families = [...new Set(elements.filter(el => el.type === "text").map(el => el.font || DEFAULT_FONT))];
+    await Promise.all(families.map(ensureFont));
+    if(document.fonts) await document.fonts.ready;
     const dataUrl = exportImage();
     const now = new Date();
     const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
@@ -754,10 +912,14 @@ const Zeichnen = (() => {
     selected = null;
     action = null;
     changed = false;
+    loadWebFonts();
     setTool("rect");
     render();
     dialog.showModal();
   }
+
+  // Wird eine Schrift fertig geladen, das Blatt neu zeichnen (Text erscheint in der richtigen Schrift).
+  if(document.fonts) document.fonts.addEventListener("loadingdone", () => { if(dialog.open) render(); });
 
   return { open };
 })();

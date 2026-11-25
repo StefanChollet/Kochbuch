@@ -118,6 +118,17 @@ Schreibrecht und grüner Ampel) ein grosses Fenster mit einem Blatt von
   0–100 % (0 % = unsichtbar, 100 % = deckend). Sie gelten für neue Elemente und
   für das ausgewählte Element – so lässt sich jedes Objekt einzeln einstellen,
   auch Fotos in Formen. Jeder Einstellvorgang ist ein Rückgängig-Schritt.
+- **Füllung** (Kreis, Quadrat/Rechteck, Dreieck): Knopf *Füllung* mit Art
+  *keine*, *Farbe*, *Farbverlauf (linear)* in vier Richtungen (→ ↓ ↘ ↗) oder
+  *Farbverlauf (rund)*, je zwei Farben. Die Füllung liegt unter einem Foto in der
+  Form und unter dem Umriss; Deckkraft wirkt auch auf sie.
+- **Schrift** (Text): Auswahl aus über 40 Schriften, gruppiert nach Serifenlos,
+  mit Serifen, Handschrift, Auffällig und Systemschriften – jede Option in ihrer
+  eigenen Schrift. Die Google-Schriften werden erst beim ersten Öffnen des
+  Zeichenblatts geladen; vor *In Bilder übernehmen* wartet das Blatt, bis alle
+  verwendeten Schriften da sind.
+- Füllung und Schrift gelten wie Farbe/Deckkraft für neue und für das ausgewählte
+  Objekt und sind nur aktiv, wenn sie zum Werkzeug bzw. zum ausgewählten Objekt passen.
 - **Ecken abflachen** (nur Quadrat/Rechteck): Regler *Ecken* 0–100 % (Anteil der
   halben kürzeren Seite; 100 % = ganz rund bzw. Achteck) und Art *rund* oder
   *schräg*. Aktiv, solange das Werkzeug *Quadrat* gewählt oder ein Quadrat

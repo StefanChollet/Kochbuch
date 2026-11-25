@@ -477,14 +477,20 @@ textarea{ resize: vertical; }
 .draw-tool:hover{ border-color: var(--accent); }
 .draw-tool.is-active{ background: var(--primary); border-color: var(--accent); color: var(--accent-contrast); font-weight:700; }
 .draw-tool:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
-.draw-options{ display:flex; gap:.8rem; align-items:center; }
+.draw-options{ display:flex; flex-wrap:wrap; gap:.5rem .8rem; align-items:center; min-width:0; }
 .draw-option{ display:flex; align-items:center; gap:.35rem; font-size:.82rem; color: var(--ink-soft); }
 /* Ecken abflachen (nur Quadrat/Rechteck) */
 .draw-corner{ display:flex; align-items:center; gap:.4rem; }
 .draw-corner input[type="range"]{ width: 110px; accent-color: var(--accent); }
 .draw-corner output{ min-width:3rem; font-size:.78rem; color: var(--ink-soft); white-space:nowrap; font-variant-numeric: tabular-nums; }
 .draw-corner select{ width:auto; padding:.3rem .5rem; font-size:.82rem; }
-.draw-corner.is-disabled{ opacity:.45; }
+.draw-corner.is-disabled, .draw-color.is-disabled, .draw-font.is-disabled{ opacity:.45; }
+.draw-color-btn:disabled{ cursor:not-allowed; }
+/* Fuellung "keine": weisses Feld mit rotem Schraegstrich */
+.draw-fill-none{ background: linear-gradient(to top right, #fff 45%, #d83a2b 46%, #d83a2b 54%, #fff 55%) !important; }
+.draw-color-row select{ flex:1; width:auto; padding:.3rem .45rem; font-size:.85rem; }
+/* Schriftauswahl: jede Schrift in sich selbst dargestellt */
+.draw-font select{ width: 190px; padding:.3rem .5rem; font-size:.9rem; }
 /* Farbe-Knopf mit Deckkraft: Farbfeld (auf Schachbrett = Transparenz sichtbar) + Prozent */
 .draw-color{ position:relative; }
 .draw-color-btn{
@@ -503,7 +509,7 @@ textarea{ resize: vertical; }
   background: repeating-conic-gradient(#ccc 0 25%, #fff 0 50%) 0 0 / 10px 10px;
 }
 .draw-color-swatch > span{ display:block; width:100%; height:100%; }
-.draw-color-value{ font-size:.78rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.draw-color-value{ font-size:.78rem; color: var(--ink-soft); white-space:nowrap; font-variant-numeric: tabular-nums; }
 .draw-color-pop{
   position:absolute; top: calc(100% + .35rem); left:0; z-index:20;
   display:flex; flex-direction:column; gap:.6rem;

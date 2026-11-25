@@ -140,6 +140,38 @@
             <p class="draw-color-note" id="drawColorNote">Gilt für neue Objekte.</p>
           </div>
         </div>
+        <!-- Fuellung: Kreis, Quadrat/Rechteck, Dreieck - keine, Farbe oder Farbverlauf -->
+        <div class="draw-color" id="drawFillWrap">
+          <button type="button" class="draw-color-btn" id="drawFillBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="drawFillPop" title="Füllung von Kreis, Quadrat/Rechteck und Dreieck">
+            <span class="draw-color-swatch" aria-hidden="true"><span id="drawFillSwatch" class="draw-fill-none"></span></span>
+            Füllung <span class="draw-color-value" id="drawFillLabel">keine</span>
+          </button>
+          <div class="draw-color-pop" id="drawFillPop" role="group" aria-label="Füllung" hidden>
+            <label class="draw-color-row">Art
+              <select id="drawFillType">
+                <option value="none">keine</option>
+                <option value="solid">Farbe</option>
+                <option value="linear">Farbverlauf (linear)</option>
+                <option value="radial">Farbverlauf (rund)</option>
+              </select>
+            </label>
+            <label class="draw-color-row" id="drawFillC1Row"><span id="drawFillC1Label">Farbe</span> <input type="color" id="drawFillC1" value="#f5c518"></label>
+            <label class="draw-color-row" id="drawFillC2Row">bis <input type="color" id="drawFillC2" value="#c0392b"></label>
+            <label class="draw-color-row" id="drawFillDirRow">Richtung
+              <select id="drawFillDir">
+                <option value="h">→ waagrecht</option>
+                <option value="v">↓ senkrecht</option>
+                <option value="d">↘ schräg</option>
+                <option value="u">↗ schräg</option>
+              </select>
+            </label>
+            <p class="draw-color-note" id="drawFillNote">Gilt für neue Formen.</p>
+          </div>
+        </div>
+        <!-- Schrift: fuer Text (Werkzeug aktiv oder Text ausgewaehlt) -->
+        <label class="draw-option draw-font" id="drawFontWrap" title="Schriftart für Text">Schrift
+          <select id="drawFont"></select>
+        </label>
         <!-- Ecken abflachen: nur fuer Quadrat/Rechteck (Werkzeug aktiv oder Quadrat ausgewaehlt) -->
         <div class="draw-corner" id="drawCornerWrap" title="Ecken abflachen – für Quadrat und Rechteck">
           <label class="draw-option" for="drawCorner">Ecken</label>
