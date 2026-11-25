@@ -28,7 +28,7 @@ const Zeichnen = (() => {
 
   const HINTS = {
     spline: "Krumme Linie zeichnen – beim Loslassen wird daraus eine glatte Kurve (Spline).",
-    select: "Klick wählt ein Objekt; auf freier Fläche ziehen umrundet mehrere. Umschalt+Klick: hinzufügen/entfernen. Ziehen verschiebt, Entf löscht.",
+    select: "Klick wählt ein Objekt (bei einer Gruppe die ganze Gruppe); auf freier Fläche ziehen umrundet mehrere. Umschalt+Klick: hinzufügen/entfernen. Strg+G gruppiert.",
     free: "Mit gedrückter Maustaste frei zeichnen.",
     line: "Vom Anfangs- zum Endpunkt ziehen.",
     text: "Ins Blatt klicken, Text tippen, Enter übernimmt.",
@@ -49,9 +49,21 @@ const Zeichnen = (() => {
   const isSelected = (el) => el === selected || multi.includes(el);
   /** Genau dieses eine Element auswaehlen (null = nichts). */
   function selectOnly(el){ selected = el || null; multi = []; }
-  /** Mehrere Elemente auswaehlen; das letzte steuert die Anzeige der Einstellungen. */
+  /* ---- Gruppen: Elemente mit gleicher Gruppen-id gehoeren zusammen ---- */
+  /** Erweitert eine Liste um alle Mitglieder der darin vorkommenden Gruppen. */
+  function withGroups(list){
+    const ids = new Set(list.filter(el => el && el.group).map(el => el.group));
+    if(!ids.size) return list;
+    return [...new Set([...list, ...elements.filter(el => el.group && ids.has(el.group))])];
+  }
+  /** Ein Element auswaehlen - gehoert es zu einer Gruppe, die ganze Gruppe. */
+  function selectWithGroup(el){
+    if(el && el.group) selectMany([el]);
+    else selectOnly(el);
+  }
+  /** Mehrere Elemente auswaehlen (Gruppen immer vollstaendig); das letzte steuert die Anzeige. */
   function selectMany(list){
-    const uniq = [...new Set(list)];
+    const uniq = [...new Set(withGroups(list.filter(Boolean)))];
     if(uniq.length <= 1){ selectOnly(uniq[0]); return; }
     multi = uniq;
     selected = uniq[uniq.length - 1];
@@ -700,6 +712,26 @@ const Zeichnen = (() => {
       }
       ctx.restore();
     }
+    // Gruppen: durchgezogener Rahmen um alle Mitglieder, mit Schild "Gruppe"
+    const shownGroups = new Set(sel.filter(el => el.group).map(el => el.group));
+    for(const id of shownGroups){
+      const members = elements.filter(el => el.group === id).map(bounds);
+      const x1 = Math.min(...members.map(b => b.x)) - 16, y1 = Math.min(...members.map(b => b.y)) - 16;
+      const x2 = Math.max(...members.map(b => b.x + b.w)) + 16, y2 = Math.max(...members.map(b => b.y + b.h)) + 16;
+      ctx.save();
+      ctx.strokeStyle = "#1e88e5";
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+      ctx.font = "600 18px system-ui, sans-serif";
+      const label = "⛓ Gruppe";
+      const tw = ctx.measureText(label).width + 14;
+      ctx.fillStyle = "#1e88e5";
+      ctx.fillRect(x1, y1 - 26, tw, 26);
+      ctx.fillStyle = "#ffffff";
+      ctx.textBaseline = "middle";
+      ctx.fillText(label, x1 + 7, y1 - 13);
+      ctx.restore();
+    }
     // Schlinge beim Umrunden
     if(action && action.kind === "lasso" && action.points.length > 1){
       ctx.save();
@@ -723,8 +755,14 @@ const Zeichnen = (() => {
     const delBtn = document.getElementById("drawDeleteBtn");
     delBtn.disabled = count === 0;
     delBtn.textContent = count > 1 ? `✕ ${count} Elemente löschen` : "✕ Element löschen";
+    // Gruppieren: ab zwei Objekten, ausser sie sind schon genau eine Gruppe
+    const sel = selection();
+    const groupIds = new Set(sel.map(el => el.group || null));
+    const alreadyOneGroup = groupIds.size === 1 && !groupIds.has(null);
+    document.getElementById("drawGroupBtn").disabled = count < 2 || alreadyOneGroup;
+    document.getElementById("drawUngroupBtn").disabled = !sel.some(el => el.group);
     if(tool === "select") hint.textContent = count > 1
-      ? `${count} Objekte ausgewählt – ziehen verschiebt alle, Entf löscht alle. Umschalt+Klick: hinzufügen/entfernen.`
+      ? `${count} Objekte ausgewählt – ziehen verschiebt alle, Entf löscht alle, Strg+G gruppiert. Umschalt+Klick: hinzufügen/entfernen.`
       : HINTS.select;
     document.getElementById("drawClearBtn").disabled = elements.length === 0;
     const photoBtn = document.getElementById("drawPhotoBtn");
@@ -1053,13 +1091,15 @@ const Zeichnen = (() => {
       if(hit && e.shiftKey){
         // Umschalt+Klick: Objekt zur Auswahl hinzufuegen bzw. herausnehmen
         const list = selection();
-        selectMany(isSelected(hit) ? list.filter(el => el !== hit) : [...list, hit]);
+        // Gruppen kommen und gehen immer als Ganzes
+        const sameUnit = (el) => el === hit || (hit.group && el.group === hit.group);
+        selectMany(isSelected(hit) ? list.filter(el => !sameUnit(el)) : [...list, hit]);
         render();
         return;
       }
       if(hit){
         // Klick auf ein schon ausgewaehltes Objekt: alle Ausgewaehlten zusammen verschieben
-        if(!isSelected(hit)) selectOnly(hit);
+        if(!isSelected(hit)) selectWithGroup(hit);
         snapshot();
         action = { kind: "move", last: p, moved: false };
         try{ canvas.setPointerCapture(e.pointerId); }catch{ /* z.B. Stift ohne Erfassung - geht auch so */ }
@@ -1284,6 +1324,31 @@ const Zeichnen = (() => {
     render();
   }
 
+  /** Ausgewaehlte Objekte zu einer Gruppe zusammenfassen (bestehende Gruppen gehen darin auf). */
+  function groupSelected(){
+    const sel = selection();
+    if(sel.length < 2) return;
+    snapshot();
+    const id = "g" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    sel.forEach(el => { el.group = id; });
+    selectMany(sel);
+    showStatus(`${sel.length} Objekte gruppiert – ein Klick wählt jetzt die ganze Gruppe.`, "success");
+    render();
+  }
+
+  /** Gruppen der ausgewaehlten Objekte aufloesen; die Objekte bleiben ausgewaehlt. */
+  function ungroupSelected(){
+    const sel = selection().filter(el => el.group);
+    if(!sel.length) return;
+    snapshot();
+    sel.forEach(el => { delete el.group; });
+    showStatus("Gruppierung aufgehoben – die Objekte sind wieder einzeln.", "success");
+    render();
+  }
+
+  document.getElementById("drawGroupBtn").addEventListener("click", groupSelected);
+  document.getElementById("drawUngroupBtn").addEventListener("click", ungroupSelected);
+
   /** Alles auf dem Blatt auswaehlen (Strg+A im Werkzeug "Auswaehlen"). */
   function selectAll(){
     if(!elements.length) return;
@@ -1307,6 +1372,11 @@ const Zeichnen = (() => {
     if(textInput || e.target.matches("input, select, textarea")) return;
     if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z"){ e.preventDefault(); undo(); return; }
     if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a"){ e.preventDefault(); selectAll(); return; }
+    if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "g"){
+      e.preventDefault();
+      if(e.shiftKey) ungroupSelected(); else groupSelected();
+      return;
+    }
     if(e.key === "Delete" || e.key === "Backspace"){ e.preventDefault(); deleteSelected(); return; }
     if(!e.ctrlKey && !e.metaKey && !e.altKey && SHORTCUTS[e.key.toLowerCase()]) setTool(SHORTCUTS[e.key.toLowerCase()]);
   });
