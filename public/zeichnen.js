@@ -27,6 +27,7 @@ const Zeichnen = (() => {
   const H = canvas.height;
 
   const HINTS = {
+    spline: "Krumme Linie zeichnen – beim Loslassen wird daraus eine glatte Kurve (Spline).",
     select: "Element anklicken zum Auswählen, ziehen zum Verschieben. Entf löscht es.",
     free: "Mit gedrückter Maustaste frei zeichnen.",
     line: "Vom Anfangs- zum Endpunkt ziehen.",
@@ -48,7 +49,11 @@ const Zeichnen = (() => {
 
   /* ---------------------------------------------------------- Hilfen */
 
+  const opacityInput = document.getElementById("drawOpacity");
   const strokeWidth = () => Number(widthSelect.value) || 4;
+  const currentOpacity = () => Math.min(100, Math.max(0, Number(opacityInput.value))) / 100;
+  /** Gemeinsame Eigenschaften neuer Objekte: Farbe, Staerke, Deckkraft. */
+  const newStyle = () => ({ color: colorInput.value, width: strokeWidth(), opacity: currentOpacity() });
   const textSize = () => 16 + strokeWidth() * 4;
 
   function toCanvas(e){
@@ -91,6 +96,110 @@ const Zeichnen = (() => {
     });
   }
 
+  /* ---------------------------------------------------------- Spline */
+
+  /** Punktreihe vereinfachen (Ramer-Douglas-Peucker): Zittern weg, Form bleibt. */
+  function simplify(points, epsilon){
+    if(points.length < 3) return points.map(p => [...p]);
+    const [ax, ay] = points[0], [bx, by] = points[points.length - 1];
+    let maxDist = -1, index = 0;
+    for(let i = 1; i < points.length - 1; i++){
+      const d = distToSegment({ x: points[i][0], y: points[i][1] }, { x: ax, y: ay }, { x: bx, y: by });
+      if(d > maxDist){ maxDist = d; index = i; }
+    }
+    if(maxDist <= epsilon) return [[ax, ay], [bx, by]];
+    const left = simplify(points.slice(0, index + 1), epsilon);
+    const right = simplify(points.slice(index), epsilon);
+    return left.slice(0, -1).concat(right);
+  }
+
+  /** Gleitender Mittelwert: nimmt das Zittern der Hand heraus, Anfang und Ende bleiben. */
+  function smooth(points, radius){
+    if(points.length < 3) return points.map(p => [...p]);
+    return points.map((p, i) => {
+      if(i === 0 || i === points.length - 1) return [...p];
+      let sx = 0, sy = 0, n = 0;
+      for(let k = Math.max(0, i - radius); k <= Math.min(points.length - 1, i + radius); k++){
+        sx += points[k][0]; sy += points[k][1]; n++;
+      }
+      return [sx / n, sy / n];
+    });
+  }
+
+  /** Punkte in gleichem Abstand entlang der Linie (fuer gleichmaessige Kruemmung). */
+  function resample(points, spacing){
+    const out = [[...points[0]]];
+    let carry = 0;
+    for(let i = 1; i < points.length; i++){
+      let [ax, ay] = points[i - 1];
+      const [bx, by] = points[i];
+      let seg = Math.hypot(bx - ax, by - ay);
+      while(carry + seg >= spacing){
+        const t = (spacing - carry) / seg;
+        ax += (bx - ax) * t; ay += (by - ay) * t;
+        out.push([ax, ay]);
+        seg = Math.hypot(bx - ax, by - ay);
+        carry = 0;
+      }
+      carry += seg;
+    }
+    const last = points[points.length - 1];
+    const prev = out[out.length - 1];
+    if(Math.hypot(last[0] - prev[0], last[1] - prev[1]) > spacing * 0.3) out.push([...last]);
+    else out[out.length - 1] = [...last];
+    return out;
+  }
+
+  /**
+   * Aus einer krummen Freihand-Linie die Stuetzpunkte des Splines:
+   * Zittern herausglaetten, Stuetzpunkte gleichmaessig verteilen (Abstand
+   * waechst mit der Groesse der Linie), fast gerade Stuecke zusammenfassen.
+   * Durch diese Punkte laeuft dann die glatte Catmull-Rom-Kurve.
+   */
+  function toSplinePoints(points){
+    if(points.length < 2) return null;
+    const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
+    const diag = Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+    if(diag < 4) return null;
+    const spacing = Math.min(70, Math.max(18, diag / 22));
+    const pts = simplify(resample(smooth(smooth(points, 3), 3), spacing), 1.5);
+    return pts.length >= 2 ? pts : null;
+  }
+
+  /**
+   * Catmull-Rom-Spline durch alle Stuetzpunkte, als Bezier-Segmente:
+   * liefert je Abschnitt [p1, Kontrollpunkt1, Kontrollpunkt2, p2].
+   */
+  function splineSegments(pts){
+    const seg = [];
+    for(let i = 0; i < pts.length - 1; i++){
+      const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+      seg.push([
+        p1,
+        [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6],
+        [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6],
+        p2,
+      ]);
+    }
+    return seg;
+  }
+
+  /** Kurve in viele kleine Strecken zerlegt - fuer Treffer und Rahmen. */
+  function flattenSpline(pts){
+    if(pts.length < 2) return pts;
+    const out = [pts[0]];
+    for(const [a, b, c, d] of splineSegments(pts)){
+      for(let s = 1; s <= 16; s++){
+        const t = s / 16, u = 1 - t;
+        out.push([
+          u * u * u * a[0] + 3 * u * u * t * b[0] + 3 * u * t * t * c[0] + t * t * t * d[0],
+          u * u * u * a[1] + 3 * u * u * t * b[1] + 3 * u * t * t * c[1] + t * t * t * d[1],
+        ]);
+      }
+    }
+    return out;
+  }
+
   /* ----------------------------------------------------------- Formen */
 
   /** Umriss einer Form als Pfad (fuer Zeichnen, Zuschneiden, Treffer). */
@@ -117,12 +226,19 @@ const Zeichnen = (() => {
 
   function drawElement(c, el){
     c.save();
+    // Deckkraft je Objekt: 0 = unsichtbar, 1 = deckend (gilt auch fuer Fotos in Formen)
+    c.globalAlpha = el.opacity ?? 1;
     c.strokeStyle = el.color;
     c.fillStyle = el.color;
     c.lineWidth = el.width;
     c.lineCap = "round";
     c.lineJoin = "round";
-    if(el.type === "free"){
+    if(el.type === "spline"){
+      c.beginPath();
+      c.moveTo(el.points[0][0], el.points[0][1]);
+      for(const [, b, cc, d] of splineSegments(el.points)) c.bezierCurveTo(b[0], b[1], cc[0], cc[1], d[0], d[1]);
+      c.stroke();
+    }else if(el.type === "free"){
       c.beginPath();
       el.points.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y));
       if(el.points.length === 1) c.lineTo(el.points[0][0] + 0.1, el.points[0][1]);
@@ -157,8 +273,9 @@ const Zeichnen = (() => {
     if(el.type === "line"){
       return { x: Math.min(el.x1, el.x2), y: Math.min(el.y1, el.y2), w: Math.abs(el.x2 - el.x1), h: Math.abs(el.y2 - el.y1) };
     }
-    if(el.type === "free"){
-      const xs = el.points.map(p => p[0]), ys = el.points.map(p => p[1]);
+    if(el.type === "free" || el.type === "spline"){
+      const pts = el.type === "spline" ? flattenSpline(el.points) : el.points;
+      const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
       return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
     }
     if(el.type === "text"){
@@ -183,12 +300,13 @@ const Zeichnen = (() => {
       const tol = el.width / 2 + 8;
       if(el.type === "line"){
         if(distToSegment(p, { x: el.x1, y: el.y1 }, { x: el.x2, y: el.y2 }) <= tol) return el;
-      }else if(el.type === "free"){
-        for(let k = 1; k < el.points.length; k++){
-          const a = { x: el.points[k - 1][0], y: el.points[k - 1][1] }, b = { x: el.points[k][0], y: el.points[k][1] };
+      }else if(el.type === "free" || el.type === "spline"){
+        const pts = el.type === "spline" ? flattenSpline(el.points) : el.points;
+        for(let k = 1; k < pts.length; k++){
+          const a = { x: pts[k - 1][0], y: pts[k - 1][1] }, b = { x: pts[k][0], y: pts[k][1] };
           if(distToSegment(p, a, b) <= tol) return el;
         }
-        if(el.points.length === 1 && Math.hypot(p.x - el.points[0][0], p.y - el.points[0][1]) <= tol) return el;
+        if(pts.length === 1 && Math.hypot(p.x - pts[0][0], p.y - pts[0][1]) <= tol) return el;
       }else if(el.type === "text"){
         const b = bounds(el);
         if(p.x >= b.x - 6 && p.x <= b.x + b.w + 6 && p.y >= b.y - 6 && p.y <= b.y + b.h + 6) return el;
@@ -203,7 +321,7 @@ const Zeichnen = (() => {
 
   function moveElement(el, dx, dy){
     if(el.type === "line"){ el.x1 += dx; el.y1 += dy; el.x2 += dx; el.y2 += dy; }
-    else if(el.type === "free"){ el.points.forEach(p => { p[0] += dx; p[1] += dy; }); }
+    else if(el.type === "free" || el.type === "spline"){ el.points.forEach(p => { p[0] += dx; p[1] += dy; }); }
     else { el.x += dx; el.y += dy; }
   }
 
@@ -232,10 +350,78 @@ const Zeichnen = (() => {
     document.getElementById("drawClearBtn").disabled = elements.length === 0;
     const photoBtn = document.getElementById("drawPhotoBtn");
     photoBtn.textContent = selected && FILLABLE.has(selected.type) ? "🖼 Foto in Form einsetzen" : "🖼 Foto einfügen";
+    syncStyleControls();
   }
+
+  /* ------------------------------------------- Farbe und Deckkraft */
+
+  const colorBtn = document.getElementById("drawColorBtn");
+  const colorPop = document.getElementById("drawColorPop");
+  const colorSwatch = document.getElementById("drawColorSwatch");
+  const opacityLabel = document.getElementById("drawOpacityLabel");
+  const opacityOut = document.getElementById("drawOpacityOut");
+  const colorNote = document.getElementById("drawColorNote");
+  let styleTarget = null;     // Objekt, dessen Farbe/Deckkraft gerade eingestellt wird
+  let styleSnapshotDone = false;
+
+  /** Anzeige im Farbe-Knopf; bei Auswahl zeigt er Farbe/Deckkraft dieses Objekts. */
+  function syncStyleControls(){
+    if(selected !== styleTarget){
+      styleTarget = selected;
+      styleSnapshotDone = false;
+      if(selected){
+        if(selected.type !== "image") colorInput.value = selected.color;
+        opacityInput.value = String(Math.round((selected.opacity ?? 1) * 100));
+      }
+    }
+    const pct = `${opacityInput.value} %`;
+    opacityLabel.textContent = pct;
+    opacityOut.textContent = pct;
+    colorSwatch.style.background = colorInput.value;
+    colorSwatch.style.opacity = String(currentOpacity());
+    colorNote.textContent = selected
+      ? "Gilt für das ausgewählte Objekt und für neue Objekte."
+      : "Gilt für neue Objekte. Zum Ändern eines Objekts: zuerst mit „Auswählen“ anklicken.";
+  }
+
+  /** Aenderung am ausgewaehlten Objekt - pro Einstellvorgang ein Rueckgaengig-Schritt. */
+  function applyStyle(change){
+    if(selected){
+      if(!styleSnapshotDone){ snapshot(); styleSnapshotDone = true; }
+      change(selected);
+    }
+    render();
+  }
+
+  colorInput.addEventListener("input", () => applyStyle(el => { if(el.type !== "image") el.color = colorInput.value; }));
+  opacityInput.addEventListener("input", () => applyStyle(el => { el.opacity = currentOpacity(); }));
+  // Neuer Einstellvorgang = neuer Rueckgaengig-Schritt
+  colorInput.addEventListener("change", () => { styleSnapshotDone = false; });
+  opacityInput.addEventListener("change", () => { styleSnapshotDone = false; });
+
+  function setColorPopOpen(open){
+    colorPop.hidden = !open;
+    colorBtn.setAttribute("aria-expanded", String(open));
+    if(open) opacityInput.focus();
+  }
+
+  colorBtn.addEventListener("click", () => setColorPopOpen(colorPop.hidden));
+  document.addEventListener("pointerdown", (e) => {
+    if(!colorPop.hidden && !e.target.closest(".draw-color")) setColorPopOpen(false);
+  });
 
   function setTool(name){
     commitText();
+    // Spline-Knopf bei ausgewaehlter Freihand-Linie: die krumme Linie wird zur glatten Kurve.
+    if(name === "spline" && selected && selected.type === "free"){
+      const pts = toSplinePoints(selected.points);
+      if(pts){
+        snapshot();
+        selected.type = "spline";
+        selected.points = pts;
+        showStatus("Freihand-Linie in einen Spline umgewandelt.", "success");
+      }
+    }
     tool = name;
     dialog.querySelectorAll(".draw-tool").forEach(b => {
       const on = b.dataset.tool === name;
@@ -267,16 +453,17 @@ const Zeichnen = (() => {
       if(selected){
         snapshot();
         action = { kind: "move", last: p, moved: false };
-        canvas.setPointerCapture(e.pointerId);
+        try{ canvas.setPointerCapture(e.pointerId); }catch{ /* z.B. Stift ohne Erfassung - geht auch so */ }
       }
       render();
       return;
     }
 
-    const base = { color: colorInput.value, width: strokeWidth() };
+    const base = newStyle();
     action = { kind: "draw", start: p, preview: null, base };
-    if(tool === "free") action.preview = { ...base, type: "free", points: [[p.x, p.y]] };
-    canvas.setPointerCapture(e.pointerId);
+    // Spline: zuerst wie Freihand mitzeichnen, beim Loslassen glaetten.
+    if(tool === "free" || tool === "spline") action.preview = { ...base, type: "free", points: [[p.x, p.y]] };
+    try{ canvas.setPointerCapture(e.pointerId); }catch{ /* z.B. Stift ohne Erfassung - geht auch so */ }
     render();
   });
 
@@ -287,7 +474,7 @@ const Zeichnen = (() => {
       moveElement(selected, p.x - action.last.x, p.y - action.last.y);
       action.last = p;
       action.moved = true;
-    }else if(tool === "free"){
+    }else if(tool === "free" || tool === "spline"){
       action.preview.points.push([p.x, p.y]);
     }else if(tool === "line"){
       action.preview = { ...action.base, type: "line", x1: action.start.x, y1: action.start.y, x2: p.x, y2: p.y };
@@ -302,7 +489,12 @@ const Zeichnen = (() => {
     if(action.kind === "move"){
       if(!action.moved) history.pop();   // nur angeklickt: kein Rueckgaengig-Schritt
     }else if(action.preview){
-      const el = action.preview;
+      let el = action.preview;
+      if(tool === "spline"){
+        const pts = toSplinePoints(el.points);
+        el = pts ? { ...el, type: "spline", points: pts } : null;
+      }
+      if(!el){ action = null; render(); return; }
       const tooSmall = (el.type === "line" && Math.hypot(el.x2 - el.x1, el.y2 - el.y1) < 4)
         || (FILLABLE.has(el.type) && (el.w < 6 || el.h < 6));
       if(!tooSmall){
@@ -368,7 +560,7 @@ const Zeichnen = (() => {
     if(text){
       snapshot();
       elements.push({ type: "text", x: Number(input.dataset.x), y: Number(input.dataset.y), text,
-        color: colorInput.value, width: strokeWidth(), size: textSize() });
+        ...newStyle(), size: textSize() });
     }
     input.remove();
     render();
@@ -393,7 +585,7 @@ const Zeichnen = (() => {
     }else{
       const scale = Math.min((W * 0.45) / img.naturalWidth, (H * 0.45) / img.naturalHeight, 1);
       const w = img.naturalWidth * scale, h = img.naturalHeight * scale;
-      const el = { type: "image", x: (W - w) / 2, y: (H - h) / 2, w, h, img, color: colorInput.value, width: strokeWidth() };
+      const el = { type: "image", x: (W - w) / 2, y: (H - h) / 2, w, h, img, ...newStyle() };
       elements.push(el);
       selected = el;
       setTool("select");
@@ -451,7 +643,7 @@ const Zeichnen = (() => {
     render();
   });
 
-  const SHORTCUTS = { v: "select", f: "free", l: "line", t: "text", k: "ellipse", q: "rect", d: "triangle" };
+  const SHORTCUTS = { s: "spline", v: "select", f: "free", l: "line", t: "text", k: "ellipse", q: "rect", d: "triangle" };
   dialog.addEventListener("keydown", (e) => {
     if(textInput || e.target.matches("input, select, textarea")) return;
     if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z"){ e.preventDefault(); undo(); return; }
@@ -474,6 +666,7 @@ const Zeichnen = (() => {
   document.getElementById("drawCancelBtn").addEventListener("click", () => { if(confirmDiscard()) close(); });
   dialog.addEventListener("cancel", (e) => {        // Esc
     if(textInput){ e.preventDefault(); cancelText(); return; }
+    if(!colorPop.hidden){ e.preventDefault(); setColorPopOpen(false); colorBtn.focus(); return; }
     if(!confirmDiscard()) e.preventDefault();
     else cancelText();
   });

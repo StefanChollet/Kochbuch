@@ -108,12 +108,17 @@ Schreibrecht und grüner Ampel) ein grosses Fenster mit einem Blatt von
 
 | Werkzeug | Bedienung |
 |---|---|
+| Spline (S) – ganz links | krumme Linie zeichnen; beim Loslassen wird sie geglättet und zur glatten Kurve (Catmull-Rom-Spline durch gleichmässig verteilte Stützpunkte). Ist eine Freihand-Linie ausgewählt, macht ein Klick auf *Spline* aus ihr einen Spline. |
 | Auswählen (V) | Element anklicken, ziehen = verschieben, Entf = löschen |
 | Freihand (F), Linie (L) | mit gedrückter Maustaste ziehen |
 | Text (T) | ins Blatt klicken, tippen; Enter oder Klick daneben übernimmt (Umschalt+Enter = neue Zeile) |
 | Kreis (K), Quadrat (Q), Dreieck (D) | Box aufziehen; Kreis/Quadrat mit Umschalt exakt rund/quadratisch |
 
-- Farbe und Stärke gelten für neue Elemente (Stärke bestimmt auch die Textgrösse).
+- **Farbe und Deckkraft** stecken im Knopf *Farbe*: Farbwahl und Regler
+  0–100 % (0 % = unsichtbar, 100 % = deckend). Sie gelten für neue Elemente und
+  für das ausgewählte Element – so lässt sich jedes Objekt einzeln einstellen,
+  auch Fotos in Formen. Jeder Einstellvorgang ist ein Rückgängig-Schritt.
+- Stärke gilt für neue Elemente (bestimmt auch die Textgrösse).
 - **Fotos in Formen:** eine Form auswählen (neu gezeichnete Formen sind gleich
   ausgewählt), dann *Foto in Form einsetzen* oder **Strg+V** – das Foto füllt die
   Form und wird auf Kreis, Quadrat oder Dreieck zugeschnitten. Ohne gewählte Form

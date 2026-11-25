@@ -115,6 +115,7 @@
 
     <div class="draw-toolbar" role="toolbar" aria-label="Werkzeuge">
       <div class="draw-tools" role="radiogroup" aria-label="Werkzeug">
+        <button type="button" class="draw-tool" data-tool="spline" role="radio" title="Spline: krumme Linie zeichnen, sie wird zur glatten Kurve. Eine ausgewählte Freihand-Linie wird zum Spline. (S)">〰 Spline</button>
         <button type="button" class="draw-tool" data-tool="select" role="radio" title="Auswählen und verschieben (V)">↖ Auswählen</button>
         <button type="button" class="draw-tool" data-tool="free" role="radio" title="Freihand zeichnen (F)">✎ Freihand</button>
         <button type="button" class="draw-tool" data-tool="line" role="radio" title="Gerade Linie (L)">╱ Linie</button>
@@ -124,7 +125,21 @@
         <button type="button" class="draw-tool" data-tool="triangle" role="radio" title="Dreieck (D)">△ Dreieck</button>
       </div>
       <div class="draw-options">
-        <label class="draw-option" title="Farbe">Farbe <input type="color" id="drawColor" value="#2d2915"></label>
+        <!-- Farbe + Deckkraft: gilt fuer neue Objekte und fuer das ausgewaehlte -->
+        <div class="draw-color">
+          <button type="button" class="draw-color-btn" id="drawColorBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="drawColorPop" title="Farbe und Deckkraft">
+            <span class="draw-color-swatch" aria-hidden="true"><span id="drawColorSwatch"></span></span>
+            Farbe <span class="draw-color-value" id="drawOpacityLabel">100 %</span>
+          </button>
+          <div class="draw-color-pop" id="drawColorPop" role="group" aria-label="Farbe und Deckkraft" hidden>
+            <label class="draw-color-row">Farbe <input type="color" id="drawColor" value="#2d2915"></label>
+            <label class="draw-color-row">Deckkraft
+              <input type="range" id="drawOpacity" min="0" max="100" step="1" value="100">
+              <output id="drawOpacityOut" for="drawOpacity">100 %</output>
+            </label>
+            <p class="draw-color-note" id="drawColorNote">Gilt für neue Objekte.</p>
+          </div>
+        </div>
         <label class="draw-option" title="Strichstärke / Textgrösse">Stärke
           <select id="drawWidth">
             <option value="2">fein</option>
