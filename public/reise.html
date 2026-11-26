@@ -93,6 +93,8 @@
 
       <div class="form-actions">
         <div class="push-left action-group">
+          <!-- Dia-Show: alle Bilder der Reise bildschirmfuellend, auch bei roter Ampel (nur ansehen) -->
+          <button type="button" id="slideBtn" class="btn btn-secondary" title="Alle Bilder der Reise als Dia-Show im Vollbild abspielen">▶ Dia-Show erstellen</button>
           <button type="button" id="deleteTripBtn" class="btn btn-danger-ghost write-only" hidden>Reise löschen</button>
           <!-- Zeichenblatt: Linien, Text, Formen, Fotos in Formen -> wird ein Bild der Reise -->
           <button type="button" id="drawBtn" class="btn btn-secondary write-only" title="Zeichenblatt öffnen: Linien, Text, Kreise, Quadrate, Dreiecke und Fotos">🎨 Zeichnen</button>
@@ -273,8 +275,59 @@
   <img id="imageLightboxImg" src="data:," alt="">
 </div>
 
+<!-- ============ Dia-Show: Einstellungen ============ -->
+<dialog id="slideDialog" class="app-dialog slide-dialog" aria-labelledby="slideTitle">
+  <div class="dialog-body">
+    <div class="dialog-head">
+      <h2 id="slideTitle">Dia-Show erstellen</h2>
+      <button type="button" class="btn btn-ghost" data-close aria-label="Schliessen">✕</button>
+    </div>
+    <p class="panel-sub" id="slideInfo"></p>
+    <ol class="slide-strip" id="slideStrip" aria-label="Reihenfolge der Bilder"></ol>
+    <div class="slide-settings">
+      <label class="field">
+        <span>Anzeige pro Bild (Sekunden)</span>
+        <input type="number" id="slideDuration" min="1" max="600" step="1" value="10" inputmode="numeric">
+      </label>
+      <label class="field">
+        <span>Übergang zum nächsten Bild (Sekunden)</span>
+        <input type="number" id="slideTransition" min="0" max="10" step="0.5" value="2" inputmode="decimal">
+      </label>
+      <label class="field">
+        <span>Art des Übergangs</span>
+        <select id="slideEffect">
+          <option value="fade">Überblenden</option>
+          <option value="slide">Schieben</option>
+          <option value="zoom">Zoomen</option>
+        </select>
+      </label>
+    </div>
+    <p class="draw-color-note">Die Show läuft im Vollbild in einer Endlosschleife, bis du sie stoppst (⏹ oder Esc). Leertaste: Pause/Weiter, ← →: Bild zurück/vor.</p>
+    <p class="app-status dialog-status" role="status" aria-live="polite" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" data-close>Abbrechen</button>
+      <button type="button" class="btn btn-primary" id="slideStartBtn">▶ Starten</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ============ Dia-Show: Abspielflaeche (Vollbild) ============ -->
+<div id="slideShow" class="slide-show" hidden>
+  <img class="slide-img" id="slideImgA" alt="">
+  <img class="slide-img" id="slideImgB" alt="">
+  <div class="slide-controls" id="slideControls">
+    <button type="button" class="slide-ctl" id="slidePrevBtn" title="Vorheriges Bild (←)" aria-label="Vorheriges Bild">⏮</button>
+    <button type="button" class="slide-ctl slide-ctl-main" id="slidePauseBtn" title="Pause (Leertaste)" aria-label="Pause">⏸</button>
+    <button type="button" class="slide-ctl" id="slideNextBtn" title="Nächstes Bild (→)" aria-label="Nächstes Bild">⏭</button>
+    <span class="slide-counter" id="slideCounter">1 / 1</span>
+    <button type="button" class="slide-ctl slide-ctl-stop" id="slideStopBtn" title="Dia-Show beenden (Esc)" aria-label="Dia-Show beenden">⏹ Stopp</button>
+  </div>
+  <div class="slide-paused" id="slidePaused" hidden>Pause – Leertaste oder ▶ zum Weiterspielen</div>
+</div>
+
 <script src="common.js"></script>
 <script src="zeichnen.js"></script>
+<script src="diashow.js"></script>
 <script src="reise.js"></script>
 </body>
 </html>

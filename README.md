@@ -100,6 +100,25 @@ ein Ampelknopf; wer nur lesen darf, sieht ihn nicht.
   gespeicherte Reise führt bei Rot zurück zur Übersicht.
 - Reine Anzeige-Sperre – die Rechte prüft der Server unabhängig davon.
 
+## Dia-Show
+
+Auf der Detailseite ganz unten links: **▶ Dia-Show erstellen** (`public/diashow.js`) –
+auch bei roter Ampel, weil sie nur anzeigt.
+
+1. **Einstellungen:** alle Bilder der Reise – Fotos und mit *Zeichnen* erstellte
+   Zeichenblätter – in zeitlicher Reihenfolge nach Hochladezeit (gleichzeitig
+   hochgeladene in der Reihenfolge der Reise; noch ungespeicherte am Ende), als
+   nummerierte Leiste. Einstellbar: **Anzeige pro Bild** (Standard 10 s),
+   **Übergang** (Standard 2 s, 0 = harter Schnitt) und **Art des Übergangs**
+   (Überblenden, Schieben, Zoomen). Die Werte werden im Browser gemerkt.
+2. **Starten:** Vollbild, jedes Bild so gross wie möglich (Seitenverhältnis bleibt),
+   in einer **Endlosschleife** – die Show endet nur von Hand: **⏹ Stopp** oder **Esc**
+   (bzw. Vollbild verlassen). **⏸/▶** oder Leertaste pausiert und setzt fort,
+   **⏮ ⏭** bzw. ← → blättern. Die Bedienleiste und der Mauszeiger blenden sich nach
+   4 s Ruhe aus; Maus bewegen holt sie zurück. Der Bildschirm bleibt während der
+   Show an (Wake Lock, wo der Browser es kann).
+3. Danach lässt sich die Show beliebig oft neu starten.
+
 ## Zeichenblatt
 
 Auf der Detailseite öffnet **🎨 Zeichnen** (neben *Reise löschen*, nur mit

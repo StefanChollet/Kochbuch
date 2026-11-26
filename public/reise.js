@@ -202,6 +202,27 @@ document.getElementById("drawBtn").addEventListener("click", () => {
   });
 });
 
+/* ---- Dia-Show: alle Bilder der Reise in zeitlicher Reihenfolge ---- */
+/**
+ * Gespeicherte Bilder nach Hochladezeit: ihre id beginnt mit dem Zeitstempel
+ * (Basis 36, gleich lang) - sortiert man nach id, ist es chronologisch.
+ * Noch nicht gespeicherte (gerade hochgeladene oder gezeichnete) Bilder
+ * kommen danach, in der Reihenfolge, in der sie dazukamen.
+ */
+function slideList(){
+  // Zeitstempel = id ohne die 8 Zufallszeichen am Ende; gleiche Zeit (zusammen
+  // hochgeladen) -> Reihenfolge in der Reise
+  const stamp = (img) => img.id.slice(0, -8);
+  const saved = workingImages.map((img, pos) => ({ img, pos }))
+    .filter(({ img }) => !img.isNew && img.id)
+    .sort((a, b) => (stamp(a.img) < stamp(b.img) ? -1 : stamp(a.img) > stamp(b.img) ? 1 : a.pos - b.pos))
+    .map(({ img }) => img);
+  const fresh = workingImages.filter(img => img.isNew);
+  return [...saved, ...fresh].map(img => ({ src: img.url || img.dataUrl, name: img.name }));
+}
+
+document.getElementById("slideBtn").addEventListener("click", () => Diashow.open(slideList()));
+
 /* ---- Lightbox ---- */
 const imageLightbox = document.getElementById("imageLightbox");
 const imageLightboxImg = document.getElementById("imageLightboxImg");
