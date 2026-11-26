@@ -150,14 +150,53 @@ document.getElementById("addStationBtn").addEventListener("click", () => {
 }));
 
 /* ---- Bilder ---- */
+/** Zeichenblatt mit gespeichertem Inhalt - laesst sich wieder bearbeiten. */
+const isEditableDrawing = (img) => !!(img.scene || img.hasScene);
+
 function renderImageList(){
   imageListEl.innerHTML = workingImages.map(img => `
     <div class="image-thumb" data-key="${img.key}">
       <img src="${escapeHtml(img.url || img.dataUrl)}" alt="${escapeHtml(img.name)}" loading="lazy" title="Doppelklick: vergrößern">
+      ${isEditableDrawing(img) ? `<button type="button" class="image-edit" data-action="edit-drawing" title="Zeichenblatt mit allen Objekten wieder bearbeiten">✎ Bearbeiten</button>` : ""}
       <button type="button" class="image-remove" data-action="remove-image" aria-label="Bild entfernen">✕</button>
     </div>
   `).join("");
 }
+
+/** Zeitpunkt, zu dem ein gespeichertes Bild entstand: Erstellzeit oder Zeitstempel in der id. */
+function imageTime(img){
+  if(img.createdAt){ const t = Date.parse(img.createdAt); if(Number.isFinite(t)) return t; }
+  if(img.id){ const t = parseInt(img.id.slice(0, -8), 36); if(Number.isFinite(t)) return t; }
+  return null;
+}
+
+/* Zeichenblatt wieder bearbeiten: Inhalt laden, Zeichenblatt oeffnen, das
+   Ergebnis ersetzt das bisherige Bild an derselben Stelle und behaelt
+   seine Erstellzeit (Reihenfolge in der Dia-Show bleibt). */
+imageListEl.addEventListener("click", async (e) => {
+  const editBtn = e.target.closest('button[data-action="edit-drawing"]');
+  if(!editBtn || readOnly) return;
+  const key = editBtn.closest(".image-thumb").dataset.key;
+  const original = workingImages.find(i => i.key === key);
+  if(!original) return;
+  editBtn.disabled = true;
+  let scene = null;
+  const ok = await guard(async () => {
+    scene = original.scene ? JSON.parse(original.scene) : await API.get(`/images/${enc(original.id)}/scene`);
+  });
+  editBtn.disabled = false;
+  if(!ok || !scene) return;
+  const time = imageTime(original);
+  Zeichnen.open(({ name, dataUrl, scene: newScene }) => {
+    const idx = workingImages.findIndex(i => i.key === key);
+    if(idx === -1) return;
+    workingImages[idx] = { key: makeId(), name, dataUrl, scene: newScene, isNew: true,
+      createdAt: time ? new Date(time).toISOString() : undefined };
+    dirty = true;
+    renderImageList();
+    showStatus("Zeichenblatt geändert – mit „Speichern“ in der Reise sichern.", "success");
+  }, { scene, name: original.name });
+});
 
 imageListEl.addEventListener("click", (e) => {
   if(!e.target.closest('button[data-action="remove-image"]')) return;
@@ -194,8 +233,8 @@ imageInput.addEventListener("change", () => {
 /* ---- Zeichenblatt: die fertige Zeichnung wird ein neues Bild der Reise ---- */
 document.getElementById("drawBtn").addEventListener("click", () => {
   if(readOnly) return;
-  Zeichnen.open(({ name, dataUrl }) => {
-    workingImages.push({ key: makeId(), name, dataUrl, isNew: true });
+  Zeichnen.open(({ name, dataUrl, scene }) => {
+    workingImages.push({ key: makeId(), name, dataUrl, scene, isNew: true });
     dirty = true;
     renderImageList();
     showStatus("Zeichnung bei den Bildern eingefügt – mit „Speichern“ in der Reise sichern.", "success");
@@ -210,15 +249,16 @@ document.getElementById("drawBtn").addEventListener("click", () => {
  * kommen danach, in der Reihenfolge, in der sie dazukamen.
  */
 function slideList(){
-  // Zeitstempel = id ohne die 8 Zufallszeichen am Ende; gleiche Zeit (zusammen
-  // hochgeladen) -> Reihenfolge in der Reise
-  const stamp = (img) => img.id.slice(0, -8);
-  const saved = workingImages.map((img, pos) => ({ img, pos }))
-    .filter(({ img }) => !img.isNew && img.id)
-    .sort((a, b) => (stamp(a.img) < stamp(b.img) ? -1 : stamp(a.img) > stamp(b.img) ? 1 : a.pos - b.pos))
-    .map(({ img }) => img);
-  const fresh = workingImages.filter(img => img.isNew);
-  return [...saved, ...fresh].map(img => ({ src: img.url || img.dataUrl, name: img.name }));
+  // Nach Entstehungszeit; gleiche Zeit (zusammen hochgeladen) -> Reihenfolge
+  // in der Reise. Noch ungespeicherte neue Bilder ohne Zeit kommen ans Ende.
+  return workingImages.map((img, pos) => ({ img, pos, t: imageTime(img) }))
+    .sort((a, b) => {
+      if(a.t === null && b.t === null) return a.pos - b.pos;
+      if(a.t === null) return 1;
+      if(b.t === null) return -1;
+      return a.t - b.t || a.pos - b.pos;
+    })
+    .map(({ img }) => ({ src: img.url || img.dataUrl, name: img.name }));
 }
 
 document.getElementById("slideBtn").addEventListener("click", () => Diashow.open(slideList()));
@@ -301,7 +341,7 @@ function fillForm(trip, categoryOptions){
     tripLongTextInput.value = trip.longText || "";
     workingCategories = (trip.categories || []).map(name => ({ key: makeId(), name }));
     workingStations = (trip.stations || []).map(s => ({ key: s.id || makeId(), name: s.name, note: s.note || "" }));
-    workingImages = (trip.images || []).map(i => ({ key: i.id, id: i.id, name: i.name, url: i.url }));
+    workingImages = (trip.images || []).map(i => ({ key: i.id, id: i.id, name: i.name, url: i.url, hasScene: !!i.hasScene, createdAt: i.createdAt || undefined }));
   }else{
     detailHeading.textContent = "Neue Reise";
     document.title = "Travelfy – Neue Reise";
@@ -349,7 +389,7 @@ tripForm.addEventListener("submit", async (e) => {
     categories: workingCategories.map(c => c.name),
     stations: workingStations.map(s => ({ name: s.name, note: s.note })),
     images: workingImages.map(img => img.isNew
-      ? { name: img.name, dataUrl: img.dataUrl }
+      ? { name: img.name, dataUrl: img.dataUrl, scene: img.scene || undefined, createdAt: img.createdAt || undefined }
       : { id: img.id, name: img.name })
   };
 

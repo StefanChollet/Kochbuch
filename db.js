@@ -15,7 +15,10 @@
 const { DatabaseSync } = require("node:sqlite");
 const crypto = require("node:crypto");
 
-const SCHEMA_VERSION = 1;
+// 2: Zeichenblaetter bleiben bearbeitbar (images.scene) und behalten ihre Erstellzeit (images.created_at)
+const SCHEMA_VERSION = 2;
+// Hoechstgroesse des gespeicherten Zeichenblatt-Inhalts (Objekte samt eingesetzter Fotos)
+const MAX_SCENE_CHARS = 20 * 1024 * 1024;
 // Kennung dieser Anwendung in der Datenbank: eine fremde Datenbankdatei
 // (z.B. die des Kochbuchs) wird beim Start abgelehnt statt still benutzt.
 const APP_ID = "travelfy";
@@ -106,7 +109,9 @@ CREATE TABLE IF NOT EXISTS images (
   mime     TEXT NOT NULL,
   bytes    INTEGER NOT NULL,
   data     BLOB NOT NULL,
-  position INTEGER NOT NULL
+  position INTEGER NOT NULL,
+  scene    TEXT,            -- Zeichenblatt: Objekte als JSON (NULL = normales Foto)
+  created_at TEXT           -- Erstellzeit; bleibt beim Bearbeiten eines Zeichenblatts erhalten
 );
 CREATE INDEX IF NOT EXISTS idx_images_trip ON images(trip_id, position);
 `;
@@ -138,11 +143,18 @@ function open(file, options = {}) {
   db.exec(SCHEMA_SQL);
   db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('app', ?)").run(APP_ID);
 
+  // Schema 2: bestehende Datenbanken bekommen die neuen Spalten (Daten bleiben unberuehrt)
+  const imageColumns = db.prepare("PRAGMA table_info(images)").all().map((c) => c.name);
+  if (!imageColumns.includes("scene")) db.exec("ALTER TABLE images ADD COLUMN scene TEXT");
+  if (!imageColumns.includes("created_at")) db.exec("ALTER TABLE images ADD COLUMN created_at TEXT");
+
   const row = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get();
   if (!row) {
     db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', ?)").run(String(SCHEMA_VERSION));
   } else if (Number(row.value) > SCHEMA_VERSION) {
     throw new Error(`Datenbank hat Schema-Version ${row.value}, dieser Server kennt nur ${SCHEMA_VERSION}.`);
+  } else if (Number(row.value) < SCHEMA_VERSION) {
+    db.prepare("UPDATE meta SET value = ? WHERE key = 'schema_version'").run(String(SCHEMA_VERSION));
   }
 
   const generatedAdminPassword = ensureAdmin(options.adminPassword);
@@ -354,8 +366,9 @@ function getTrip(id) {
 
   // Bewusst ohne Spalte "data" - die Bytes kommen ueber GET /api/images/:id.
   trip.images = db.prepare(`
-    SELECT id, name, mime, bytes FROM images WHERE trip_id = ? ORDER BY position
-  `).all(id).map((img) => ({ ...img, url: `api/images/${img.id}` }));
+    SELECT id, name, mime, bytes, created_at AS createdAt, (scene IS NOT NULL) AS hasScene
+    FROM images WHERE trip_id = ? ORDER BY position
+  `).all(id).map((img) => ({ ...img, hasScene: !!img.hasScene, url: `api/images/${img.id}` }));
 
   return trip;
 }
@@ -397,7 +410,7 @@ function writeImages(tripId, images) {
 
   const reposition = db.prepare("UPDATE images SET position = ?, name = ? WHERE id = ?");
   const insert = db.prepare(
-    "INSERT INTO images (id, trip_id, name, mime, bytes, data, position) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO images (id, trip_id, name, mime, bytes, data, position, scene, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
   );
   images.forEach((img, index) => {
     const name = text(img && img.name, "images[].name", { max: 200 });
@@ -405,9 +418,38 @@ function writeImages(tripId, images) {
       reposition.run(index, name, img.id);
     } else {
       const { mime, buf } = decodeDataUrl(img && img.dataUrl);
-      insert.run(makeId(), tripId, name, mime, buf.length, buf, index);
+      insert.run(makeId(), tripId, name, mime, buf.length, buf, index, normalizeScene(img.scene), normalizeCreatedAt(img.createdAt));
     }
   });
+}
+
+/** Zeichenblatt-Inhalt: JSON-Text mit { version, elements: [...] } oder nichts. */
+function normalizeScene(scene) {
+  if (scene == null || scene === "") return null;
+  if (typeof scene !== "string") throw new HttpError(400, 'Feld "images[].scene" muss Text (JSON) sein.');
+  if (scene.length > MAX_SCENE_CHARS) {
+    throw new HttpError(413, `Zeichenblatt zu gross (max. ${MAX_SCENE_CHARS / 1024 / 1024} MB) - bitte weniger oder kleinere Fotos einsetzen.`);
+  }
+  let parsed;
+  try { parsed = JSON.parse(scene); } catch { throw new HttpError(400, "Zeichenblatt-Inhalt ist kein gueltiges JSON."); }
+  if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.elements)) {
+    throw new HttpError(400, "Zeichenblatt-Inhalt hat kein gueltiges Format.");
+  }
+  return scene;
+}
+
+/** Erstellzeit eines neuen Bildes: mitgeschickt (bearbeitetes Zeichenblatt behaelt seine) oder jetzt. */
+function normalizeCreatedAt(value) {
+  if (value == null || value === "") return nowIso();
+  const t = Date.parse(String(value));
+  if (!Number.isFinite(t) || t > Date.now() + 86400000) throw new HttpError(400, 'Feld "images[].createdAt" ist kein gueltiger Zeitpunkt.');
+  return new Date(t).toISOString();
+}
+
+/** Gespeicherter Inhalt eines Zeichenblatts (JSON-Text) oder null. */
+function getImageScene(id) {
+  const row = db.prepare("SELECT trip_id AS tripId, scene FROM images WHERE id = ?").get(id);
+  return row || null;
 }
 
 function normalizeTripInput(input) {
@@ -767,6 +809,7 @@ module.exports = {
   updateTrip,
   deleteTrip,
   getImage,
+  getImageScene,
   listCategoryOptions,
   getStats,
   ADMIN_ID,

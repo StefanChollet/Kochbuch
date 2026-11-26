@@ -9,7 +9,7 @@
    werden nicht angefasst.
    ========================================================================= */
 
-const CACHE = "travelfy-shell-v13";
+const CACHE = "travelfy-shell-v14";
 // Basis der App = Verzeichnis dieses Skripts, z.B. "/travelfy/".
 const BASE = new URL("./", self.location.href).pathname;
 const SHELL = [

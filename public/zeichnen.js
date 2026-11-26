@@ -1427,21 +1427,78 @@ const Zeichnen = (() => {
     const dataUrl = exportImage();
     const now = new Date();
     const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
-    const name = `zeichnung-${stamp}.${dataUrl.startsWith("data:image/png") ? "png" : "jpg"}`;
+    const ext = dataUrl.startsWith("data:image/png") ? "png" : "jpg";
+    // Beim Bearbeiten den bisherigen Namen behalten (nur die Endung anpassen)
+    const name = editName ? editName.replace(/\.(png|jpe?g)$/i, "") + "." + ext : `zeichnung-${stamp}.${ext}`;
+    const scene = serializeScene();
     close();
-    if(onDone) onDone({ name, dataUrl });
+    if(onDone) onDone({ name, dataUrl, scene });
   });
 
-  /** Oeffnet ein leeres Blatt; done({ name, dataUrl }) bekommt das fertige Bild. */
-  function open(done){
+  /* ------------------------------------------- Inhalt speichern/laden */
+
+  /**
+   * Inhalt des Blatts als JSON-Text: alle Objekte mit ihren Eigenschaften;
+   * eingesetzte Fotos stehen einmal in "images" (Data-URL), die Objekte
+   * verweisen per Nummer darauf - so bleibt das Blatt spaeter bearbeitbar.
+   */
+  function serializeScene(){
+    const images = [];
+    const imageIndex = new Map();
+    const out = elements.map(el => {
+      const copy = { ...el, points: el.points ? el.points.map(p => [...p]) : undefined };
+      if(el.img){
+        const src = el.img.src;
+        if(!imageIndex.has(src)){ imageIndex.set(src, images.length); images.push(src); }
+        copy.img = imageIndex.get(src);
+      }else{
+        delete copy.img;
+      }
+      return copy;
+    });
+    return JSON.stringify({ version: 1, width: W, height: H, images, elements: out });
+  }
+
+  /** Gespeicherten Inhalt wieder in Objekte verwandeln (Fotos werden geladen). */
+  async function loadScene(scene){
+    const imgs = await Promise.all((scene.images || []).map(src => loadImage(src).catch(() => null)));
+    return (scene.elements || []).map(el => {
+      const copy = { ...el };
+      if(Number.isInteger(el.img)){
+        if(imgs[el.img]) copy.img = imgs[el.img]; else delete copy.img;
+      }else{
+        delete copy.img;
+      }
+      return copy;
+    }).filter(el => el && typeof el.type === "string");
+  }
+
+  const drawTitle = document.getElementById("drawTitle");
+  const applyBtn = document.getElementById("drawApplyBtn");
+  let editName = null;   // beim Bearbeiten: Name des bisherigen Bildes
+
+  /**
+   * Oeffnet das Zeichenblatt. Ohne scene: leeres Blatt. Mit scene
+   * (gespeicherter Inhalt): alle Objekte zum Weiterbearbeiten.
+   * done({ name, dataUrl, scene }) bekommt Bild und Inhalt.
+   */
+  async function open(done, options = {}){
     onDone = done;
     elements = [];
     history = [];
     selectOnly(null);
     action = null;
     changed = false;
+    editName = options.name || null;
+    drawTitle.textContent = options.scene ? "Zeichenblatt bearbeiten" : "Zeichenblatt";
+    applyBtn.textContent = options.scene ? "Änderungen übernehmen" : "In Bilder übernehmen";
     loadWebFonts();
-    setTool("rect");
+    if(options.scene){
+      elements = await loadScene(options.scene);
+      // Verwendete Schriften nachladen, damit Texte gleich richtig erscheinen
+      [...new Set(elements.filter(el => el.type === "text").map(el => el.font || DEFAULT_FONT))].forEach(ensureFont);
+    }
+    setTool(options.scene ? "select" : "rect");
     render();
     dialog.showModal();
   }

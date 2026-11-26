@@ -176,8 +176,18 @@ Schreibrecht und grüner Ampel) ein grosses Fenster mit einem Blatt von
 - Rückgängig (Strg+Z), Element löschen, Alles leeren.
 - **In Bilder übernehmen** legt die Zeichnung als PNG (bei sehr grossen Fotos
   JPEG) bei den Bildern der Reise ab; gesichert wird sie mit *Speichern*.
-  Die Zeichnung ist danach ein normales Bild – einzelne Elemente lassen sich
-  später nicht mehr bearbeiten.
+- **Wieder bearbeiten:** Mit dem Bild wird der Inhalt des Blatts gespeichert
+  (alle Objekte mit ihren Eigenschaften, Gruppen, eingesetzte Fotos – jedes Foto
+  nur einmal; Spalte `images.scene`, max. 20 MB). Solche Zeichenblätter haben in
+  der Bilderliste den Knopf **✎ Bearbeiten** (nur mit Schreibrecht und grüner
+  Ampel): er öffnet das Blatt mit allen Objekten, *Änderungen übernehmen*
+  ersetzt das Bild an derselben Stelle; Name und **Erstellzeit** (`images.created_at`)
+  bleiben, damit die Reihenfolge in der Dia-Show gleich bleibt. Gespeichert wird
+  mit *Speichern*. Zeichenblätter von vor dieser Funktion sind nur als Bild
+  vorhanden und lassen sich nicht mehr in Objekte zerlegen.
+- Schema 2 der Datenbank (`images.scene`, `images.created_at`) wird beim ersten
+  Start automatisch ergänzt; vorhandene Daten bleiben unverändert.
+  Inhalt eines Zeichenblatts abrufen: `GET /api/images/:id/scene`.
 
 ## Trennung von Kochbuch (Sprung-Sperre)
 

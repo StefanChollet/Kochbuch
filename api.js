@@ -277,6 +277,16 @@ const routes = [
   }, "write"],
 
   /* ---- Bilder ---- */
+  // Inhalt eines Zeichenblatts zum erneuten Bearbeiten (nur fuer Reisen, die man sehen darf)
+  ["GET", /^\/api\/images\/([^/]+)\/scene$/, async (req, res, ctx, id) => {
+    const row = db.getImageScene(id);
+    if (!row || !db.canAccessTrip(ctx.account, row.tripId)) throw new HttpError(404, `Bild "${id}" nicht gefunden.`);
+    if (!row.scene) throw new HttpError(404, "Dieses Bild ist kein bearbeitbares Zeichenblatt.");
+    const body = Buffer.from(row.scene, "utf8");
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Content-Length": body.length, "Cache-Control": "no-store" });
+    res.end(body);
+  }],
+
   ["GET", /^\/api\/images\/([^/]+)$/, async (req, res, ctx, id) => {
     const image = db.getImage(id);
     // Nur Bilder von Reisen, die dieser Benutzer auch sehen darf.
