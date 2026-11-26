@@ -161,6 +161,13 @@ Schreibrecht und grüner Ampel) ein grosses Fenster mit einem Blatt von
 - **Drehen** (Quadrat/Rechteck, Dreieck, Kreis, Foto): am runden Griff ↻ über der
   ausgewählten Form ziehen (Umschalt = 15°-Schritte) oder Gradzahl −180…180 im
   Feld *Drehen*. Füllung, Foto und abgeflachte Ecken drehen mit.
+- **Grösse ändern** (Werkzeug *Auswählen*): an den 8 Anfassern rund um die Auswahl
+  ziehen – Ecken ändern Breite und Höhe, Kantenmitten nur eine Richtung; die
+  gegenüberliegende Seite bleibt stehen. Bei einer gedrehten Form drehen die Anfasser
+  mit. Umschalt hält das Seitenverhältnis; Text (Schriftgrösse wächst mit, Feld
+  *Grösse* zieht nach), mehrere Objekte und Gruppen werden immer proportional
+  skaliert. Linien, Freihand und Splines werden mitsamt ihren Punkten gestreckt.
+  Die aktuelle Grösse steht im Hinweis; ein Rückgängig-Schritt pro Zug.
 - Füllung und Schrift gelten wie Farbe/Deckkraft für neue und für das ausgewählte
   Objekt und sind nur aktiv, wenn sie zum Werkzeug bzw. zum ausgewählten Objekt passen.
 - **Ecken abflachen** (nur Quadrat/Rechteck): Regler *Ecken* 0–100 % (Anteil der

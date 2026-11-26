@@ -28,7 +28,7 @@ const Zeichnen = (() => {
 
   const HINTS = {
     spline: "Krumme Linie zeichnen – beim Loslassen wird daraus eine glatte Kurve (Spline).",
-    select: "Klick wählt ein Objekt (bei einer Gruppe die ganze Gruppe); auf freier Fläche ziehen umrundet mehrere. Umschalt+Klick: hinzufügen/entfernen. Strg+G gruppiert.",
+    select: "Klick wählt ein Objekt (bei einer Gruppe die ganze Gruppe); Anfasser ziehen ändert die Grösse; auf freier Fläche ziehen umrundet mehrere. Umschalt+Klick: hinzufügen/entfernen.",
     free: "Mit gedrückter Maustaste frei zeichnen.",
     line: "Vom Anfangs- zum Endpunkt ziehen.",
     text: "Ins Blatt klicken, Text tippen, Enter übernimmt.",
@@ -669,6 +669,134 @@ const Zeichnen = (() => {
     else { el.x += dx; el.y += dy; }
   }
 
+  /* ------------------------------------------------------ Groesse aendern */
+
+  // Acht Anfasser: Richtung als Einheitsvektor (Ecken und Kantenmitten)
+  const HANDLES = [
+    { ux: -1, uy: -1 }, { ux: 0, uy: -1 }, { ux: 1, uy: -1 }, { ux: 1, uy: 0 },
+    { ux: 1, uy: 1 }, { ux: 0, uy: 1 }, { ux: -1, uy: 1 }, { ux: -1, uy: 0 },
+  ];
+  const HANDLE_SIZE = 16;     // Kantenlaenge eines Anfassers (Blatt-Punkte)
+  const MIN_SIZE = 6;
+
+  /** Kopie eines Elements fuer das Groesse-Aendern (Fotos werden geteilt, Punkte kopiert). */
+  const copyEl = (el) => ({ ...el, points: el.points ? el.points.map(p => [...p]) : undefined });
+
+  /**
+   * Rahmen, an dem die Anfasser sitzen:
+   *  - genau eine Form/ein Foto: mitgedrehtes Rechteck ("rot")
+   *  - sonst (Text, Linie, Freihand, mehrere, Gruppe): Rechteck um alles ("box")
+   */
+  function resizeFrame(){
+    const sel = selection().filter(el => elements.includes(el));
+    if(!sel.length) return null;
+    if(sel.length === 1 && ROTATABLE.has(sel[0].type)){
+      const el = sel[0];
+      return { kind: "rot", c: centerOf(el), r: rad(el.rotation || 0), hw: el.w / 2, hh: el.h / 2, els: sel };
+    }
+    const bs = sel.map(bounds);
+    const x1 = Math.min(...bs.map(b => b.x)), y1 = Math.min(...bs.map(b => b.y));
+    const x2 = Math.max(...bs.map(b => b.x + b.w)), y2 = Math.max(...bs.map(b => b.y + b.h));
+    return { kind: "box", x: x1, y: y1, w: x2 - x1, h: y2 - y1, els: sel };
+  }
+
+  /** Lage der Anfasser im Blatt (8 Punkte vor dem Rahmen-Rand). */
+  function handlePoints(frame){
+    if(frame.kind === "rot"){
+      return HANDLES.map(h => ({ ...h, ...rotatePoint(
+        { x: frame.c.x + h.ux * (frame.hw + 8), y: frame.c.y + h.uy * (frame.hh + 8) }, frame.c, frame.r) }));
+    }
+    return HANDLES.map(h => ({ ...h,
+      x: frame.x - 8 + (h.ux + 1) / 2 * (frame.w + 16),
+      y: frame.y - 8 + (h.uy + 1) / 2 * (frame.h + 16) }));
+  }
+
+  /** Anfasser unter dem Punkt oder null. */
+  function handleAt(p){
+    if(tool !== "select") return null;
+    const frame = resizeFrame();
+    if(!frame) return null;
+    const hit = handlePoints(frame).find(h => Math.abs(p.x - h.x) <= HANDLE_SIZE * 0.8 && Math.abs(p.y - h.y) <= HANDLE_SIZE * 0.8);
+    return hit ? { handle: hit, frame } : null;
+  }
+
+  /** Passender Mauszeiger fuer einen Anfasser (beruecksichtigt die Drehung). */
+  function handleCursor(h, frame){
+    const angle = Math.atan2(h.uy, h.ux) + (frame.kind === "rot" ? frame.r : 0);
+    const deg = ((angle * 180 / Math.PI) % 180 + 180) % 180;
+    if(deg < 22.5 || deg >= 157.5) return "ew-resize";
+    if(deg < 67.5) return "nwse-resize";
+    if(deg < 112.5) return "ns-resize";
+    return "nesw-resize";
+  }
+
+  /** Element um den Punkt a skalieren (aus einer unveraenderten Kopie heraus). */
+  function scaleFrom(el, a, sx, sy){
+    const sc = (x, y) => [a.x + (x - a.x) * sx, a.y + (y - a.y) * sy];
+    if(el.type === "line"){
+      [el.x1, el.y1] = sc(el.x1, el.y1);
+      [el.x2, el.y2] = sc(el.x2, el.y2);
+    }else if(el.type === "free" || el.type === "spline"){
+      el.points = el.points.map(([x, y]) => sc(x, y));
+    }else if(el.type === "text"){
+      [el.x, el.y] = sc(el.x, el.y);
+      el.size = Math.max(6, Math.round(el.size * Math.sqrt(sx * sy)));
+    }else{
+      const m = centerOf(el);
+      const [cx, cy] = sc(m.x, m.y);
+      el.w = Math.max(MIN_SIZE, el.w * sx);
+      el.h = Math.max(MIN_SIZE, el.h * sy);
+      el.x = cx - el.w / 2;
+      el.y = cy - el.h / 2;
+    }
+  }
+
+  /**
+   * Groesse waehrend des Ziehens anwenden. Immer von den Kopien vom
+   * Beginn aus rechnen - so summieren sich keine Rundungsfehler.
+   */
+  function applyResize(act, p, keepRatio){
+    const { handle: h, frame } = act;
+    if(frame.kind === "rot"){
+      // Gedrehte Form: im eigenen (ungedrehten) Koordinatensystem rechnen,
+      // die gegenueberliegende Kante bzw. Ecke bleibt stehen.
+      const el = act.els[0], o = act.origs[0];
+      const q = rotatePoint(p, frame.c, -frame.r);
+      const qx = q.x - frame.c.x, qy = q.y - frame.c.y;
+      const ax = -h.ux * o.w / 2, ay = -h.uy * o.h / 2;
+      let w = h.ux ? Math.max(MIN_SIZE, h.ux * (qx - ax)) : o.w;
+      let hh = h.uy ? Math.max(MIN_SIZE, h.uy * (qy - ay)) : o.h;
+      if(keepRatio){
+        const s = h.ux && h.uy ? Math.max(w / o.w, hh / o.h) : (h.ux ? w / o.w : hh / o.h);
+        w = Math.max(MIN_SIZE, o.w * s);
+        hh = Math.max(MIN_SIZE, o.h * s);
+      }
+      const cx = h.ux ? ax + h.ux * w / 2 : 0;
+      const cy = h.uy ? ay + h.uy * hh / 2 : 0;
+      const wc = rotatePoint({ x: frame.c.x + cx, y: frame.c.y + cy }, frame.c, frame.r);
+      el.w = w;
+      el.h = hh;
+      el.x = wc.x - w / 2;
+      el.y = wc.y - hh / 2;
+      return { w, h: hh };
+    }
+    // Rechteck um alles: gegenueberliegende Seite fest, bei Kantenanfassern
+    // bleibt die Mitte der anderen Richtung stehen.
+    const ax = h.ux > 0 ? frame.x : h.ux < 0 ? frame.x + frame.w : frame.x + frame.w / 2;
+    const ay = h.uy > 0 ? frame.y : h.uy < 0 ? frame.y + frame.h : frame.y + frame.h / 2;
+    let sx = h.ux && frame.w >= 1 ? Math.max(0.05, h.ux * (p.x - ax) / frame.w) : 1;
+    let sy = h.uy && frame.h >= 1 ? Math.max(0.05, h.uy * (p.y - ay) / frame.h) : 1;
+    if(keepRatio){
+      const s = h.ux && h.uy ? Math.max(sx, sy) : (h.ux ? sx : sy);
+      sx = sy = s;
+    }
+    act.els.forEach((el, i) => {
+      Object.assign(el, copyEl(act.origs[i]));
+      scaleFrom(el, { x: ax, y: ay }, sx, sy);
+    });
+    return { w: frame.w * sx, h: frame.h * sy };
+  }
+
   /* ---------------------------------------------------------- Zeichnen */
 
   function render(){
@@ -730,6 +858,31 @@ const Zeichnen = (() => {
       ctx.fillStyle = "#ffffff";
       ctx.textBaseline = "middle";
       ctx.fillText(label, x1 + 7, y1 - 13);
+      ctx.restore();
+    }
+    // Anfasser zum Groesse-Aendern (nicht waehrend des Umrundens)
+    const frame = tool === "select" && !(action && action.kind === "lasso") ? resizeFrame() : null;
+    if(frame){
+      ctx.save();
+      if(frame.kind === "box" && frame.els.length > 1){
+        // Gemeinsamer Rahmen um mehrere Objekte
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = "rgba(30, 136, 229, 0.7)";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(frame.x - 8, frame.y - 8, frame.w + 16, frame.h + 16);
+        ctx.setLineDash([]);
+      }
+      for(const h of handlePoints(frame)){
+        ctx.save();
+        ctx.translate(h.x, h.y);
+        if(frame.kind === "rot") ctx.rotate(frame.r);
+        ctx.fillStyle = "#ffffff";
+        ctx.strokeStyle = "#1e88e5";
+        ctx.lineWidth = 2;
+        ctx.fillRect(-HANDLE_SIZE / 2, -HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE);
+        ctx.strokeRect(-HANDLE_SIZE / 2, -HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE);
+        ctx.restore();
+      }
       ctx.restore();
     }
     // Schlinge beim Umrunden
@@ -1087,6 +1240,15 @@ const Zeichnen = (() => {
           return;
         }
       }
+      // Anfasser angefasst? Dann Groesse aendern (Vorrang vor dem Verschieben)
+      const grip = handleAt(p);
+      if(grip){
+        snapshot();
+        action = { kind: "resize", handle: grip.handle, frame: grip.frame, els: grip.frame.els,
+          origs: grip.frame.els.map(copyEl), moved: false };
+        try{ canvas.setPointerCapture(e.pointerId); }catch{ /* geht auch so */ }
+        return;
+      }
       const hit = hitTest(p);
       if(hit && e.shiftKey){
         // Umschalt+Klick: Objekt zur Auswahl hinzufuegen bzw. herausnehmen
@@ -1129,6 +1291,22 @@ const Zeichnen = (() => {
       const overHandle = tool === "select" && selected && !multi.length && ROTATABLE.has(selected.type)
         && Math.hypot(p.x - handlePos(selected).x, p.y - handlePos(selected).y) <= 18;
       canvas.classList.toggle("is-rotate-handle", !!overHandle);
+      // Ueber einem Anfasser: Doppelpfeil in passender Richtung
+      const grip = overHandle ? null : handleAt(p);
+      canvas.style.cursor = grip ? handleCursor(grip.handle, grip.frame) : "";
+      return;
+    }
+    if(action.kind === "resize"){
+      // Proportional: Umschalt, bei Text und bei mehreren Objekten/Gruppen immer
+      const els = action.els;
+      const keepRatio = e.shiftKey || (action.frame.kind === "box" && (els.length > 1 || els[0].type === "text"));
+      const size = applyResize(action, p, keepRatio);
+      action.moved = true;
+      // Feld "Grösse" folgt der neuen Schriftgroesse eines einzelnen Textes
+      if(els.length === 1 && els[0].type === "text") fontSizeInput.value = String(Math.round(els[0].size));
+      render();   // setzt den Hinweis zurueck, darum die Groesse erst danach anzeigen
+      hint.textContent = `Grösse: ${Math.round(size.w)} × ${Math.round(size.h)} Punkte` +
+        (keepRatio ? " (Seitenverhältnis bleibt)" : " – Umschalt hält das Seitenverhältnis");
       return;
     }
     if(action.kind === "rotate"){
@@ -1171,7 +1349,7 @@ const Zeichnen = (() => {
       }) : [];
       selectMany(action.add ? [...action.before, ...found] : found);
       if(multi.length) showStatus(`${multi.length} Objekte ausgewählt – gemeinsam verschieben, einstellen oder löschen.`, "info");
-    }else if(action.kind === "move" || action.kind === "rotate"){
+    }else if(action.kind === "move" || action.kind === "rotate" || action.kind === "resize"){
       if(!action.moved) history.pop();   // nur angeklickt: kein Rueckgaengig-Schritt
     }else if(action.preview){
       let el = action.preview;
