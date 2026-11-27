@@ -16,7 +16,8 @@ const crypto = require("node:crypto");
 // 2: Benutzer (accounts) mit Rollen, Sitzungen, recipes.created_by
 // 3: Kochansicht-Links (recipe_views)
 // 4: Kategorie in eigener Tabelle (recipe_categories) statt einer Spalte
-const SCHEMA_VERSION = 4;
+// 5: Kuehlschrank pro Benutzer (fridge_items.account_id)
+const SCHEMA_VERSION = 5;
 
 // Vorschlaege fuer die Kategorie eines Rezepts (hoechstens eine je Rezept).
 // Wie bei den Zutaten darf man auch eine eigene eintippen; der Client bekommt diese Liste plus alle schon
@@ -80,8 +81,10 @@ CREATE TABLE IF NOT EXISTS images (
 );
 CREATE INDEX IF NOT EXISTS idx_images_recipe ON images(recipe_id, position);
 
+-- Jeder Benutzer hat seinen eigenen Kuehlschrank (account_id, Schema 5).
 CREATE TABLE IF NOT EXISTS fridge_items (
   id         TEXT PRIMARY KEY,
+  account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE,
   name       TEXT NOT NULL,
   amount     TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL
@@ -156,6 +159,15 @@ function open(file, options = {}) {
     db.exec("ALTER TABLE recipes ADD COLUMN created_by INTEGER REFERENCES accounts(id) ON DELETE SET NULL");
     db.exec("UPDATE recipes SET created_by = 0");
   }
+
+  // Schema 5: Kuehlschrank pro Benutzer. Bestehende Datenbanken bekommen die
+  // Spalte nachgezogen; der bisherige gemeinsame Kuehlschrank geht an den Admin.
+  const fridgeColumns = db.prepare("PRAGMA table_info(fridge_items)").all().map((c) => c.name);
+  if (!fridgeColumns.includes("account_id")) {
+    db.exec("ALTER TABLE fridge_items ADD COLUMN account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE");
+  }
+  db.exec("UPDATE fridge_items SET account_id = 0 WHERE account_id IS NULL");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_fridge_items_account ON fridge_items(account_id, created_at)");
 
   // Schema 4: die alte Einzel-Kategorie (Spalte recipes.category) wird zum
   // ersten Eintrag der Liste. Danach bleibt die Spalte leer und ungenutzt.
@@ -581,12 +593,13 @@ function createRecipeView(recipeId, accountId) {
 }
 
 /** Rezept zum Code oder null - unbekannte, falsch geformte oder verwaiste Codes sind alle gleich "nicht gefunden". */
-function getRecipeByView(code) {
+function getRecipeByView(code, accountId) {
   if (!VIEW_CODE_PATTERN.test(String(code || ""))) return null;
   const row = db.prepare("SELECT recipe_id AS recipeId FROM recipe_views WHERE code_hash = ?").get(hashToken(code));
   if (!row) return null;
   const recipe = getRecipe(row.recipeId);
-  return recipe ? withFridgeMatch(recipe) : null;
+  // Abgleich mit dem Kuehlschrank dessen, der die Kochansicht anschaut.
+  return recipe ? withFridgeMatch(recipe, accountId) : null;
 }
 
 /**
@@ -595,8 +608,8 @@ function getRecipeByView(code) {
  * fridge: "da" | "vorrat" | "fehlt" und haengt den Kuehlschrank an,
  * jeder Eintrag mit usedBy = Zutaten des Rezepts, die er abdeckt.
  */
-function withFridgeMatch(recipe) {
-  const fridge = listFridge().map((f) => ({ ...f, core: coreWord(f.name), usedBy: [] }));
+function withFridgeMatch(recipe, accountId) {
+  const fridge = listFridge(accountId).map((f) => ({ ...f, core: coreWord(f.name), usedBy: [] }));
   recipe.ingredients = recipe.ingredients.map((ing) => {
     const core = coreWord(ing.name);
     const hits = core ? fridge.filter((f) => f.core && coreMatch(core.stem, f.core.stem)) : [];
@@ -609,65 +622,77 @@ function withFridgeMatch(recipe) {
 }
 
 /* -------------------------------------------------------- Kuehlschrank */
+// Jeder Benutzer hat seinen eigenen Kuehlschrank: alle Funktionen arbeiten
+// nur mit den Eintraegen von accountId. Fremde Eintraege gelten als "nicht gefunden".
 
-function listFridge() {
+function requireAccountId(accountId) {
+  if (accountId == null) throw new Error("Kuehlschrank: Benutzer fehlt.");
+  return accountId;
+}
+
+function listFridge(accountId) {
   return db.prepare(`
-    SELECT id, name, amount, created_at AS createdAt FROM fridge_items ORDER BY created_at, rowid
-  `).all();
+    SELECT id, name, amount, created_at AS createdAt FROM fridge_items
+    WHERE account_id = ? ORDER BY created_at, rowid
+  `).all(requireAccountId(accountId));
 }
 
 /**
  * Eine Seite des Kuehlschranks fuer das Lazy Loading - Reihenfolge wie
  * listFridge (aelteste zuerst). Zu hohe Seite: die letzte gueltige.
  */
-function listFridgePage(options = {}) {
+function listFridgePage(accountId, options = {}) {
+  requireAccountId(accountId);
   const page = Math.max(1, Math.trunc(Number(options.page)) || 1);
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.trunc(Number(options.pageSize)) || DEFAULT_PAGE_SIZE));
-  const total = db.prepare("SELECT COUNT(*) AS n FROM fridge_items").get().n;
+  const total = db.prepare("SELECT COUNT(*) AS n FROM fridge_items WHERE account_id = ?").get(accountId).n;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, totalPages);
   const items = db.prepare(`
     SELECT id, name, amount, created_at AS createdAt FROM fridge_items
-    ORDER BY created_at, rowid LIMIT ? OFFSET ?
-  `).all(pageSize, (safePage - 1) * pageSize);
+    WHERE account_id = ? ORDER BY created_at, rowid LIMIT ? OFFSET ?
+  `).all(accountId, pageSize, (safePage - 1) * pageSize);
   return { items, total, page: safePage, pageSize, totalPages };
 }
 
-function getFridgeItem(id) {
+function getFridgeItem(id, accountId) {
   return db.prepare(`
-    SELECT id, name, amount, created_at AS createdAt FROM fridge_items WHERE id = ?
-  `).get(id) || null;
+    SELECT id, name, amount, created_at AS createdAt FROM fridge_items WHERE id = ? AND account_id = ?
+  `).get(id, requireAccountId(accountId)) || null;
 }
 
-function addFridgeItem(input) {
+function addFridgeItem(accountId, input) {
+  requireAccountId(accountId);
   const name = text(input && input.name, "name", { max: 60, required: true });
   const amount = text(input && input.amount, "amount", { max: 20 }).trim();
-  const id = input && typeof input.id === "string" && input.id.trim() ? input.id.trim() : makeId();
-  db.prepare("INSERT INTO fridge_items (id, name, amount, created_at) VALUES (?, ?, ?, ?)")
-    .run(id, name, amount, nowIso());
-  return getFridgeItem(id);
+  // Die id vergibt immer der Server - eine fremde id darf keinen Eintrag ueberschreiben.
+  const id = makeId();
+  db.prepare("INSERT INTO fridge_items (id, account_id, name, amount, created_at) VALUES (?, ?, ?, ?, ?)")
+    .run(id, accountId, name, amount, nowIso());
+  return getFridgeItem(id, accountId);
 }
 
-function updateFridgeItem(id, changes) {
+function updateFridgeItem(accountId, id, changes) {
   if (!changes || typeof changes !== "object") {
     throw new HttpError(400, "Keine Aenderungen uebergeben.");
   }
-  const current = getFridgeItem(id);
+  const current = getFridgeItem(id, accountId);
   if (!current) throw new HttpError(404, `Kuehlschrank-Eintrag "${id}" nicht gefunden.`);
 
   // PATCH-Semantik: nur mitgeschickte Felder aendern.
   const name = "name" in changes ? text(changes.name, "name", { max: 60, required: true }) : current.name;
   const amount = "amount" in changes ? text(changes.amount, "amount", { max: 20 }).trim() : current.amount;
-  db.prepare("UPDATE fridge_items SET name = ?, amount = ? WHERE id = ?").run(name, amount, id);
-  return getFridgeItem(id);
+  db.prepare("UPDATE fridge_items SET name = ?, amount = ? WHERE id = ? AND account_id = ?").run(name, amount, id, accountId);
+  return getFridgeItem(id, accountId);
 }
 
-function deleteFridgeItem(id) {
-  return db.prepare("DELETE FROM fridge_items WHERE id = ?").run(id).changes > 0;
+function deleteFridgeItem(accountId, id) {
+  return db.prepare("DELETE FROM fridge_items WHERE id = ? AND account_id = ?")
+    .run(id, requireAccountId(accountId)).changes > 0;
 }
 
-function clearFridge() {
-  return db.prepare("DELETE FROM fridge_items").run().changes;
+function clearFridge(accountId) {
+  return db.prepare("DELETE FROM fridge_items WHERE account_id = ?").run(requireAccountId(accountId)).changes;
 }
 
 /* ------------------------------------------------------ Zutaten-Katalog */
@@ -1076,9 +1101,9 @@ function getRecommendations(options = {}) {
   const term = text(options.search, "search", { max: 100 }).trim();
   const exclude = new Set(Array.isArray(options.exclude) ? options.exclude.map(String) : []);
 
-  // Kuehlschrank -> Kernwoerter mit Dringlichkeit
+  // Kuehlschrank (des angemeldeten Benutzers) -> Kernwoerter mit Dringlichkeit
   const now = Date.now();
-  const fridge = listFridge()
+  const fridge = listFridge(options.accountId)
     .map((f) => {
       const core = coreWord(f.name);
       const ageDays = Math.max(0, (now - Date.parse(f.createdAt)) / 86400000) || 0;

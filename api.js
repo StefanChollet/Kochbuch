@@ -267,6 +267,7 @@ const routes = [
   ["GET", /^\/api\/recommendations$/, async (req, res, ctx) => {
     const q = getQuery(req);
     sendJson(res, 200, db.getRecommendations({
+      accountId: ctx.account.id,
       ownerId: db.recipeOwnerFilter(ctx.account),
       search: q.get("search") || "",
       limit: q.get("limit") || 4,
@@ -331,7 +332,7 @@ const routes = [
 
   // Liefert genau das eine Rezept zum Code - sonst nichts.
   ["GET", /^\/api\/views\/([^/]+)$/, async (req, res, ctx, code) => {
-    const recipe = db.getRecipeByView(code);
+    const recipe = db.getRecipeByView(code, ctx.account.id);
     if (!recipe) throw new HttpError(404, "Diese Kochansicht gibt es nicht (mehr).");
     sendJson(res, 200, recipe);
   }],
@@ -361,31 +362,32 @@ const routes = [
   }],
 
   /* ---- Kuehlschrank ---- */
+  // Jeder Benutzer hat seinen eigenen Kuehlschrank (ctx.account.id).
   // Ohne ?page: ganze Liste. Mit ?page=&pageSize=: eine Seite (Lazy Loading)
   // als { items, total, page, pageSize, totalPages }.
-  ["GET", /^\/api\/fridge$/, async (req, res) => {
+  ["GET", /^\/api\/fridge$/, async (req, res, ctx) => {
     const q = getQuery(req);
     if (q.has("page")) {
-      sendJson(res, 200, db.listFridgePage({ page: q.get("page"), pageSize: q.get("pageSize") || 20 }));
+      sendJson(res, 200, db.listFridgePage(ctx.account.id, { page: q.get("page"), pageSize: q.get("pageSize") || 20 }));
       return;
     }
-    sendJson(res, 200, db.listFridge());
+    sendJson(res, 200, db.listFridge(ctx.account.id));
   }],
 
-  ["POST", /^\/api\/fridge$/, async (req, res) => {
-    sendJson(res, 201, db.addFridgeItem(await readJson(req)));
+  ["POST", /^\/api\/fridge$/, async (req, res, ctx) => {
+    sendJson(res, 201, db.addFridgeItem(ctx.account.id, await readJson(req)));
   }, "write"],
 
-  ["DELETE", /^\/api\/fridge$/, async (req, res) => {
-    sendJson(res, 200, { deleted: db.clearFridge() });
+  ["DELETE", /^\/api\/fridge$/, async (req, res, ctx) => {
+    sendJson(res, 200, { deleted: db.clearFridge(ctx.account.id) });
   }, "write"],
 
   ["PATCH", /^\/api\/fridge\/([^/]+)$/, async (req, res, ctx, id) => {
-    sendJson(res, 200, db.updateFridgeItem(id, await readJson(req)));
+    sendJson(res, 200, db.updateFridgeItem(ctx.account.id, id, await readJson(req)));
   }, "write"],
 
   ["DELETE", /^\/api\/fridge\/([^/]+)$/, async (req, res, ctx, id) => {
-    if (!db.deleteFridgeItem(id)) throw new HttpError(404, `Eintrag "${id}" nicht gefunden.`);
+    if (!db.deleteFridgeItem(ctx.account.id, id)) throw new HttpError(404, `Eintrag "${id}" nicht gefunden.`);
     sendEmpty(res, 204);
   }, "write"],
 

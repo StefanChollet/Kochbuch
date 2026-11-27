@@ -61,7 +61,7 @@ nicht erreichbar.
 | `recipes` | Kopfdaten: Name, Kurzbeschreibung, Zubereitungstext, Kategorie (genau eine oder leer), Ersteller (`created_by` → `accounts`, `ON DELETE SET NULL`), Zeitstempel |
 | `ingredients` | Zutaten, `recipe_id` → `recipes`, `ON DELETE CASCADE`, Reihenfolge über `position` |
 | `images` | Bilder als BLOB inkl. MIME-Typ, `recipe_id` → `recipes`, `ON DELETE CASCADE` |
-| `fridge_items` | Kühlschrank-Bestand |
+| `fridge_items` | Kühlschrank-Bestand – pro Benutzer (`account_id`) |
 | `ingredient_catalog` | Vorschlagsliste, Primärschlüssel `COLLATE NOCASE` (»Mehl« = »mehl«) |
 | `meta` | u. a. `schema_version` (aktuell 3) |
 | `accounts` | Benutzer: id (0 = Admin), Name (`COLLATE NOCASE`), scrypt-Passworthash, Rolle `admin`/`rw`/`r` |
@@ -124,11 +124,16 @@ Fehler kommen einheitlich als `{ "error": "..." }` mit passendem HTTP-Status
 | `PUT` | `/api/recipes/:id` | Rezept vollständig ersetzen |
 | `DELETE` | `/api/recipes/:id` | Rezept löschen (Zutaten + Bilder gehen mit) → `204` |
 | `GET` | `/api/images/:id` | Bildbytes mit MIME-Typ |
-| `GET` | `/api/fridge` | Kühlschrank auflisten; mit `?page=&pageSize=` eine Seite (Lazy Loading) als `{ items, total, page, pageSize, totalPages }` |
+| `GET` | `/api/fridge` | eigenen Kühlschrank auflisten (jeder Benutzer hat seinen eigenen); mit `?page=&pageSize=` eine Seite (Lazy Loading) als `{ items, total, page, pageSize, totalPages }` |
 | `POST` | `/api/fridge` | Eintrag anlegen → `201` |
 | `PATCH` | `/api/fridge/:id` | Eintrag teilweise ändern |
 | `DELETE` | `/api/fridge/:id` | Eintrag löschen → `204` |
-| `DELETE` | `/api/fridge` | alles leeren → `{ "deleted": n }` |
+| `DELETE` | `/api/fridge` | eigenen Kühlschrank leeren → `{ "deleted": n }` |
+
+Jeder Benutzer hat seinen eigenen Kühlschrank; Empfehlungen und der Abgleich in
+der Kochansicht nutzen den Kühlschrank des angemeldeten Benutzers. Bestehende
+Datenbanken (Schema 5): der bisherige gemeinsame Kühlschrank geht beim Start an
+den Admin. Wird ein Benutzer gelöscht, verschwindet sein Kühlschrank mit.
 | `GET` | `/api/catalog` | Zutaten-Vorschläge |
 | `POST` | `/api/catalog` | Vorschlag ergänzen |
 | `DELETE` | `/api/catalog/:name` | Vorschlag entfernen → `204` |
