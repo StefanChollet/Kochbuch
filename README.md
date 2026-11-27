@@ -100,6 +100,26 @@ ein Ampelknopf; wer nur lesen darf, sieht ihn nicht.
   gespeicherte Reise führt bei Rot zurück zur Übersicht.
 - Reine Anzeige-Sperre – die Rechte prüft der Server unabhängig davon.
 
+## Bilder ordnen
+
+Die Reihenfolge im Block *Bilder* ist die gespeicherte Reihenfolge
+(`images.position`); Änderungen werden wie alles andere mit **Speichern** gesichert.
+
+- **Ziehen und Ablegen:** ein Bild mit der Maus an eine andere Stelle ziehen – ein
+  gelber Balken zeigt, wo es landet. Von aussen hereingezogene Dateien lösen kein
+  Umordnen aus.
+- **Kontextmenü** (Rechtsklick, Knopf **⋯** oben links am Bild – praktisch auf dem
+  Handy –, oder Taste *Kontextmenü* bzw. Umschalt+F10 am Bild):
+  - *Neu anordnen:* an den Anfang, einen Platz nach vorne/hinten, ans Ende
+  - *Alle Bilder sortieren:* älteste/neueste zuerst (Entstehungszeit wie in der
+    Dia-Show; noch ungespeicherte Bilder kommen ans Ende), Name A–Z / Z–A
+    (natürliche Sortierung: „Bild 2“ vor „Bild 10“)
+  - Vergrössern, Zeichenblatt bearbeiten, Bild entfernen
+- **Tastatur:** Tab wählt ein Bild, Enter vergrössert, Alt+Pfeil verschiebt um einen
+  Platz, Alt+Pos1/Ende an den Anfang/ans Ende; im Menü Pfeiltasten, Enter, Esc.
+- Bei roter Ampel oder nur Leserecht: kein Ziehen, im Menü nur *Vergrössern*.
+- Die Dia-Show bleibt chronologisch, unabhängig von der Reihenfolge hier.
+
 ## Dia-Show
 
 Auf der Detailseite ganz unten links: **▶ Dia-Show erstellen** (`public/diashow.js`) –

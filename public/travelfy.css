@@ -409,6 +409,50 @@ textarea{ resize: vertical; }
   border: 1px solid var(--line);
 }
 .image-thumb img{ width:100%; height:100%; object-fit:cover; display:block; cursor: zoom-in; }
+.image-thumb:focus-visible{ outline: 3px solid var(--accent); outline-offset: 2px; }
+.image-thumb[draggable="true"]{ cursor: grab; }
+.image-thumb.is-dragging{ opacity:.35; }
+/* Einfuegestelle beim Ziehen: Balken links bzw. rechts am Nachbarbild */
+.image-thumb.is-drop-before,
+.image-thumb.is-drop-after{ overflow:visible; }
+.image-thumb.is-drop-before::before,
+.image-thumb.is-drop-after::after{
+  content:""; position:absolute; top:-4px; bottom:-4px; width:5px;
+  border-radius:3px; background: var(--accent); z-index:2;
+}
+.image-thumb.is-drop-before::before{ left:-6px; }
+.image-thumb.is-drop-after::after{ right:-6px; }
+.image-menu-btn{
+  position:absolute; top:6px; left:6px;
+  width:32px; height:32px; border-radius:50%; border:none;
+  background: rgba(45,41,21,0.75); color:#fff;
+  font-size:1.1rem; line-height:1; cursor:pointer;
+}
+.image-menu-btn:focus-visible, .image-remove:focus-visible{ outline:2px solid var(--primary); outline-offset:2px; }
+
+/* Kontextmenue der Bilder */
+.image-context-menu{
+  position:fixed; z-index:1000;
+  min-width: 230px; padding:.3rem;
+  background: var(--surface); color: var(--ink);
+  border:1px solid var(--line); border-radius:8px;
+  box-shadow: var(--shadow), 0 2px 8px rgba(0,0,0,0.15);
+}
+.image-context-menu[hidden]{ display:none; }
+.image-context-menu button{
+  display:block; width:100%; text-align:left;
+  padding:.45rem .7rem; border:none; border-radius:5px;
+  background:none; color:inherit; font:inherit; font-size:.92rem; cursor:pointer;
+}
+.image-context-menu button:hover:not(:disabled),
+.image-context-menu button:focus-visible{ background: var(--surface-2); outline:none; }
+.image-context-menu button:focus-visible{ box-shadow: inset 0 0 0 2px var(--accent); }
+.image-context-menu button:disabled{ opacity:.4; cursor:default; }
+.image-context-head{
+  padding:.5rem .7rem .2rem; font-size:.75rem; font-weight:700;
+  text-transform:uppercase; letter-spacing:.04em; color: var(--accent);
+}
+.image-context-sep{ height:1px; margin:.3rem .4rem; background: var(--line); }
 .image-remove{
   position:absolute;
   top:6px; right:6px;

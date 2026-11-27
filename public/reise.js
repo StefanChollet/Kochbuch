@@ -153,14 +153,19 @@ document.getElementById("addStationBtn").addEventListener("click", () => {
 /** Zeichenblatt mit gespeichertem Inhalt - laesst sich wieder bearbeiten. */
 const isEditableDrawing = (img) => !!(img.scene || img.hasScene);
 
-function renderImageList(){
-  imageListEl.innerHTML = workingImages.map(img => `
-    <div class="image-thumb" data-key="${img.key}">
-      <img src="${escapeHtml(img.url || img.dataUrl)}" alt="${escapeHtml(img.name)}" loading="lazy" title="Doppelklick: vergrößern">
+function renderImageList(focusKey){
+  const count = workingImages.length;
+  imageListEl.innerHTML = workingImages.map((img, i) => `
+    <div class="image-thumb" data-key="${img.key}" tabindex="0" draggable="${readOnly ? "false" : "true"}"
+         aria-label="Bild ${i + 1} von ${count}: ${escapeHtml(img.name)}"
+         title="${readOnly ? "Doppelklick: vergrößern" : "Ziehen: neu anordnen · Rechtsklick: Menü · Doppelklick: vergrößern"}">
+      <img src="${escapeHtml(img.url || img.dataUrl)}" alt="${escapeHtml(img.name)}" loading="lazy" draggable="false">
+      <button type="button" class="image-menu-btn" data-action="image-menu" aria-label="Menü für dieses Bild" aria-haspopup="menu">⋯</button>
       ${isEditableDrawing(img) ? `<button type="button" class="image-edit" data-action="edit-drawing" title="Zeichenblatt mit allen Objekten wieder bearbeiten">✎ Bearbeiten</button>` : ""}
       <button type="button" class="image-remove" data-action="remove-image" aria-label="Bild entfernen">✕</button>
     </div>
   `).join("");
+  if(focusKey) imageListEl.querySelector(`.image-thumb[data-key="${CSS.escape(focusKey)}"]`)?.focus();
 }
 
 /** Zeitpunkt, zu dem ein gespeichertes Bild entstand: Erstellzeit oder Zeitstempel in der id. */
@@ -272,17 +277,251 @@ function closeImageLightbox(){
   imageLightboxImg.src = "data:,";
 }
 
-imageListEl.addEventListener("dblclick", (e) => {
-  const img = e.target.closest(".image-thumb img");
+function openImageLightbox(key){
+  const img = workingImages.find(i => i.key === key);
   if(!img) return;
-  imageLightboxImg.src = img.src;
-  imageLightboxImg.alt = img.alt;
+  imageLightboxImg.src = img.url || img.dataUrl;
+  imageLightboxImg.alt = img.name;
   imageLightbox.hidden = false;
+}
+
+imageListEl.addEventListener("dblclick", (e) => {
+  if(!e.target.closest(".image-thumb img")) return;
+  openImageLightbox(e.target.closest(".image-thumb").dataset.key);
 });
 imageLightbox.addEventListener("click", closeImageLightbox);
 document.getElementById("imageLightboxClose").addEventListener("click", (e) => { e.stopPropagation(); closeImageLightbox(); });
 document.addEventListener("keydown", (e) => {
   if(e.key === "Escape" && !imageLightbox.hidden) closeImageLightbox();
+});
+
+/* ---- Bilder neu anordnen: Kontextmenue und Ziehen ----
+   Die Reihenfolge der Liste ist die gespeicherte Reihenfolge (Spalte
+   images.position); sie wird wie alles andere mit "Speichern" gesichert. */
+
+/** Bild von Platz `from` an Platz `to` verschieben (Indizes in der neuen Liste). */
+function moveImage(key, to){
+  const from = workingImages.findIndex(i => i.key === key);
+  if(from < 0) return;
+  to = Math.max(0, Math.min(workingImages.length - 1, to));
+  if(to === from) return;
+  const [img] = workingImages.splice(from, 1);
+  workingImages.splice(to, 0, img);
+  imagesReordered(key, `Bild an Platz ${to + 1} verschoben`);
+}
+
+/** Alle Bilder sortieren. Ohne Zeit (noch nicht gespeichert) kommen ans Ende. */
+function sortImages(mode){
+  const collator = new Intl.Collator("de", { numeric: true, sensitivity: "base" });
+  const list = workingImages.map((img, pos) => ({ img, pos, t: imageTime(img) }));
+  const byTime = (dir) => (a, b) => {
+    if(a.t === null || b.t === null) return (a.t === null) - (b.t === null) || a.pos - b.pos;
+    return dir * (a.t - b.t) || a.pos - b.pos;
+  };
+  const byName = (dir) => (a, b) => dir * collator.compare(a.img.name, b.img.name) || a.pos - b.pos;
+  const sorters = {
+    "time-asc": [byTime(1), "älteste zuerst"],
+    "time-desc": [byTime(-1), "neueste zuerst"],
+    "name-asc": [byName(1), "Name A–Z"],
+    "name-desc": [byName(-1), "Name Z–A"]
+  };
+  const [cmp, label] = sorters[mode];
+  const sorted = list.sort(cmp).map(x => x.img);
+  const changed = sorted.some((img, i) => img !== workingImages[i]);
+  workingImages = sorted;
+  if(changed) imagesReordered(null, `Bilder sortiert (${label})`);
+  else showStatus(`Die Bilder sind schon so sortiert (${label}).`, "info");
+}
+
+function imagesReordered(focusKey, message){
+  dirty = true;
+  renderImageList(focusKey);
+  showStatus(`${message} – mit „Speichern“ in der Reise sichern.`, "success");
+}
+
+/* Kontextmenue: Rechtsklick, Taste "Kontextmenü"/Umschalt+F10 oder Knopf "⋯" */
+const imageMenu = document.createElement("div");
+imageMenu.className = "image-context-menu";
+imageMenu.setAttribute("role", "menu");
+imageMenu.setAttribute("aria-label", "Bild");
+imageMenu.hidden = true;
+document.body.appendChild(imageMenu);
+let imageMenuKey = null;
+
+function openImageMenu(key, x, y){
+  const pos = workingImages.findIndex(i => i.key === key);
+  if(pos < 0) return;
+  const last = workingImages.length - 1;
+  const img = workingImages[pos];
+  const item = (action, label, disabled = false) =>
+    `<button type="button" role="menuitem" data-menu="${action}"${disabled ? " disabled" : ""}>${label}</button>`;
+  const head = (label) => `<div class="image-context-head" role="presentation">${label}</div>`;
+  let html = item("zoom", "🔍 Vergrössern");
+  if(!readOnly){
+    html += head("Neu anordnen")
+      + item("first", "⇤ An den Anfang", pos === 0)
+      + item("prev", "← Einen Platz nach vorne", pos === 0)
+      + item("next", "→ Einen Platz nach hinten", pos === last)
+      + item("last", "⇥ Ans Ende", pos === last)
+      + head("Alle Bilder sortieren")
+      + item("time-asc", "Älteste zuerst", last < 1)
+      + item("time-desc", "Neueste zuerst", last < 1)
+      + item("name-asc", "Name A–Z", last < 1)
+      + item("name-desc", "Name Z–A", last < 1)
+      + `<div class="image-context-sep" role="separator"></div>`
+      + (isEditableDrawing(img) ? item("edit", "✎ Zeichenblatt bearbeiten") : "")
+      + item("remove", "✕ Bild entfernen");
+  }
+  imageMenu.innerHTML = html;
+  imageMenuKey = key;
+  imageMenu.hidden = false;
+  // Im Fenster halten
+  const w = imageMenu.offsetWidth, h = imageMenu.offsetHeight;
+  imageMenu.style.left = `${Math.max(4, Math.min(x, window.innerWidth - w - 4))}px`;
+  imageMenu.style.top = `${Math.max(4, Math.min(y, window.innerHeight - h - 4))}px`;
+  imageMenu.querySelector("button:not(:disabled)")?.focus();
+}
+
+function closeImageMenu(refocus){
+  if(imageMenu.hidden) return;
+  imageMenu.hidden = true;
+  const key = imageMenuKey;
+  imageMenuKey = null;
+  if(refocus && key) imageListEl.querySelector(`.image-thumb[data-key="${CSS.escape(key)}"]`)?.focus();
+}
+
+imageListEl.addEventListener("contextmenu", (e) => {
+  const thumb = e.target.closest(".image-thumb");
+  if(!thumb) return;
+  e.preventDefault();
+  // Mit der Tastatur geoeffnet (clientX/Y = 0): Menue am Bild ausrichten
+  let x = e.clientX, y = e.clientY;
+  if(!x && !y){ const r = thumb.getBoundingClientRect(); x = r.left + 12; y = r.top + 12; }
+  openImageMenu(thumb.dataset.key, x, y);
+});
+
+imageListEl.addEventListener("click", (e) => {
+  const btn = e.target.closest('button[data-action="image-menu"]');
+  if(!btn) return;
+  e.stopPropagation();
+  const r = btn.getBoundingClientRect();
+  openImageMenu(btn.closest(".image-thumb").dataset.key, r.left, r.bottom + 4);
+});
+
+imageMenu.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-menu]");
+  if(!btn || btn.disabled) return;
+  const key = imageMenuKey;
+  const pos = workingImages.findIndex(i => i.key === key);
+  const action = btn.dataset.menu;
+  closeImageMenu(action === "zoom");
+  if(pos < 0) return;
+  switch(action){
+    case "zoom": openImageLightbox(key); break;
+    case "first": moveImage(key, 0); break;
+    case "prev": moveImage(key, pos - 1); break;
+    case "next": moveImage(key, pos + 1); break;
+    case "last": moveImage(key, workingImages.length - 1); break;
+    case "edit": imageListEl.querySelector(`.image-thumb[data-key="${CSS.escape(key)}"] [data-action="edit-drawing"]`)?.click(); break;
+    case "remove": imageListEl.querySelector(`.image-thumb[data-key="${CSS.escape(key)}"] [data-action="remove-image"]`)?.click(); break;
+    default: sortImages(action);
+  }
+});
+
+imageMenu.addEventListener("keydown", (e) => {
+  const items = [...imageMenu.querySelectorAll("button:not(:disabled)")];
+  const i = items.indexOf(document.activeElement);
+  if(e.key === "ArrowDown" || e.key === "ArrowUp"){
+    e.preventDefault();
+    const step = e.key === "ArrowDown" ? 1 : -1;
+    items[(i + step + items.length) % items.length]?.focus();
+  }else if(e.key === "Home"){ e.preventDefault(); items[0]?.focus(); }
+  else if(e.key === "End"){ e.preventDefault(); items[items.length - 1]?.focus(); }
+  else if(e.key === "Escape" || e.key === "Tab"){ e.preventDefault(); closeImageMenu(true); }
+});
+
+document.addEventListener("pointerdown", (e) => { if(!imageMenu.contains(e.target)) closeImageMenu(false); });
+window.addEventListener("resize", () => closeImageMenu(false));
+document.addEventListener("scroll", () => closeImageMenu(false), true);
+
+/* Tastatur am Bild: Enter vergroessert, Alt+Pfeil verschiebt, Pos1/Ende mit Alt an Anfang/Ende */
+imageListEl.addEventListener("keydown", (e) => {
+  const thumb = e.target.closest(".image-thumb");
+  if(!thumb || e.target !== thumb) return;
+  const key = thumb.dataset.key;
+  const pos = workingImages.findIndex(i => i.key === key);
+  if(e.key === "Enter"){ e.preventDefault(); openImageLightbox(key); return; }
+  if(readOnly || !e.altKey) return;
+  const target = { ArrowLeft: pos - 1, ArrowUp: pos - 1, ArrowRight: pos + 1, ArrowDown: pos + 1, Home: 0, End: workingImages.length - 1 }[e.key];
+  if(target === undefined) return;
+  e.preventDefault();
+  moveImage(key, target);
+});
+
+/* Ziehen und Ablegen. Eigener Datentyp, damit Dateien von aussen nicht stoeren. */
+const DRAG_TYPE = "application/x-travelfy-image";
+let dragKey = null;
+
+function clearDropMarks(){
+  imageListEl.querySelectorAll(".is-drop-before, .is-drop-after").forEach(el => el.classList.remove("is-drop-before", "is-drop-after"));
+}
+
+/** Einfuegeplatz (Index in der Liste ohne das gezogene Bild) und Markierung zum Zeiger. */
+function dropTarget(e){
+  const thumbs = [...imageListEl.querySelectorAll(".image-thumb")].filter(t => t.dataset.key !== dragKey);
+  if(!thumbs.length) return { index: 0, thumb: null, after: false };
+  // Naechstes Bild zum Zeiger; links/rechts der Mitte entscheidet vorher/nachher
+  let best = null, bestDist = Infinity;
+  for(const t of thumbs){
+    const r = t.getBoundingClientRect();
+    const dx = Math.max(r.left - e.clientX, 0, e.clientX - r.right);
+    const dy = Math.max(r.top - e.clientY, 0, e.clientY - r.bottom);
+    const d = dx * dx + dy * dy * 4;    // Zeile zaehlt mehr als Spalte
+    if(d < bestDist){ bestDist = d; best = t; }
+  }
+  const r = best.getBoundingClientRect();
+  const after = e.clientX > r.left + r.width / 2;
+  return { index: thumbs.indexOf(best) + (after ? 1 : 0), thumb: best, after };
+}
+
+imageListEl.addEventListener("dragstart", (e) => {
+  const thumb = e.target.closest?.(".image-thumb");
+  if(!thumb || readOnly){ return; }
+  dragKey = thumb.dataset.key;
+  e.dataTransfer.effectAllowed = "move";
+  e.dataTransfer.setData(DRAG_TYPE, dragKey);
+  e.dataTransfer.setData("text/plain", "");
+  closeImageMenu(false);
+  // erst nach dem Erzeugen des Zieh-Bildes abdunkeln
+  requestAnimationFrame(() => thumb.classList.add("is-dragging"));
+});
+
+imageListEl.addEventListener("dragover", (e) => {
+  if(!dragKey || !e.dataTransfer.types.includes(DRAG_TYPE)) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "move";
+  const t = dropTarget(e);
+  clearDropMarks();
+  t.thumb?.classList.add(t.after ? "is-drop-after" : "is-drop-before");
+});
+
+imageListEl.addEventListener("dragleave", (e) => {
+  if(!imageListEl.contains(e.relatedTarget)) clearDropMarks();
+});
+
+imageListEl.addEventListener("drop", (e) => {
+  if(!dragKey || !e.dataTransfer.types.includes(DRAG_TYPE)) return;
+  e.preventDefault();
+  const key = dragKey;
+  const { index } = dropTarget(e);
+  clearDropMarks();
+  moveImage(key, index);
+});
+
+imageListEl.addEventListener("dragend", () => {
+  dragKey = null;
+  clearDropMarks();
+  imageListEl.querySelectorAll(".is-dragging").forEach(el => el.classList.remove("is-dragging"));
 });
 
 /* ---- Rechte: Rolle + Ampel ---- */
@@ -304,6 +543,8 @@ function applyAccess(){
   }
   renderCategoryList();
   renderStationList();
+  renderImageList();   // Ziehen/Menue folgen den Rechten
+  closeImageMenu(false);
 }
 
 /* Ampel umgeschaltet. Auf Rot gehen ungespeicherte Aenderungen verloren -
