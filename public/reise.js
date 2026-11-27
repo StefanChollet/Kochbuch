@@ -246,24 +246,11 @@ document.getElementById("drawBtn").addEventListener("click", () => {
   });
 });
 
-/* ---- Dia-Show: alle Bilder der Reise in zeitlicher Reihenfolge ---- */
-/**
- * Gespeicherte Bilder nach Hochladezeit: ihre id beginnt mit dem Zeitstempel
- * (Basis 36, gleich lang) - sortiert man nach id, ist es chronologisch.
- * Noch nicht gespeicherte (gerade hochgeladene oder gezeichnete) Bilder
- * kommen danach, in der Reihenfolge, in der sie dazukamen.
- */
+/* ---- Dia-Show: alle Bilder der Reise in der Reihenfolge des Blocks "Bilder" ----
+   Wer chronologisch moechte, sortiert vorher per Kontextmenue "Älteste zuerst".
+   Auch ungespeicherte Aenderungen der Reihenfolge gelten schon. */
 function slideList(){
-  // Nach Entstehungszeit; gleiche Zeit (zusammen hochgeladen) -> Reihenfolge
-  // in der Reise. Noch ungespeicherte neue Bilder ohne Zeit kommen ans Ende.
-  return workingImages.map((img, pos) => ({ img, pos, t: imageTime(img) }))
-    .sort((a, b) => {
-      if(a.t === null && b.t === null) return a.pos - b.pos;
-      if(a.t === null) return 1;
-      if(b.t === null) return -1;
-      return a.t - b.t || a.pos - b.pos;
-    })
-    .map(({ img }) => ({ src: img.url || img.dataUrl, name: img.name }));
+  return workingImages.map(img => ({ src: img.url || img.dataUrl, name: img.name }));
 }
 
 document.getElementById("slideBtn").addEventListener("click", () => Diashow.open(slideList()));

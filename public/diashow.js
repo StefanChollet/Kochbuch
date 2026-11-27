@@ -4,7 +4,7 @@
    Dia-Show der Detailseite.
 
    1. "Dia-Show erstellen" oeffnet die Einstellungen: alle Bilder der Reise
-      (Fotos und uebernommene Zeichenblaetter) in zeitlicher Reihenfolge,
+      (Fotos und uebernommene Zeichenblaetter) in der Reihenfolge der Reise,
       Anzeigedauer je Bild (Standard 10 s), Uebergang (Standard 2 s) und
       Art des Uebergangs (Ueberblenden, Schieben, Zoomen).
    2. "Starten" spielt die Bilder im Vollbild ab, jedes so gross wie moeglich,
@@ -60,7 +60,7 @@ const Diashow = (() => {
   function updateInfo(){
     const s = readSettings();
     const round = slides.length * (s.duration + s.transition);
-    info.textContent = `${slides.length} ${slides.length === 1 ? "Bild" : "Bilder"} in zeitlicher Reihenfolge (nach Hochladezeit) – eine Runde dauert ${formatTime(round)}, danach beginnt sie von vorn.`;
+    info.textContent = `${slides.length} ${slides.length === 1 ? "Bild" : "Bilder"} in der Reihenfolge der Reise – eine Runde dauert ${formatTime(round)}, danach beginnt sie von vorn.`;
   }
   [durationInput, transitionInput, effectSelect].forEach(el => el.addEventListener("input", updateInfo));
 

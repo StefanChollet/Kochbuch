@@ -118,7 +118,8 @@ Die Reihenfolge im Block *Bilder* ist die gespeicherte Reihenfolge
 - **Tastatur:** Tab wählt ein Bild, Enter vergrössert, Alt+Pfeil verschiebt um einen
   Platz, Alt+Pos1/Ende an den Anfang/ans Ende; im Menü Pfeiltasten, Enter, Esc.
 - Bei roter Ampel oder nur Leserecht: kein Ziehen, im Menü nur *Vergrössern*.
-- Die Dia-Show bleibt chronologisch, unabhängig von der Reihenfolge hier.
+- Die **Dia-Show** spielt die Bilder genau in dieser Reihenfolge ab (auch schon vor
+  dem Speichern). Chronologisch: vorher *Älteste zuerst* wählen.
 
 ## Dia-Show
 
@@ -126,9 +127,8 @@ Auf der Detailseite ganz unten links: **▶ Dia-Show erstellen** (`public/diasho
 auch bei roter Ampel, weil sie nur anzeigt.
 
 1. **Einstellungen:** alle Bilder der Reise – Fotos und mit *Zeichnen* erstellte
-   Zeichenblätter – in zeitlicher Reihenfolge nach Hochladezeit (gleichzeitig
-   hochgeladene in der Reihenfolge der Reise; noch ungespeicherte am Ende), als
-   nummerierte Leiste. Einstellbar: **Anzeige pro Bild** (Standard 10 s),
+   Zeichenblätter – in der Reihenfolge des Blocks *Bilder* (siehe
+   [Bilder ordnen](#bilder-ordnen)), als nummerierte Leiste. Einstellbar: **Anzeige pro Bild** (Standard 10 s),
    **Übergang** (Standard 2 s, 0 = harter Schnitt) und **Art des Übergangs**
    (Überblenden, Schieben, Zoomen). Die Werte werden im Browser gemerkt.
 2. **Starten:** Vollbild, jedes Bild so gross wie möglich (Seitenverhältnis bleibt),
