@@ -9,7 +9,9 @@
    werden nicht angefasst.
    ========================================================================= */
 
-const CACHE = "travelfy-shell-v22";
+// Den Platzhalter im Namen ersetzt der Server durch die Version (server.js): jede neue
+// Version bekommt so von selbst einen neuen Cache-Namen.
+const CACHE = "travelfy-shell-__BUILD__";
 // Basis der App = Verzeichnis dieses Skripts, z.B. "/travelfy/".
 const BASE = new URL("./", self.location.href).pathname;
 const SHELL = [
@@ -18,6 +20,8 @@ const SHELL = [
   "reise.html",
   "travelfy.css",
   "common.js",
+  "version.js",
+  "version-anzeige.js",
   "travelfy.js",
   "reise.js",
   "zeichnen.js",

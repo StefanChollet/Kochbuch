@@ -34,6 +34,40 @@ const path = require("node:path");
 const db = require("./db");
 const api = require("./api");
 
+/* ------------------------------------------------------- Versionsnummer
+   Beim Einspielen schreibt deploy/einspielen.sh (Verteiler) die Datei
+   version.json neben server.js - aus Git: "1.<Anzahl Commits>", Kurz-Hash
+   und Datum des Commits. Lokal ohne diese Datei: direkt aus dem Git-
+   Repository; mit ungespeicherten Aenderungen "+dev" (und neuer Kennung bei
+   jedem Start). Jede Aenderung = neuer Commit = neue Nummer. */
+const VERSION = loadVersion();
+
+function loadVersion() {
+  try {
+    const v = JSON.parse(fs.readFileSync(path.join(__dirname, "version.json"), "utf8"));
+    if (v && v.version && v.commit) return { ...v, build: v.commit };
+  } catch { /* keine version.json - lokal */ }
+  try {
+    const git = (...args) => require("node:child_process")
+      .execFileSync("git", args, { cwd: __dirname, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const count = git("rev-list", "--count", "HEAD");
+    const commit = git("rev-parse", "--short", "HEAD");
+    const dirty = git("status", "--porcelain", "--untracked-files=no") !== "";
+    return {
+      version: `1.${count}${dirty ? "+dev" : ""}`,
+      commit,
+      date: dirty ? new Date().toISOString() : git("log", "-1", "--format=%cI"),
+      build: dirty ? `${commit}-${Date.now().toString(36)}` : commit,
+    };
+  } catch { /* kein Git */ }
+  return { version: "dev", commit: "", date: new Date().toISOString(), build: `dev-${Date.now().toString(36)}` };
+}
+
+/** Versionsangaben fuer Seite und /api/health. */
+function versionInfo() {
+  return { version: VERSION.version, commit: VERSION.commit, date: VERSION.date, build: VERSION.build };
+}
+
 const PUBLIC_DIR = path.join(__dirname, "public");
 // Bewusst nicht 3000: dort laeuft ueblicherweise das Kochbuch.
 const PORT = Number(process.argv[2]) || Number(process.env.TRAVELFY_PORT) || 3001;
@@ -206,6 +240,25 @@ async function serveStatic(req, res, pathname) {
     return;
   }
   const relative = decoded === "/" ? INDEX : decoded.slice(1);
+
+  // Versionsnummer als Skript (fuer die Anzeige unten links) und der Service
+  // Worker mit der Version im Cache-Namen - so erneuert sich die App-Huelle
+  // bei jeder neuen Version von selbst.
+  if (relative === "version.js" || relative === "sw.js") {
+    let body;
+    if (relative === "version.js") {
+      body = `self.APP_VERSION = ${JSON.stringify(versionInfo())};\n`;
+    } else {
+      try { body = (await fsp.readFile(path.join(PUBLIC_DIR, "sw.js"), "utf8")).replace(/__BUILD__/g, VERSION.build); }
+      catch { body = null; }
+    }
+    if (body !== null) {
+      const buf = Buffer.from(body, "utf8");
+      res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8", "Content-Length": buf.length, "Cache-Control": "no-store" });
+      res.end(req.method === "HEAD" ? undefined : buf);
+      return;
+    }
+  }
   const filePath = path.join(PUBLIC_DIR, path.normalize(relative));
 
   // Nichts ausserhalb von public/ ausliefern (".." im Pfad).
@@ -278,6 +331,14 @@ const server = http.createServer(async (req, res) => {
   const appPath = pathname.slice(BASE.length);
 
   try {
+    // Versionsnummer: oeffentlich und nie zwischengespeichert - die Anzeige unten
+    // links vergleicht damit, ob die offene Seite noch die aktuelle Version ist.
+    if (appPath === "/api/version" && req.method === "GET") {
+      const buf = Buffer.from(JSON.stringify(versionInfo()), "utf8");
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Content-Length": buf.length, "Cache-Control": "no-store" });
+      res.end(buf);
+      return;
+    }
     const handledByApi = await api.handle(req, res, appPath);
     if (!handledByApi) await serveStatic(req, res, appPath);
   } catch (err) {

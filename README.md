@@ -259,6 +259,26 @@ bearbeitbar (Farbe, Füllung, Text …), auch nach dem Speichern und erneuten
   Start automatisch ergänzt; vorhandene Daten bleiben unverändert.
   Inhalt eines Zeichenblatts abrufen: `GET /api/images/:id/scene`.
 
+## Versionsnummer
+
+Unten links auf jeder Seite steht die Version, z. B. **„Version 1.24“**
+(`public/version-anzeige.js`). Tooltip: Commit und Datum.
+
+- Die Nummer kommt aus Git: `1.<Anzahl Commits>`. Jede Änderung ist ein Commit,
+  die Nummer steigt also von selbst.
+- Auf trex schreibt `deploy/einspielen.sh` (Verteiler) beim Einspielen
+  `version.json` neben `server.js` (Nummer, Kurz-Hash, Commit-Datum). Lokal ohne
+  diese Datei liest der Server Git direkt; mit ungespeicherten Änderungen
+  erscheint `+dev`.
+- `version.js` erzeugt der Server (`self.APP_VERSION`); `GET api/version` liefert
+  die laufende Version (öffentlich, nie zwischengespeichert).
+- Läuft auf dem Server schon eine neuere Version als die offene Seite, wird die
+  Anzeige hervorgehoben: „Version 1.24 – neu: 1.25 · neu laden“ – ein Klick lädt
+  die aktuelle Fassung. Geprüft wird beim Laden, beim Zurückkehren zum Tab und
+  alle 5 Minuten.
+- Der Cache-Name des Service Workers enthält die Version (Platzhalter
+  `__BUILD__` in `sw.js`, vom Server ersetzt) – kein Hochzählen von Hand mehr.
+
 ## Trennung von Kochbuch (Sprung-Sperre)
 
 Ein Wechsel zwischen Kochbuch und Travelfy ist auf Travelfy-Seite unterbunden:
