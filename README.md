@@ -152,6 +152,15 @@ Schreibrecht und grüner Ampel) ein grosses Fenster mit einem Blatt von
 | Freihand (F), Linie (L) | mit gedrückter Maustaste ziehen |
 | Text (T) | ins Blatt klicken, tippen; Enter oder Klick daneben übernimmt (Umschalt+Enter = neue Zeile) |
 | Kreis (K), Quadrat (Q), Dreieck (D) | Box aufziehen; Kreis/Quadrat mit Umschalt exakt rund/quadratisch |
+| Gummi (E) | über das Blatt fahren radiert alles darunter weg – Linien, Formen, Text und Fotos. Ein Kreis zeigt die Gummi-Grösse; sie folgt der *Stärke* (fein 10 … sehr dick 70 Punkte). Ein Zug = ein Rückgängig-Schritt. |
+| Schere (X) | einen Bereich umfahren (mit Umschalt: Rechteck aufziehen). Was darin liegt, wird aus den Objekten herausgeschnitten und als **eigenes Stück** (Bild, knapp auf den Inhalt zugeschnitten, bis doppelte Auflösung) obenauf gelegt – es ist danach ausgewählt und lässt sich verschieben, vergrössern, drehen oder löschen. |
+
+Gummi und Schere radieren nicht in ein flaches Bild, sondern geben jedem
+getroffenen Objekt eine **Radiermaske** (`erase` im gespeicherten Inhalt:
+Gummi-Striche bzw. Schnittflächen im eigenen Rahmen des Objekts). Die Maske
+wandert beim Verschieben, Vergrössern und Drehen mit; das Objekt bleibt
+bearbeitbar (Farbe, Füllung, Text …), auch nach dem Speichern und erneuten
+*Bearbeiten*. Radierte Stellen zählen beim Anklicken weiter zum Objekt.
 
 - **Farbe und Deckkraft** stecken im Knopf *Farbe*: Farbwahl und Regler
   0–100 % (0 % = unsichtbar, 100 % = deckend). Sie gelten für neue Elemente und

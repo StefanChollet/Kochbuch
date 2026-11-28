@@ -623,6 +623,7 @@ textarea{ resize: vertical; }
 }
 #drawCanvas[data-tool="select"]{ cursor: default; }
 #drawCanvas[data-tool="text"]{ cursor: text; }
+#drawCanvas[data-tool="eraser"]{ cursor: none; }   /* stattdessen Gummi-Kreis im Blatt */
 .draw-text-input{
   position:absolute;
   z-index:2;

@@ -35,6 +35,8 @@ const Zeichnen = (() => {
     ellipse: "Ziehen für einen Kreis – mit Umschalt genau rund. Danach kann ein Foto hinein.",
     rect: "Ziehen für ein Quadrat – mit Umschalt genau quadratisch. Danach kann ein Foto hinein.",
     triangle: "Ziehen für ein Dreieck. Danach kann ein Foto hinein.",
+    eraser: "Über das Blatt fahren radiert alles darunter weg – Linien, Formen, Text und Fotos. Die Grösse des Gummis folgt der Stärke.",
+    scissors: "Einen Bereich umfahren (mit Umschalt: Rechteck) – er wird ausgeschnitten und ist danach ein eigenes Stück zum Verschieben.",
   };
   const FILLABLE = new Set(["rect", "ellipse", "triangle", "image"]);
 
@@ -539,7 +541,85 @@ const Zeichnen = (() => {
     }
   }
 
+  /* ------------------------------------------- Radiermasken (Gummi, Schere)
+     el.erase: Liste von Masken, die vom Objekt weggenommen werden:
+       { w, pts: [[x,y],...] }  Gummi-Strich mit Durchmesser w
+       { poly: [[x,y],...] }    ausgeschnittene Flaeche (Schere)
+     Koordinaten im ungedrehten Rahmen des Objekts (bei gedrehten Formen um
+     ihre Mitte zurueckgedreht, sonst Blatt-Koordinaten). So wandert die Maske
+     beim Verschieben, Vergroessern und Drehen mit, und das Objekt bleibt
+     bearbeitbar. Masken-Listen werden nie veraendert, sondern ersetzt -
+     die Rueckgaengig-Staende teilen sie sich. */
+
+  const isRotated = (el) => ROTATABLE.has(el.type) && !!el.rotation;
+
+  /** Blatt-Punkt in den ungedrehten Rahmen des Objekts. */
+  function toLocal(el, x, y){
+    if(!isRotated(el)) return [x, y];
+    const q = rotatePoint({ x, y }, centerOf(el), -rad(el.rotation));
+    return [q.x, q.y];
+  }
+
+  /** Alle Punkte aller Masken umrechnen; liefert eine neue Liste. */
+  function mapMask(erase, fn){
+    if(!erase || !erase.length) return erase;
+    return erase.map(m => m.poly
+      ? { poly: m.poly.map(([x, y]) => fn(x, y)) }
+      : { w: m.w, pts: m.pts.map(([x, y]) => fn(x, y)) });
+  }
+
+  // Zwischenebene je Zielgroesse: Objekt dort zeichnen, Masken herausstanzen
+  const layers = new Map();
+  function layerFor(w, h){
+    const key = `${w}x${h}`;
+    let L = layers.get(key);
+    if(!L){ L = document.createElement("canvas"); L.width = w; L.height = h; layers.set(key, L); }
+    return L;
+  }
+
   function drawElement(c, el){
+    if(!el.erase || !el.erase.length){ drawElementRaw(c, el); return; }
+    const L = layerFor(c.canvas.width, c.canvas.height);
+    const lc = L.getContext("2d");
+    lc.setTransform(1, 0, 0, 1, 0, 0);
+    lc.globalCompositeOperation = "source-over";
+    lc.clearRect(0, 0, L.width, L.height);
+    lc.setTransform(c.getTransform());
+    drawElementRaw(lc, el);
+    lc.save();
+    if(isRotated(el)){
+      const m = centerOf(el);
+      lc.translate(m.x, m.y);
+      lc.rotate(rad(el.rotation));
+      lc.translate(-m.x, -m.y);
+    }
+    lc.globalCompositeOperation = "destination-out";
+    lc.fillStyle = lc.strokeStyle = "#000";
+    lc.lineCap = lc.lineJoin = "round";
+    for(const m of el.erase){
+      lc.beginPath();
+      if(m.poly){
+        m.poly.forEach(([x, y], i) => i ? lc.lineTo(x, y) : lc.moveTo(x, y));
+        lc.closePath();
+        lc.fill();
+      }else{
+        lc.lineWidth = m.w;
+        m.pts.forEach(([x, y], i) => i ? lc.lineTo(x, y) : lc.moveTo(x, y));
+        if(m.pts.length === 1) lc.lineTo(m.pts[0][0] + 0.1, m.pts[0][1]);
+        lc.stroke();
+      }
+    }
+    lc.restore();
+    // Ergebnis 1:1 uebernehmen (Clip-Bereich des Ziels gilt weiter)
+    c.save();
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.globalAlpha = 1;
+    c.globalCompositeOperation = "source-over";
+    c.drawImage(L, 0, 0);
+    c.restore();
+  }
+
+  function drawElementRaw(c, el){
     c.save();
     // Deckkraft je Objekt: 0 = unsichtbar, 1 = deckend (gilt auch fuer Fotos in Formen)
     c.globalAlpha = el.opacity ?? 1;
@@ -667,6 +747,7 @@ const Zeichnen = (() => {
     if(el.type === "line"){ el.x1 += dx; el.y1 += dy; el.x2 += dx; el.y2 += dy; }
     else if(el.type === "free" || el.type === "spline"){ el.points.forEach(p => { p[0] += dx; p[1] += dy; }); }
     else { el.x += dx; el.y += dy; }
+    if(el.erase) el.erase = mapMask(el.erase, (x, y) => [x + dx, y + dy]);
   }
 
   /* ------------------------------------------------------ Groesse aendern */
@@ -733,6 +814,16 @@ const Zeichnen = (() => {
   /** Element um den Punkt a skalieren (aus einer unveraenderten Kopie heraus). */
   function scaleFrom(el, a, sx, sy){
     const sc = (x, y) => [a.x + (x - a.x) * sx, a.y + (y - a.y) * sy];
+    if(el.erase){
+      if(ROTATABLE.has(el.type)){
+        // Maske im Rahmen der Form: um die Mitte skalieren, mit der Mitte wandern
+        const m = centerOf(el);
+        const [cx, cy] = sc(m.x, m.y);
+        el.erase = mapMask(el.erase, (x, y) => [cx + (x - m.x) * sx, cy + (y - m.y) * sy]);
+      }else{
+        el.erase = mapMask(el.erase, sc);
+      }
+    }
     if(el.type === "line"){
       [el.x1, el.y1] = sc(el.x1, el.y1);
       [el.x2, el.y2] = sc(el.x2, el.y2);
@@ -774,6 +865,10 @@ const Zeichnen = (() => {
       const cx = h.ux ? ax + h.ux * w / 2 : 0;
       const cy = h.uy ? ay + h.uy * hh / 2 : 0;
       const wc = rotatePoint({ x: frame.c.x + cx, y: frame.c.y + cy }, frame.c, frame.r);
+      if(o.erase){
+        const oc = frame.c, kx = w / o.w, ky = hh / o.h;
+        el.erase = mapMask(o.erase, (x, y) => [wc.x + (x - oc.x) * kx, wc.y + (y - oc.y) * ky]);
+      }
       el.w = w;
       el.h = hh;
       el.x = wc.x - w / 2;
@@ -896,6 +991,37 @@ const Zeichnen = (() => {
       ctx.setLineDash([8, 6]);
       ctx.strokeStyle = "#1e88e5";
       ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+    }
+    // Schere: Schnittlinie (schwarz-weiss gestrichelt, auf jedem Grund sichtbar)
+    if(action && action.kind === "cut" && action.points.length > 1){
+      ctx.save();
+      ctx.beginPath();
+      action.points.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+      ctx.closePath();
+      ctx.fillStyle = "rgba(0, 0, 0, 0.06)";
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#ffffff";
+      ctx.stroke();
+      ctx.setLineDash([9, 7]);
+      ctx.strokeStyle = "#222222";
+      ctx.stroke();
+      ctx.restore();
+    }
+    // Gummi: Kreis in Gummi-Groesse
+    if(tool === "eraser" && eraserAt){
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(eraserAt.x, eraserAt.y, eraserSize() / 2, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "#ffffff";
+      ctx.stroke();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "#555555";
       ctx.stroke();
       ctx.restore();
     }
@@ -1202,6 +1328,7 @@ const Zeichnen = (() => {
       }
     }
     tool = name;
+    eraserAt = null;
     dialog.querySelectorAll(".draw-tool").forEach(b => {
       const on = b.dataset.tool === name;
       b.classList.toggle("is-active", on);
@@ -1212,6 +1339,99 @@ const Zeichnen = (() => {
     if(name !== "select") selectOnly(null);
     render();   // u.a. Regler "Ecken" je nach Werkzeug an/aus
   }
+
+  /* ------------------------------------------------- Gummi und Schere */
+
+  let eraserAt = null;    // Mausposition fuer den Gummi-Kreis (null = ausserhalb)
+  /** Durchmesser des Gummis in Blatt-Punkten - folgt der Stärke. */
+  const eraserSize = () => Math.max(10, strokeWidth() * 5);
+
+  /** Liegt das Rechteck b (mit Rand pad) im Rechteck r? */
+  const overlaps = (r, b, pad) => b.x - pad <= r.x2 && b.x + b.w + pad >= r.x1 && b.y - pad <= r.y2 && b.y + b.h + pad >= r.y1;
+
+  /**
+   * Gummi von a nach b gefuehrt: jedes beruehrte Objekt bekommt (einmal je
+   * Zug) einen eigenen Radier-Strich, der danach mitwaechst.
+   */
+  function eraseAlong(act, a, b){
+    const r = act.w / 2;
+    const seg = { x1: Math.min(a.x, b.x) - r, y1: Math.min(a.y, b.y) - r, x2: Math.max(a.x, b.x) + r, y2: Math.max(a.y, b.y) + r };
+    for(const [el, entry] of act.entries) entry.pts.push(toLocal(el, b.x, b.y));
+    for(const el of elements){
+      if(act.entries.has(el)) continue;
+      if(!overlaps(seg, bounds(el), (el.width || 0) / 2 + 2)) continue;
+      const entry = { w: act.w, pts: act.pts.map(([x, y]) => toLocal(el, x, y)) };
+      el.erase = [...(el.erase || []), entry];
+      act.entries.set(el, entry);
+      act.moved = true;
+    }
+  }
+
+  /**
+   * Schere: alles innerhalb des Umrisses wird aus den Objekten herausgenommen
+   * und als neues Stueck (Bild) obenauf gelegt - knapp auf den Inhalt zugeschnitten.
+   */
+  async function cutOut(poly){
+    if(poly.length < 3) return;
+    const xs = poly.map(q => q[0]), ys = poly.map(q => q[1]);
+    if(Math.max(...xs) - Math.min(...xs) < 6 && Math.max(...ys) - Math.min(...ys) < 6) return;
+    const bx = Math.max(0, Math.floor(Math.min(...xs))), by = Math.max(0, Math.floor(Math.min(...ys)));
+    const bw = Math.min(W, Math.ceil(Math.max(...xs))) - bx, bh = Math.min(H, Math.ceil(Math.max(...ys))) - by;
+    const area = { x1: bx, y1: by, x2: bx + bw, y2: by + bh };
+    const targets = bw > 1 && bh > 1 ? elements.filter(el => overlaps(area, bounds(el), (el.width || 0) / 2 + 2)) : [];
+    const nothing = () => showStatus("Im umfahrenen Bereich liegt nichts zum Ausschneiden.", "info");
+    if(!targets.length){ nothing(); return; }
+
+    // Ausschnitt in bis zu doppelter Aufloesung zeichnen (Fotos bleiben scharf)
+    const S = Math.min(2, Math.max(1, Math.sqrt(2.5e6 / (bw * bh))));
+    const off = document.createElement("canvas");
+    off.width = Math.max(1, Math.round(bw * S));
+    off.height = Math.max(1, Math.round(bh * S));
+    const oc = off.getContext("2d");
+    oc.setTransform(S, 0, 0, S, -bx * S, -by * S);
+    oc.beginPath();
+    poly.forEach(([x, y], i) => i ? oc.lineTo(x, y) : oc.moveTo(x, y));
+    oc.closePath();
+    oc.clip();
+    targets.forEach(el => drawElement(oc, el));
+
+    // Auf den sichtbaren Inhalt zuschneiden
+    const data = oc.getImageData(0, 0, off.width, off.height).data;
+    let minX = off.width, minY = off.height, maxX = -1, maxY = -1;
+    for(let y = 0; y < off.height; y++){
+      for(let x = 0; x < off.width; x++){
+        if(data[(y * off.width + x) * 4 + 3] > 8){
+          if(x < minX) minX = x;
+          if(x > maxX) maxX = x;
+          if(y < minY) minY = y;
+          if(y > maxY) maxY = y;
+        }
+      }
+    }
+    if(maxX < 0){ nothing(); return; }
+    const piece = document.createElement("canvas");
+    piece.width = maxX - minX + 1;
+    piece.height = maxY - minY + 1;
+    piece.getContext("2d").drawImage(off, -minX, -minY);
+    let img;
+    try{ img = await loadImage(piece.toDataURL("image/png")); }
+    catch(err){ showStatus(err.message, "error"); return; }
+
+    snapshot();
+    // Bereich aus den Objekten herausnehmen (wandert mit ihnen mit)
+    for(const el of targets){
+      el.erase = [...(el.erase || []), { poly: poly.map(([x, y]) => toLocal(el, x, y)) }];
+    }
+    const el = { type: "image", ...newStyle(), opacity: 1, fill: { type: "none" },
+      x: bx + minX / S, y: by + minY / S, w: piece.width / S, h: piece.height / S, img };
+    elements.push(el);
+    setTool("select");
+    selectOnly(el);
+    render();
+    showStatus("Ausgeschnitten – das Stück ist ausgewählt und lässt sich verschieben, vergrössern und drehen.", "success");
+  }
+
+  canvas.addEventListener("pointerleave", () => { if(eraserAt && !action){ eraserAt = null; render(); } });
 
   /* ----------------------------------------------------------- Maus */
 
@@ -1276,6 +1496,21 @@ const Zeichnen = (() => {
       return;
     }
 
+    if(tool === "eraser"){
+      snapshot();
+      action = { kind: "erase", w: eraserSize(), entries: new Map(), pts: [[p.x, p.y]], moved: false };
+      eraseAlong(action, p, p);
+      try{ canvas.setPointerCapture(e.pointerId); }catch{ /* geht auch so */ }
+      render();
+      return;
+    }
+    if(tool === "scissors"){
+      action = { kind: "cut", start: p, rect: e.shiftKey, points: [[p.x, p.y]] };
+      try{ canvas.setPointerCapture(e.pointerId); }catch{ /* geht auch so */ }
+      render();
+      return;
+    }
+
     const base = newStyle();
     action = { kind: "draw", start: p, preview: null, base };
     // Spline: zuerst wie Freihand mitzeichnen, beim Loslassen glaetten.
@@ -1294,6 +1529,28 @@ const Zeichnen = (() => {
       // Ueber einem Anfasser: Doppelpfeil in passender Richtung
       const grip = overHandle ? null : handleAt(p);
       canvas.style.cursor = grip ? handleCursor(grip.handle, grip.frame) : "";
+      // Gummi: Kreis in seiner Groesse unter dem Mauszeiger
+      if(tool === "eraser"){ eraserAt = p; render(); }
+      return;
+    }
+    if(action.kind === "erase"){
+      const last = action.pts[action.pts.length - 1];
+      if(Math.hypot(p.x - last[0], p.y - last[1]) < 1.5) return;
+      action.pts.push([p.x, p.y]);
+      eraseAlong(action, { x: last[0], y: last[1] }, p);
+      eraserAt = p;
+      render();
+      return;
+    }
+    if(action.kind === "cut"){
+      if(action.rect || e.shiftKey){
+        const s = action.start;
+        action.rect = true;
+        action.points = [[s.x, s.y], [p.x, s.y], [p.x, p.y], [s.x, p.y]];
+      }else{
+        action.points.push([p.x, p.y]);
+      }
+      render();
       return;
     }
     if(action.kind === "resize"){
@@ -1338,6 +1595,19 @@ const Zeichnen = (() => {
 
   function endAction(){
     if(!action) return;
+    if(action.kind === "erase"){
+      if(!action.moved) history.pop();   // nichts getroffen: kein Rueckgaengig-Schritt
+      action = null;
+      render();
+      return;
+    }
+    if(action.kind === "cut"){
+      const poly = action.points;
+      action = null;
+      cutOut(poly);
+      render();
+      return;
+    }
     if(action.kind === "lasso"){
       // Ausgewaehlt wird, was innerhalb der Schlinge liegt (Mitte des Objekts)
       const poly = action.points;
@@ -1545,7 +1815,7 @@ const Zeichnen = (() => {
     render();
   });
 
-  const SHORTCUTS = { s: "spline", v: "select", f: "free", l: "line", t: "text", k: "ellipse", q: "rect", d: "triangle" };
+  const SHORTCUTS = { s: "spline", v: "select", f: "free", l: "line", t: "text", k: "ellipse", q: "rect", d: "triangle", e: "eraser", x: "scissors" };
   dialog.addEventListener("keydown", (e) => {
     if(textInput || e.target.matches("input, select, textarea")) return;
     if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z"){ e.preventDefault(); undo(); return; }
