@@ -35,7 +35,7 @@ const Zeichnen = (() => {
     ellipse: "Ziehen für einen Kreis – mit Umschalt genau rund. Danach kann ein Foto hinein.",
     rect: "Ziehen für ein Quadrat – mit Umschalt genau quadratisch. Danach kann ein Foto hinein.",
     triangle: "Ziehen für ein Dreieck. Danach kann ein Foto hinein.",
-    eraser: "Über das Blatt fahren radiert alles darunter weg – Linien, Formen, Text und Fotos. Die Grösse des Gummis folgt der Stärke.",
+    eraser: "Über das Blatt fahren radiert alles darunter weg – Linien, Formen, Text und Fotos. Mausrad ändert die Grösse (mit Umschalt fein).",
     scissors: "Einen Bereich umfahren (mit Umschalt: Rechteck) – er wird ausgeschnitten und ist danach ein eigenes Stück zum Verschieben.",
   };
   const FILLABLE = new Set(["rect", "ellipse", "triangle", "image"]);
@@ -1335,7 +1335,7 @@ const Zeichnen = (() => {
       b.setAttribute("aria-checked", String(on));
     });
     canvas.dataset.tool = name;
-    hint.textContent = HINTS[name];
+    hint.textContent = name === "eraser" ? eraserHint() : HINTS[name];
     if(name !== "select") selectOnly(null);
     render();   // u.a. Regler "Ecken" je nach Werkzeug an/aus
   }
@@ -1343,8 +1343,32 @@ const Zeichnen = (() => {
   /* ------------------------------------------------- Gummi und Schere */
 
   let eraserAt = null;    // Mausposition fuer den Gummi-Kreis (null = ausserhalb)
-  /** Durchmesser des Gummis in Blatt-Punkten - folgt der Stärke. */
-  const eraserSize = () => Math.max(10, strokeWidth() * 5);
+  /* Durchmesser des Gummis in Blatt-Punkten: Mausrad stellt ihn stufenlos ein,
+     eine Wahl bei "Stärke" setzt ihn auf Stärke x 5. */
+  const ERASER_MIN = 4, ERASER_MAX = 300;
+  let eraserDiameter = 20;
+  const eraserSize = () => eraserDiameter;
+  const eraserHint = () => `${HINTS.eraser} Gummi: ${Math.round(eraserDiameter)} Punkte.`;
+
+  function setEraserSize(d){
+    eraserDiameter = Math.min(ERASER_MAX, Math.max(ERASER_MIN, Math.round(d)));
+    if(tool === "eraser"){ hint.textContent = eraserHint(); render(); }
+  }
+
+  widthSelect.addEventListener("change", () => setEraserSize(strokeWidth() * 5));
+
+  // Mausrad ueber dem Blatt (nur beim Gummi): hoch = groesser, runter = kleiner.
+  // Je groesser der Gummi, desto groesser der Schritt; Strg+Rad bleibt Browser-Zoom.
+  canvas.addEventListener("wheel", (e) => {
+    if(tool !== "eraser" || e.ctrlKey || e.metaKey) return;
+    e.preventDefault();
+    const delta = e.deltaY || e.deltaX;
+    if(!delta) return;
+    const step = Math.max(1, eraserDiameter * 0.12 * (e.shiftKey ? 0.25 : 1));
+    setEraserSize(eraserDiameter + (delta < 0 ? step : -step));
+    if(!eraserAt) eraserAt = toCanvas(e);
+    render();
+  }, { passive: false });
 
   /** Liegt das Rechteck b (mit Rand pad) im Rechteck r? */
   const overlaps = (r, b, pad) => b.x - pad <= r.x2 && b.x + b.w + pad >= r.x1 && b.y - pad <= r.y2 && b.y + b.h + pad >= r.y1;
