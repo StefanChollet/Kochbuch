@@ -321,7 +321,14 @@ const routes = [
       res.end();
       return;
     }
-    const buf = Buffer.from(image.data);
+    // Die Bilddaten liegen als Datei im Bilder-Ordner (nur die Metadaten in der Datenbank)
+    let buf;
+    try {
+      buf = await require("node:fs/promises").readFile(db.imageFilePath(image.file));
+    } catch (err) {
+      console.error(`Bilddatei fehlt: ${image.file} (Bild ${image.id}): ${err.message}`);
+      throw new HttpError(404, `Bilddatei zu "${id}" fehlt auf dem Server.`);
+    }
     res.writeHead(200, {
       "Content-Type": image.mime,
       "Content-Length": buf.length,

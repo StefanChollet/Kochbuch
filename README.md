@@ -63,7 +63,17 @@ travelfy.sqlite  die Datenbank (wird beim ersten Start angelegt, nicht im Repo)
 | `trips` | Name, Kurzbeschreibung, Reiseziel, Von/Bis (`JJJJ-MM-TT`), Reisebericht, Ersteller (`created_by` → `accounts`), Zeitstempel |
 | `trip_categories` | Reiseart, höchstens eine je Reise, `ON DELETE CASCADE` |
 | `stations` | Stationen (Ort + Datum/Notiz) in Reihenfolge, `ON DELETE CASCADE` |
-| `images` | Bilder als BLOB inkl. MIME-Typ, `ON DELETE CASCADE` |
+| `images` | nur **Metadaten** der Bilder: Name, MIME-Typ, Grösse, Dateiname (`file`), Zeichenblatt-Datei (`scene_file`), Reihenfolge, Erstellzeit; `ON DELETE CASCADE` |
+
+**Bilddaten liegen als Dateien**, nicht in der Datenbank: im Bilder-Ordner
+(Standard `images/` neben der Datenbankdatei, auf trex `/web/sites/travelfy/data/images/`,
+anderer Ort mit `TRAVELFY_IMAGES`). Dateiname = Bild-id + Endung, z. B.
+`mx0kgk3gb4a48342.jpg`; ein Zeichenblatt hat zusätzlich `<id>.scene.json` (Objekte
+samt eingesetzter Fotos). Dateien werden sicher geschrieben (Zwischenname, fsync,
+umbenennen) und entfallen mit ihrem Datensatz – auch beim Löschen einer Reise oder
+eines Benutzers (Aufräumen nach jeder Änderung, nur eigene Dateinamen).
+Schema 3: Ältere Datenbanken mit Bilddaten in der Tabelle ziehen beim ersten Start
+von selbst um (Dateien schreiben, Tabelle ohne Datenspalten neu aufbauen, `VACUUM`).
 | `accounts` | Benutzer: id (0 = Admin), Name, scrypt-Passworthash, Rolle `admin`/`rw`/`r` |
 | `account_sessions` | SHA-256 des Sitzungstokens, Ablaufzeit |
 | `meta` | `app = travelfy`, `schema_version` |
@@ -104,7 +114,7 @@ ein Ampelknopf; wer nur lesen darf, sieht ihn nicht.
 
 Ein hochgeladenes **Foto** und ein mit *In Bilder übernehmen* fertiges
 **Zeichenblatt** gehen sofort an den Server und liegen damit dauerhaft in der
-Datenbank auf trex (`/web/sites/travelfy/data/travelfy.sqlite`, Bilder als BLOB) –
+Server auf trex (Bilddatei in `/web/sites/travelfy/data/images/`, Metadaten in `travelfy.sqlite`) –
 nicht erst mit *Speichern* der Reise. Auch *Abbrechen*, Schliessen des Fensters
 oder ein Absturz danach lassen sie bestehen.
 
@@ -328,4 +338,7 @@ dort gilt ein fehlendes Bild als gelöscht.) Max. 8 MB pro Bild, 32 MB pro Anfra
 
 ## Sichern
 
-Server mit `Strg+C` stoppen und `travelfy.sqlite` kopieren.
+Server mit `Strg+C` stoppen und `travelfy.sqlite` **und den Ordner `images/`** kopieren –
+beides gehört zusammen. Auf trex sichert `deploy/einspielen.sh` (Verteiler) bei jedem
+Einspielen die Datenbank (`*.bak-vor-update-<zeit>`) und den Bilder-Ordner per Hardlinks
+(`images.bak-vor-update-<zeit>`, kostet keinen zusätzlichen Platz).

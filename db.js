@@ -8,15 +8,21 @@
    Sitzungen - nichts davon wird mit einer anderen Anwendung geteilt.
 
    Stationen und Bilder haengen per Fremdschluessel an der Reise und werden
-   beim Loeschen mit entfernt (CASCADE). Bilder liegen als BLOB in der
-   Datenbank und werden ueber eine eigene URL ausgeliefert.
+   beim Loeschen mit entfernt (CASCADE). Die Bilddaten liegen als Dateien
+   im Bilder-Ordner (Standard: "images" neben der Datenbankdatei, auf trex
+   /web/sites/travelfy/data/images); die Datenbank fuehrt nur die Metadaten
+   (Name, Format, Groesse, Dateiname, Reihenfolge, Zeit). Auch der Inhalt
+   eines Zeichenblatts (mit eingesetzten Fotos) ist eine eigene Datei.
    ========================================================================= */
 
 const { DatabaseSync } = require("node:sqlite");
 const crypto = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
 
 // 2: Zeichenblaetter bleiben bearbeitbar (images.scene) und behalten ihre Erstellzeit (images.created_at)
-const SCHEMA_VERSION = 2;
+// 3: Bilddaten als Dateien im Bilder-Ordner, in der Tabelle nur noch Metadaten (images.file, images.scene_file)
+const SCHEMA_VERSION = 3;
 // Hoechstgroesse des gespeicherten Zeichenblatt-Inhalts (Objekte samt eingesetzter Fotos)
 const MAX_SCENE_CHARS = 20 * 1024 * 1024;
 // Kennung dieser Anwendung in der Datenbank: eine fremde Datenbankdatei
@@ -108,9 +114,9 @@ CREATE TABLE IF NOT EXISTS images (
   name     TEXT NOT NULL DEFAULT '',
   mime     TEXT NOT NULL,
   bytes    INTEGER NOT NULL,
-  data     BLOB NOT NULL,
+  file     TEXT NOT NULL,   -- Bilddatei im Bilder-Ordner, z.B. "mx0ezevgecac35c2.jpg"
+  scene_file TEXT,          -- Zeichenblatt-Inhalt als JSON-Datei (NULL = normales Foto)
   position INTEGER NOT NULL,
-  scene    TEXT,            -- Zeichenblatt: Objekte als JSON (NULL = normales Foto)
   created_at TEXT           -- Erstellzeit; bleibt beim Bearbeiten eines Zeichenblatts erhalten
 );
 CREATE INDEX IF NOT EXISTS idx_images_trip ON images(trip_id, position);
@@ -122,6 +128,8 @@ CREATE INDEX IF NOT EXISTS idx_images_trip ON images(trip_id, position);
  * (zufaellig, falls options.adminPassword fehlt), sonst null.
  */
 function open(file, options = {}) {
+  imagesDir = path.resolve(options.imagesDir || path.join(path.dirname(path.resolve(file)), "images"));
+  fs.mkdirSync(imagesDir, { recursive: true });
   db = new DatabaseSync(file);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA foreign_keys = ON");
@@ -143,10 +151,9 @@ function open(file, options = {}) {
   db.exec(SCHEMA_SQL);
   db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('app', ?)").run(APP_ID);
 
-  // Schema 2: bestehende Datenbanken bekommen die neuen Spalten (Daten bleiben unberuehrt)
+  // Aeltere Datenbank mit Bilddaten in der Tabelle: einmalig in Dateien umziehen
   const imageColumns = db.prepare("PRAGMA table_info(images)").all().map((c) => c.name);
-  if (!imageColumns.includes("scene")) db.exec("ALTER TABLE images ADD COLUMN scene TEXT");
-  if (!imageColumns.includes("created_at")) db.exec("ALTER TABLE images ADD COLUMN created_at TEXT");
+  if (imageColumns.includes("data")) migrateImagesToFiles(imageColumns);
 
   const row = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get();
   if (!row) {
@@ -157,6 +164,7 @@ function open(file, options = {}) {
     db.prepare("UPDATE meta SET value = ? WHERE key = 'schema_version'").run(String(SCHEMA_VERSION));
   }
 
+  sweepImageFiles();   // Reste abgebrochener Speicherungen wegraeumen
   const generatedAdminPassword = ensureAdmin(options.adminPassword);
   db.prepare("DELETE FROM account_sessions WHERE expires_at < ?").run(nowIso());
   return { generatedAdminPassword };
@@ -165,6 +173,124 @@ function open(file, options = {}) {
 function close() {
   if (db) db.close();
   db = null;
+}
+
+/* ------------------------------------------------------ Bilder-Ordner */
+
+let imagesDir = null;
+
+const EXTENSIONS = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "image/avif": "avif", "image/bmp": "bmp" };
+
+/** Voller Pfad einer Datei im Bilder-Ordner (nur der Dateiname zaehlt). */
+function imageFilePath(file) {
+  return path.join(imagesDir, path.basename(String(file)));
+}
+
+/** Datei sicher schreiben: erst unter Zwischennamen, auf die Platte bringen, dann umbenennen. */
+function writeFileSafely(file, data) {
+  const target = imageFilePath(file);
+  const tmp = `${target}.tmp-${crypto.randomBytes(4).toString("hex")}`;
+  const fd = fs.openSync(tmp, "w");
+  try {
+    fs.writeSync(fd, data);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  fs.renameSync(tmp, target);
+}
+
+/** Bild- und ggf. Zeichenblatt-Datei schreiben; liefert die Dateinamen fuer die Tabelle. */
+function storeImageFiles(id, mime, buf, scene) {
+  const file = `${id}.${EXTENSIONS[mime] || "bin"}`;
+  writeFileSafely(file, buf);
+  let sceneFile = null;
+  if (scene) {
+    sceneFile = `${id}.scene.json`;
+    writeFileSafely(sceneFile, Buffer.from(scene, "utf8"));
+  }
+  return { file, sceneFile };
+}
+
+/**
+ * Dateien im Bilder-Ordner entfernen, auf die kein Datensatz mehr zeigt
+ * (Bild geloescht, ersetzt, Reise/Benutzer samt Bildern geloescht, oder
+ * eine abgebrochene Speicherung). Laeuft nach jeder Aenderung an Bildern -
+ * erst nach dem Abschluss der Transaktion, damit ein Zurueckrollen nie
+ * Dateien kostet.
+ */
+function sweepImageFiles() {
+  if (!db || !imagesDir) return 0;
+  const used = new Set();
+  for (const r of db.prepare("SELECT file, scene_file AS sceneFile FROM images").all()) {
+    used.add(r.file);
+    if (r.sceneFile) used.add(r.sceneFile);
+  }
+  let removed = 0;
+  for (const name of fs.readdirSync(imagesDir)) {
+    // Nur eigene Dateien anfassen (Kennung.Endung bzw. abgebrochene Zwischendateien)
+    if (used.has(name) || !OWN_FILE.test(name)) continue;
+    try { fs.unlinkSync(path.join(imagesDir, name)); removed++; }
+    catch (err) { console.warn(`Bilddatei ${name} liess sich nicht entfernen: ${err.message}`); }
+  }
+  return removed;
+}
+
+const OWN_FILE = /^[0-9a-z]+.(?:png|jpg|gif|webp|avif|bmp|bin|scene.json)(?:.tmp-[0-9a-f]+)?$/;
+
+/** Fuehrt fn aus und raeumt danach verwaiste Bilddateien weg - auch nach einem Fehler. */
+function withSweep(fn) {
+  try { return fn(); }
+  finally { sweepImageFiles(); }
+}
+
+/**
+ * Schema 3: Bilddaten (images.data) und Zeichenblatt-Inhalte (images.scene)
+ * aus der Tabelle in Dateien umziehen. Erst werden alle Dateien geschrieben,
+ * dann die Tabelle in einer Transaktion ohne die Datenspalten neu aufgebaut
+ * und zuletzt die Datenbankdatei verkleinert (VACUUM). Bricht es mittendrin
+ * ab, bleibt die alte Tabelle stehen und der naechste Start macht es erneut.
+ */
+function migrateImagesToFiles(columns) {
+  const hasScene = columns.includes("scene");
+  const hasCreated = columns.includes("created_at");
+  const ids = db.prepare("SELECT id FROM images").all().map((r) => r.id);
+  console.log(`Bilder ziehen in Dateien um: ${ids.length} Bild(er) -> ${imagesDir}`);
+  const readRow = db.prepare(
+    `SELECT id, trip_id AS tripId, name, mime, data, position,
+            ${hasScene ? "scene" : "NULL AS scene"}, ${hasCreated ? "created_at" : "NULL"} AS createdAt
+     FROM images WHERE id = ?`
+  );
+  const rows = [];
+  for (const id of ids) {
+    const r = readRow.get(id);              // einzeln lesen: nie alle Bilder gleichzeitig im Speicher
+    const buf = Buffer.from(r.data);
+    const { file, sceneFile } = storeImageFiles(r.id, r.mime, buf, r.scene);
+    rows.push({ id: r.id, tripId: r.tripId, name: r.name, mime: r.mime, position: r.position, createdAt: r.createdAt,
+      bytes: buf.length, file, sceneFile });
+  }
+  transaction(() => {
+    db.exec(`CREATE TABLE images_neu (
+      id TEXT PRIMARY KEY,
+      trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+      name TEXT NOT NULL DEFAULT '',
+      mime TEXT NOT NULL,
+      bytes INTEGER NOT NULL,
+      file TEXT NOT NULL,
+      scene_file TEXT,
+      position INTEGER NOT NULL,
+      created_at TEXT
+    )`);
+    const insert = db.prepare(
+      "INSERT INTO images_neu (id, trip_id, name, mime, bytes, file, scene_file, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    );
+    for (const r of rows) insert.run(r.id, r.tripId, r.name, r.mime, r.bytes, r.file, r.sceneFile, r.position, r.createdAt);
+    db.exec("DROP TABLE images");
+    db.exec("ALTER TABLE images_neu RENAME TO images");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_images_trip ON images(trip_id, position)");
+  });
+  db.exec("VACUUM");
+  console.log(`Bilder-Umzug fertig: ${rows.length} Datei(en), Datenbank ohne Bilddaten.`);
 }
 
 /* ------------------------------------------------------------- Helfer */
@@ -364,9 +490,9 @@ function getTrip(id) {
     SELECT name FROM trip_categories WHERE trip_id = ? ORDER BY position
   `).all(id).map((c) => c.name);
 
-  // Bewusst ohne Spalte "data" - die Bytes kommen ueber GET /api/images/:id.
+  // Nur Metadaten - die Bilddatei kommt ueber GET /api/images/:id.
   trip.images = db.prepare(`
-    SELECT id, name, mime, bytes, created_at AS createdAt, (scene IS NOT NULL) AS hasScene
+    SELECT id, name, mime, bytes, created_at AS createdAt, (scene_file IS NOT NULL) AS hasScene
     FROM images WHERE trip_id = ? ORDER BY position
   `).all(id).map((img) => ({ ...img, hasScene: !!img.hasScene, url: `api/images/${img.id}` }));
 
@@ -410,7 +536,7 @@ function writeImages(tripId, images) {
 
   const reposition = db.prepare("UPDATE images SET position = ?, name = ? WHERE id = ?");
   const insert = db.prepare(
-    "INSERT INTO images (id, trip_id, name, mime, bytes, data, position, scene, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO images (id, trip_id, name, mime, bytes, file, scene_file, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
   );
   images.forEach((img, index) => {
     const name = text(img && img.name, "images[].name", { max: 200 });
@@ -418,7 +544,10 @@ function writeImages(tripId, images) {
       reposition.run(index, name, img.id);
     } else {
       const { mime, buf } = decodeDataUrl(img && img.dataUrl);
-      insert.run(makeId(), tripId, name, mime, buf.length, buf, index, normalizeScene(img.scene), normalizeCreatedAt(img.createdAt));
+      const scene = normalizeScene(img.scene);
+      const id = makeId();
+      const { file, sceneFile } = storeImageFiles(id, mime, buf, scene);
+      insert.run(id, tripId, name, mime, buf.length, file, sceneFile, index, normalizeCreatedAt(img.createdAt));
     }
   });
 }
@@ -448,8 +577,14 @@ function normalizeCreatedAt(value) {
 
 /** Gespeicherter Inhalt eines Zeichenblatts (JSON-Text) oder null. */
 function getImageScene(id) {
-  const row = db.prepare("SELECT trip_id AS tripId, scene FROM images WHERE id = ?").get(id);
-  return row || null;
+  const row = db.prepare("SELECT trip_id AS tripId, scene_file AS sceneFile FROM images WHERE id = ?").get(id);
+  if (!row) return null;
+  let scene = null;
+  if (row.sceneFile) {
+    try { scene = fs.readFileSync(imageFilePath(row.sceneFile), "utf8"); }
+    catch (err) { console.warn(`Zeichenblatt-Datei ${row.sceneFile} fehlt: ${err.message}`); }
+  }
+  return { tripId: row.tripId, scene };
 }
 
 function normalizeTripInput(input) {
@@ -502,7 +637,7 @@ function normalizeCategories(list) {
 function createTrip(input, accountId) {
   const data = normalizeTripInput(input);
   const id = makeId();
-  return transaction(() => {
+  return withSweep(() => transaction(() => {
     const ts = nowIso();
     db.prepare(`
       INSERT INTO trips (id, name, short_desc, destination, start_date, end_date, long_text, created_by, created_at, updated_at)
@@ -512,12 +647,12 @@ function createTrip(input, accountId) {
     writeStations(id, data.stations);
     writeImages(id, [...(data.images || []), ...data.addImages]);
     return getTrip(id);
-  });
+  }));
 }
 
 function updateTrip(id, input) {
   const data = normalizeTripInput(input);
-  return transaction(() => {
+  return withSweep(() => transaction(() => {
     if (!db.prepare("SELECT 1 FROM trips WHERE id = ?").get(id)) {
       throw new HttpError(404, `Reise "${id}" nicht gefunden.`);
     }
@@ -533,12 +668,12 @@ function updateTrip(id, input) {
     if (data.images) writeImages(id, data.images);
     for (const img of data.addImages) insertImage(id, img);
     return getTrip(id);
-  });
+  }));
 }
 
 function deleteTrip(id) {
   // Stationen und Bilder verschwinden per ON DELETE CASCADE mit.
-  return db.prepare("DELETE FROM trips WHERE id = ?").run(id).changes > 0;
+  return withSweep(() => db.prepare("DELETE FROM trips WHERE id = ?").run(id).changes > 0);
 }
 
 /* -------------------------------------------------------------- Bilder */
@@ -551,14 +686,14 @@ function deleteTrip(id) {
  * neue id, denn die Bild-Adressen werden als unveraenderlich zwischengespeichert.
  */
 function addImage(tripId, input) {
-  return transaction(() => {
+  return withSweep(() => transaction(() => {
     if (!db.prepare("SELECT 1 FROM trips WHERE id = ?").get(tripId)) {
       throw new HttpError(404, `Reise "${tripId}" nicht gefunden.`);
     }
     const saved = insertImage(tripId, input);
     db.prepare("UPDATE trips SET updated_at = ? WHERE id = ?").run(nowIso(), tripId);
     return saved;
-  });
+  }));
 }
 
 /** Ein Bild einfuegen (innerhalb einer Transaktion): angehaengt oder an Stelle von input.replaces. */
@@ -579,21 +714,23 @@ function insertImage(tripId, input) {
   }
   const createdAt = input.createdAt ? normalizeCreatedAt(input.createdAt) : (old ? old.createdAt : nowIso());
   const id = makeId();
+  // Erst die Dateien, dann der Datensatz - geht etwas schief, raeumt withSweep sie weg
+  const { file, sceneFile } = storeImageFiles(id, mime, buf, scene);
   db.prepare(
-    "INSERT INTO images (id, trip_id, name, mime, bytes, data, position, scene, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-  ).run(id, tripId, name, mime, buf.length, buf, position, scene, createdAt);
+    "INSERT INTO images (id, trip_id, name, mime, bytes, file, scene_file, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  ).run(id, tripId, name, mime, buf.length, file, sceneFile, position, createdAt);
   return { id, name, mime, bytes: buf.length, createdAt, hasScene: !!scene, url: `api/images/${id}`, replaced: old ? old.id : null };
 }
 
 /** Ein Bild sofort endgueltig loeschen. */
 function deleteImage(id) {
-  return transaction(() => {
+  return withSweep(() => transaction(() => {
     const row = db.prepare("SELECT trip_id AS tripId FROM images WHERE id = ?").get(id);
     if (!row) return false;
     db.prepare("DELETE FROM images WHERE id = ?").run(id);
     db.prepare("UPDATE trips SET updated_at = ? WHERE id = ?").run(nowIso(), row.tripId);
     return true;
-  });
+  }));
 }
 
 /**
@@ -620,7 +757,7 @@ function setImageOrder(tripId, ids) {
 }
 
 function getImage(id) {
-  return db.prepare("SELECT id, trip_id AS tripId, name, mime, bytes, data FROM images WHERE id = ?").get(id) || null;
+  return db.prepare("SELECT id, trip_id AS tripId, name, mime, bytes, file FROM images WHERE id = ?").get(id) || null;
 }
 
 /* --------------------------------------------------------------- Stand */
@@ -798,11 +935,11 @@ function updateAccountRole(id, role) {
 function deleteAccount(id, actingId) {
   const account = requireEditableAccount(id);
   if (account.id === actingId) throw new HttpError(400, "Man kann sich nicht selbst löschen.");
-  return transaction(() => {
+  return withSweep(() => transaction(() => {
     const trips = db.prepare("DELETE FROM trips WHERE created_by = ?").run(account.id).changes;
     db.prepare("DELETE FROM accounts WHERE id = ?").run(account.id);
     return { deleted: account.username, deletedTrips: trips };
-  });
+  }));
 }
 
 function authenticate(username, password) {
@@ -896,6 +1033,8 @@ module.exports = {
   deleteImage,
   setImageOrder,
   getImage,
+  imageFilePath,
+  getImagesDir: () => imagesDir,
   getImageScene,
   listCategoryOptions,
   getStats,

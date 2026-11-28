@@ -18,6 +18,7 @@
           node server.js 8081     (anderer Port)
   Umgebung:
           TRAVELFY_DB=pfad.sqlite      Datenbankdatei
+          TRAVELFY_IMAGES=ordner       Bilder-Ordner (Standard: "images" neben der Datenbank)
           TRAVELFY_BASE=/travelfy      Unterpfad ("" = ohne Unterpfad)
           TRAVELFY_HOST=127.0.0.1      Netzwerkadresse (Standard: nur lokal,
                                        von aussen nur ueber nginx)
@@ -366,7 +367,10 @@ const dbExisted = fs.existsSync(DB_FILE);
 let generatedAdminPassword = null;
 
 try {
-  ({ generatedAdminPassword } = db.open(DB_FILE, { adminPassword: process.env.TRAVELFY_ADMIN_PASSWORD }));
+  ({ generatedAdminPassword } = db.open(DB_FILE, {
+    adminPassword: process.env.TRAVELFY_ADMIN_PASSWORD,
+    imagesDir: process.env.TRAVELFY_IMAGES || undefined,   // Standard: "images" neben der Datenbank
+  }));
 } catch (err) {
   console.error("Datenbank konnte nicht geoeffnet werden:", err.message);
   process.exit(1);
@@ -378,6 +382,7 @@ server.listen(PORT, HOST, () => {
   const stats = db.getStats();
   console.log(`Travelfy laeuft auf http://${HOST === "127.0.0.1" ? "localhost" : HOST}:${PORT}${BASE}/`);
   console.log(`Datenbank: ${DB_FILE}`);
+  console.log(`Bilder:    ${db.getImagesDir()}`);
   console.log(
     `Bestand:   ${stats.trips} Reisen, ${stats.stations} Stationen, ${stats.images} Bilder ` +
     `(${(stats.imageBytes / 1024 / 1024).toFixed(2)} MB)`
