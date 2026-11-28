@@ -64,6 +64,16 @@ deploy_app() {
     if [ -d \$d/app ]; then mv \$d/app \$d/app.bak-$TS; echo '   alter Code: '\$d/app.bak-$TS; fi
     mv \$d/app.neu-$TS \$d/app"
 
+  # Versionsnummer aus Git: "1.<Anzahl Commits>" + Kurz-Hash + Commit-Datum.
+  # Die App zeigt sie unten links an (server.js liest version.json).
+  local v_count v_commit v_date
+  v_count="$(git -C "$ordner" rev-list --count "$ast")"
+  v_commit="$(git -C "$ordner" rev-parse --short "$ast")"
+  v_date="$(git -C "$ordner" log -1 --format=%cI "$ast")"
+  printf '{"version":"1.%s","commit":"%s","date":"%s","deployedAt":"%s"}\n' \
+    "$v_count" "$v_commit" "$v_date" "$(date -Iseconds)" | remote "cat > $dir/app/version.json"
+  echo "   Version: 1.$v_count ($v_commit)"
+
   # docker-compose.yml nur anlegen, wenn noch keine da ist
   if ! remote "test -f $dir/docker-compose.yml"; then
     remote "cat > $dir/docker-compose.yml" < "$ROOT/deploy/sites/$id/docker-compose.yml"

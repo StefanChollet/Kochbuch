@@ -87,6 +87,11 @@ Pro App sichert das Skript vorher die Datenbank (`data/*.sqlite.bak-vor-update-<
 per `VACUUM INTO` im laufenden Container) und den alten Code (`app.bak-<zeit>`).
 Die `docker-compose.yml` einer App wird nur angelegt, wenn noch keine existiert.
 
+Versionsnummer: Das Skript schreibt pro App `app/version.json`
+(`{"version":"1.<Anzahl Commits im Ast>","commit":"<Kurz-Hash>","date":…,"deployedAt":…}`).
+Die App zeigt sie unten links an und meldet, wenn eine offene Seite veraltet ist
+(Regel für jede neue App: siehe README der Apps, Abschnitt „Versionsnummer“).
+
 Alte Adressen: `https://chollet.corvent.ch/` zeigt die Startseite; geteilte
 Kochansicht-Links `/kochansicht.html?code=…` leitet der Proxy auf
 `/kochbuch/kochansicht.html?code=…` um. Die installierte Kochbuch-App (PWA)
