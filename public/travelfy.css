@@ -409,6 +409,16 @@ textarea{ resize: vertical; }
   border: 1px solid var(--line);
 }
 .image-thumb img{ width:100%; height:100%; object-fit:cover; display:block; cursor: zoom-in; }
+/* Zustand eines Bildes: wird gerade gespeichert / noch nicht gespeichert */
+.image-state{
+  position:absolute; right:6px; bottom:6px;
+  padding:.2rem .55rem; border-radius:999px;
+  font-size:.75rem; font-weight:700; line-height:1.3;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+  pointer-events:none;
+}
+.image-state.is-saving{ background: rgba(45,41,21,0.8); color:#fff; }
+.image-state.is-pending{ background:#fff3cd; color:#7a5200; border:1px solid #e0b84a; }
 .image-thumb:focus-visible{ outline: 3px solid var(--accent); outline-offset: 2px; }
 .image-thumb[draggable="true"]{ cursor: grab; }
 .image-thumb.is-dragging{ opacity:.35; }

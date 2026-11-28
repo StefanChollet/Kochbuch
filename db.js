@@ -535,6 +535,42 @@ function deleteTrip(id) {
 
 /* -------------------------------------------------------------- Bilder */
 
+/**
+ * Ein Bild sofort dauerhaft zur Reise speichern (Foto hochgeladen oder
+ * Zeichenblatt uebernommen) - unabhaengig vom "Speichern" der Reise.
+ * Mit replaces: ersetzt dieses Bild an seiner Stelle und behaelt seine
+ * Erstellzeit (bearbeitetes Zeichenblatt). Das neue Bild bekommt immer eine
+ * neue id, denn die Bild-Adressen werden als unveraenderlich zwischengespeichert.
+ */
+function addImage(tripId, input) {
+  if (!input || typeof input !== "object") throw new HttpError(400, "Bild-Daten fehlen.");
+  const name = text(input.name, "name", { max: 200 });
+  const { mime, buf } = decodeDataUrl(input.dataUrl);
+  const scene = normalizeScene(input.scene);
+  return transaction(() => {
+    if (!db.prepare("SELECT 1 FROM trips WHERE id = ?").get(tripId)) {
+      throw new HttpError(404, `Reise "${tripId}" nicht gefunden.`);
+    }
+    const old = input.replaces
+      ? db.prepare("SELECT id, position, created_at AS createdAt FROM images WHERE id = ? AND trip_id = ?").get(String(input.replaces), tripId)
+      : null;
+    let position;
+    if (old) {
+      position = old.position;
+      db.prepare("DELETE FROM images WHERE id = ?").run(old.id);
+    } else {
+      position = db.prepare("SELECT COALESCE(MAX(position) + 1, 0) AS p FROM images WHERE trip_id = ?").get(tripId).p;
+    }
+    const createdAt = input.createdAt ? normalizeCreatedAt(input.createdAt) : (old ? old.createdAt : nowIso());
+    const id = makeId();
+    db.prepare(
+      "INSERT INTO images (id, trip_id, name, mime, bytes, data, position, scene, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).run(id, tripId, name, mime, buf.length, buf, position, scene, createdAt);
+    db.prepare("UPDATE trips SET updated_at = ? WHERE id = ?").run(nowIso(), tripId);
+    return { id, name, mime, bytes: buf.length, createdAt, hasScene: !!scene, url: `api/images/${id}`, replaced: old ? old.id : null };
+  });
+}
+
 function getImage(id) {
   return db.prepare("SELECT id, trip_id AS tripId, name, mime, bytes, data FROM images WHERE id = ?").get(id) || null;
 }
@@ -808,6 +844,7 @@ module.exports = {
   createTrip,
   updateTrip,
   deleteTrip,
+  addImage,
   getImage,
   getImageScene,
   listCategoryOptions,

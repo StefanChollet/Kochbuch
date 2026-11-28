@@ -277,6 +277,13 @@ const routes = [
   }, "write"],
 
   /* ---- Bilder ---- */
+  // Foto oder Zeichenblatt sofort dauerhaft zur Reise speichern
+  // { name, dataUrl, scene?, createdAt?, replaces? } -> das gespeicherte Bild
+  ["POST", /^\/api\/trips\/([^/]+)\/images$/, async (req, res, ctx, id) => {
+    requireTripAccess(ctx, id);
+    sendJson(res, 201, db.addImage(id, await readJson(req)));
+  }, "write"],
+
   // Inhalt eines Zeichenblatts zum erneuten Bearbeiten (nur fuer Reisen, die man sehen darf)
   ["GET", /^\/api\/images\/([^/]+)\/scene$/, async (req, res, ctx, id) => {
     const row = db.getImageScene(id);

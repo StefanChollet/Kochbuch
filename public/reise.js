@@ -29,7 +29,7 @@ const saveTripBtn = document.getElementById("saveTripBtn");
 const deleteTripBtn = document.getElementById("deleteTripBtn");
 const cancelBtn = document.getElementById("cancelBtn");
 
-const tripId = new URLSearchParams(window.location.search).get("id") || "";
+let tripId = new URLSearchParams(window.location.search).get("id") || "";   // neue Reise: wird beim ersten Bild angelegt
 let readOnly = false;
 let dirty = false;           // ungespeicherte Aenderungen -> Nachfrage beim Verlassen
 let leaving = false;         // gewollter Seitenwechsel (nach Speichern/Loeschen)
@@ -163,6 +163,8 @@ function renderImageList(focusKey){
       <button type="button" class="image-menu-btn" data-action="image-menu" aria-label="Menü für dieses Bild" aria-haspopup="menu">⋯</button>
       ${isEditableDrawing(img) ? `<button type="button" class="image-edit" data-action="edit-drawing" title="Zeichenblatt mit allen Objekten wieder bearbeiten">✎ Bearbeiten</button>` : ""}
       <button type="button" class="image-remove" data-action="remove-image" aria-label="Bild entfernen">✕</button>
+      ${img.saving ? `<span class="image-state is-saving" role="status">Speichert…</span>`
+        : img.isNew ? `<span class="image-state is-pending" title="Wird mit „Speichern“ in der Reise gesichert">nicht gespeichert</span>` : ""}
     </div>
   `).join("");
   if(focusKey) imageListEl.querySelector(`.image-thumb[data-key="${CSS.escape(focusKey)}"]`)?.focus();
@@ -195,11 +197,12 @@ imageListEl.addEventListener("click", async (e) => {
   Zeichnen.open(({ name, dataUrl, scene: newScene }) => {
     const idx = workingImages.findIndex(i => i.key === key);
     if(idx === -1) return;
-    workingImages[idx] = { key: makeId(), name, dataUrl, scene: newScene, isNew: true,
+    const entry = { key: makeId(), name, dataUrl, scene: newScene, isNew: true,
       createdAt: time ? new Date(time).toISOString() : undefined };
-    dirty = true;
+    workingImages[idx] = entry;
     renderImageList();
-    showStatus("Zeichenblatt geändert – mit „Speichern“ in der Reise sichern.", "success");
+    // gespeichertes Zeichenblatt: auf dem Server an derselben Stelle ersetzen
+    storeImageNow(entry, original.id || null, "Zeichenblatt");
   }, { scene, name: original.name });
 });
 
@@ -211,6 +214,103 @@ imageListEl.addEventListener("click", (e) => {
   renderImageList();
 });
 
+/* ---- Bilder sofort dauerhaft speichern ----
+   Ein hochgeladenes Foto oder ein uebernommenes Zeichenblatt geht sofort an
+   den Server (Datenbank auf trex) - nicht erst mit "Speichern" der Reise.
+   Die Uploads laufen nacheinander (Warteschlange), damit die Reihenfolge
+   stimmt und eine neue Reise nur einmal angelegt wird. Bei einer neuen Reise
+   ohne Namen bleibt das Bild vorgemerkt, bis die Reise gespeichert wird. */
+let uploadQueue = Promise.resolve();
+
+function storeImageNow(entry, replaces, label = "Bild"){
+  entry.saving = true;
+  renderImageList();
+  const job = uploadQueue.then(() => uploadImage(entry, replaces, label));
+  uploadQueue = job.catch(() => {});
+  return job;
+}
+
+async function uploadImage(entry, replaces, label){
+  // Inzwischen entfernt? Dann nicht mehr speichern.
+  if(!workingImages.includes(entry)) return;
+  try{
+    if(!tripId){
+      const created = await createTripWithImages();
+      if(created){
+        showStatus(`${label} gespeichert – die Reise „${created.name}“ wurde dabei angelegt.`, "success");
+      }else{
+        entry.saving = false;
+        dirty = true;
+        renderImageList();
+        showStatus(`${label} vorgemerkt – bitte einen Reisenamen eingeben, dann wird es mit „Speichern“ dauerhaft gesichert.`, "info");
+      }
+      return;
+    }
+    const saved = await API.post(`/trips/${enc(tripId)}/images`, {
+      name: entry.name, dataUrl: entry.dataUrl, scene: entry.scene || undefined,
+      createdAt: entry.createdAt || undefined, replaces: replaces || undefined
+    });
+    Object.assign(entry, { id: saved.id, url: saved.url, name: saved.name, hasScene: !!saved.hasScene,
+      createdAt: saved.createdAt, isNew: false, saving: false });
+    delete entry.dataUrl;
+    delete entry.scene;
+    renderImageList();
+    showStatus(`${label} „${saved.name}“ ist dauerhaft gespeichert.`, "success");
+  }catch(err){
+    console.error("Travelfy:", err);
+    entry.saving = false;
+    dirty = true;          // bleibt vorgemerkt und geht mit "Speichern" mit
+    renderImageList();
+    showStatus(`${label} konnte nicht sofort gespeichert werden (${err.message}) – es wird mit „Speichern“ erneut versucht.`, "error");
+  }
+}
+
+/** Formularinhalt als Reise-Daten (fuer Speichern und das automatische Anlegen). */
+function tripPayload(){
+  return {
+    name: tripNameInput.value.trim(),
+    shortDesc: tripShortDescInput.value.trim(),
+    destination: tripDestinationInput.value.trim(),
+    startDate: tripStartDateInput.value,
+    endDate: tripEndDateInput.value,
+    longText: tripLongTextInput.value,
+    categories: workingCategories.map(c => c.name),
+    stations: workingStations.map(s => ({ name: s.name, note: s.note })),
+    images: workingImages.map(img => img.isNew
+      ? { name: img.name, dataUrl: img.dataUrl, scene: img.scene || undefined, createdAt: img.createdAt || undefined }
+      : { id: img.id, name: img.name })
+  };
+}
+
+/**
+ * Neue Reise beim ersten Bild anlegen (samt allen vorgemerkten Bildern),
+ * sofern sie schon einen Namen hat. Danach ist die Seite eine normale
+ * Bearbeiten-Seite (Adresse mit ?id=). Ohne Namen: null.
+ */
+async function createTripWithImages(){
+  if(!tripNameInput.value.trim()) return null;
+  if(tripStartDateInput.value && tripEndDateInput.value && tripEndDateInput.value < tripStartDateInput.value) return null;
+  const sent = [...workingImages];
+  const trip = await API.post("/trips", tripPayload());
+  tripId = trip.id;
+  loadedTrip = trip;
+  history.replaceState(null, "", `reise.html?id=${enc(trip.id)}`);
+  // Der Server speichert die Bilder in der geschickten Reihenfolge
+  sent.forEach((entry, i) => {
+    const img = trip.images[i];
+    if(!img) return;
+    Object.assign(entry, { id: img.id, url: img.url, name: img.name, hasScene: !!img.hasScene,
+      createdAt: img.createdAt, isNew: false, saving: false });
+    delete entry.dataUrl;
+    delete entry.scene;
+  });
+  detailHeading.textContent = trip.name;
+  document.title = `Travelfy – ${trip.name}`;
+  dirty = workingImages.some(i => i.isNew);
+  applyAccess();     // u.a. "Reise löschen" einblenden
+  return trip;
+}
+
 const pendingImageReads = new Set();
 
 imageInput.addEventListener("change", () => {
@@ -218,9 +318,10 @@ imageInput.addEventListener("change", () => {
     const read = new Promise(resolve => {
       const reader = new FileReader();
       reader.onload = () => {
-        workingImages.push({ key: makeId(), name: file.name, dataUrl: reader.result, isNew: true });
-        dirty = true;
+        const entry = { key: makeId(), name: file.name, dataUrl: reader.result, isNew: true };
+        workingImages.push(entry);
         renderImageList();
+        storeImageNow(entry, null, "Foto");
         resolve();
       };
       reader.onerror = () => {
@@ -239,10 +340,10 @@ imageInput.addEventListener("change", () => {
 document.getElementById("drawBtn").addEventListener("click", () => {
   if(readOnly) return;
   Zeichnen.open(({ name, dataUrl, scene }) => {
-    workingImages.push({ key: makeId(), name, dataUrl, scene, isNew: true });
-    dirty = true;
+    const entry = { key: makeId(), name, dataUrl, scene, isNew: true };
+    workingImages.push(entry);
     renderImageList();
-    showStatus("Zeichnung bei den Bildern eingefügt – mit „Speichern“ in der Reise sichern.", "success");
+    storeImageNow(entry, null, "Zeichnung");
   });
 });
 
@@ -606,20 +707,9 @@ tripForm.addEventListener("submit", async (e) => {
   takePendingCategory();
   takePendingStation();
   await Promise.all(pendingImageReads);
+  await uploadQueue;     // laufende Sofort-Speicherungen abwarten (sonst doppelt)
 
-  const payload = {
-    name: tripNameInput.value.trim(),
-    shortDesc: tripShortDescInput.value.trim(),
-    destination: tripDestinationInput.value.trim(),
-    startDate: tripStartDateInput.value,
-    endDate: tripEndDateInput.value,
-    longText: tripLongTextInput.value,
-    categories: workingCategories.map(c => c.name),
-    stations: workingStations.map(s => ({ name: s.name, note: s.note })),
-    images: workingImages.map(img => img.isNew
-      ? { name: img.name, dataUrl: img.dataUrl, scene: img.scene || undefined, createdAt: img.createdAt || undefined }
-      : { id: img.id, name: img.name })
-  };
+  const payload = tripPayload();
 
   const ok = await guard(async () => {
     if(tripId) await API.put(`/trips/${enc(tripId)}`, payload);

@@ -100,6 +100,29 @@ ein Ampelknopf; wer nur lesen darf, sieht ihn nicht.
   gespeicherte Reise führt bei Rot zurück zur Übersicht.
 - Reine Anzeige-Sperre – die Rechte prüft der Server unabhängig davon.
 
+## Bilder sofort speichern
+
+Ein hochgeladenes **Foto** und ein mit *In Bilder übernehmen* fertiges
+**Zeichenblatt** gehen sofort an den Server und liegen damit dauerhaft in der
+Datenbank auf trex (`/web/sites/travelfy/data/travelfy.sqlite`, Bilder als BLOB) –
+nicht erst mit *Speichern* der Reise. Auch *Abbrechen*, Schliessen des Fensters
+oder ein Absturz danach lassen sie bestehen.
+
+- Während des Hochladens zeigt das Bild **„Speichert…“**, danach meldet die
+  Statuszeile „… ist dauerhaft gespeichert“.
+- Ein **bearbeitetes Zeichenblatt** ersetzt das bisherige sofort an derselben Stelle
+  und behält seine Erstellzeit (neue Bild-id, weil Bild-Adressen unveränderlich
+  zwischengespeichert werden).
+- **Neue Reise:** Hat sie schon einen Namen, wird sie beim ersten Bild automatisch
+  angelegt (samt allen bisherigen Eingaben); die Seite arbeitet danach mit
+  `?id=` weiter. Ohne Namen bleibt das Bild **„nicht gespeichert“** vorgemerkt,
+  bis ein Name da ist und ein weiteres Bild kommt oder *Speichern* gedrückt wird.
+- Klappt das Sofort-Speichern nicht (z. B. keine Verbindung), bleibt das Bild
+  „nicht gespeichert“ vorgemerkt und geht mit *Speichern* noch einmal mit.
+- Entfernen und Umordnen von Bildern gelten weiterhin erst mit *Speichern*.
+- Uploads laufen nacheinander (Warteschlange); *Speichern* wartet sie ab, so
+  entstehen keine doppelten Bilder.
+
 ## Bilder ordnen
 
 Die Reihenfolge im Block *Bilder* ist die gespeicherte Reihenfolge
@@ -262,6 +285,7 @@ Basis `/api`, JSON. Fehler als `{ "error": "..." }`.
 | `GET` | `/api/trip-filters` | Auswahl für die Filter |
 | `POST` | `/api/trips` | Reise anlegen |
 | `GET` `PUT` `DELETE` | `/api/trips/:id` | Reise lesen / ersetzen / löschen |
+| `POST` | `/api/trips/:id/images` | ein Bild sofort speichern: `{ name, dataUrl, scene?, createdAt?, replaces? }` – angehängt, oder mit `replaces` an der Stelle dieses Bildes (Erstellzeit bleibt) |
 | `GET` | `/api/images/:id` | Bildbytes (nur für Reisen, die man sehen darf) |
 
 Bilder: neue als `{ name, dataUrl }`, bestehende nur per `{ id }`; fehlt ein
