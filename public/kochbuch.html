@@ -139,6 +139,7 @@
           <option value="updatedAt-desc">Zuletzt geändert (neueste zuerst)</option>
           <option value="updatedAt-asc">Zuletzt geändert (älteste zuerst)</option>
           <option value="createdBy-asc">Erstellt von (A–Z)</option>
+          <option value="createdBy-desc">Erstellt von (Z–A)</option>
         </select>
       </div>
       <!-- Filter: nur Rezepte einer Kategorie bzw. eines Benutzers -->
@@ -162,9 +163,10 @@
       <table class="recipe-table">
         <thead>
           <tr>
-            <th>Rezeptname</th>
-            <th class="col-desc">Kurze Beschreibung</th>
-            <th class="col-owner">Erstellt von</th>
+            <!-- Klick auf einen Spaltenkopf sortiert danach, ein weiterer Klick dreht um -->
+            <th data-sort="name" aria-sort="none"><button type="button" class="th-sort" data-sort="name" title="Nach Rezeptname sortieren – nochmals klicken dreht die Reihenfolge um">Rezeptname<span class="sort-arrow" aria-hidden="true"></span></button></th>
+            <th class="col-desc" data-sort="shortDesc" aria-sort="none"><button type="button" class="th-sort" data-sort="shortDesc" title="Nach Kurze Beschreibung sortieren – nochmals klicken dreht die Reihenfolge um">Kurze Beschreibung<span class="sort-arrow" aria-hidden="true"></span></button></th>
+            <th class="col-owner" data-sort="createdBy" aria-sort="none"><button type="button" class="th-sort" data-sort="createdBy" title="Nach Erstellt von sortieren – nochmals klicken dreht die Reihenfolge um">Erstellt von<span class="sort-arrow" aria-hidden="true"></span></button></th>
             <th class="col-menu">Menu</th>
           </tr>
         </thead>

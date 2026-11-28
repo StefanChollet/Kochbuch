@@ -876,6 +876,20 @@ body.is-readonly .write-only{ display:none !important; }
   .recipe-table .menu-icon-btn{ padding:.3rem; }
 }
 
+/* Sortierbare Spaltenkoepfe der Rezepttabelle */
+.recipe-table .th-sort{
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  font: inherit;
+  color: inherit;
+}
+.recipe-table .th-sort:hover{ text-decoration: underline; }
+.recipe-table .th-sort:focus-visible{ outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.recipe-table .sort-arrow{ font-size: .7em; }
+
 /* ===== Responsive: sehr kleines Handy ===== */
 @media (max-width: 420px){
   /* Sonst passt die Rezepttabelle nicht: Spalte "Erstellt von" ausblenden */

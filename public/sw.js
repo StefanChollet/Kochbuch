@@ -13,7 +13,7 @@
    nur ohne Netz kommt die zuletzt gespeicherte Fassung.
    ========================================================================= */
 
-const CACHE = "kochbuch-shell-v30";
+const CACHE = "kochbuch-shell-v31";
 // Basis der App = Verzeichnis dieses Skripts, z.B. "/kochbuch/".
 const BASE = new URL("./", self.location.href).pathname;
 const SHELL = [

@@ -162,6 +162,11 @@ Alle Parameter sind optional. Suche, Sortierung und Paging laufen direkt in
 SQL — auch bei mehreren hundert Rezepten geht nur eine Seite an Daten über die
 Leitung.
 
+In der Übersicht sortiert ein Klick auf einen Spaltenkopf (Rezeptname, Kurze
+Beschreibung, Erstellt von) nach dieser Spalte (A–Z, Pfeil ▲); ein weiterer
+Klick dreht die Reihenfolge um (Z–A, Pfeil ▼). Das Feld „Sortieren“ zeigt
+dieselbe Sortierung an.
+
 | Parameter | Werte | Standard |
 |---|---|---|
 | `search` | Freitext, geprüft gegen Name, Kurzbeschreibung, Zutatennamen, Kategorie und Benutzername | – (kein Filter) |

@@ -605,17 +605,45 @@ recipeSortSelect.addEventListener("change", () => {
   const [sortBy, sortDir] = recipeSortSelect.value.split("-");
   recipeQuery.sortBy = sortBy;
   recipeQuery.sortDir = sortDir;
+  syncSortUi();
   loadRecipes();
 });
+
+// Klick auf einen Spaltenkopf: nach dieser Spalte sortieren (A–Z);
+// ein weiterer Klick auf dieselbe Spalte dreht die Reihenfolge um.
+document.querySelectorAll(".recipe-table:not(.users-table) .th-sort").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const sortBy = btn.dataset.sort;
+    if(recipeQuery.sortBy === sortBy){
+      recipeQuery.sortDir = recipeQuery.sortDir === "asc" ? "desc" : "asc";
+    }else{
+      recipeQuery.sortBy = sortBy;
+      recipeQuery.sortDir = "asc";
+    }
+    syncSortUi();
+    loadRecipes();
+  });
+});
+
+/** Auswahlfeld "Sortieren" und Pfeile in den Spaltenkoepfen auf recipeQuery setzen. */
+function syncSortUi(){
+  const value = `${recipeQuery.sortBy}-${recipeQuery.sortDir}`;
+  if([...recipeSortSelect.options].some((o) => o.value === value)) recipeSortSelect.value = value;
+  document.querySelectorAll(".recipe-table:not(.users-table) th[data-sort]").forEach((cell) => {
+    const active = cell.dataset.sort === recipeQuery.sortBy;
+    cell.setAttribute("aria-sort", active ? (recipeQuery.sortDir === "asc" ? "ascending" : "descending") : "none");
+    cell.querySelector(".sort-arrow").textContent = active ? (recipeQuery.sortDir === "asc" ? "▲" : "▼") : "";
+  });
+}
 
 /* ---- Filter zuruecksetzen ---- */
 recipeResetFiltersBtn.addEventListener("click", () => {
   clearTimeout(recipeSearchTimer);
   Object.assign(recipeQuery, DEFAULT_RECIPE_QUERY);
   recipeSearchInput.value = "";
-  recipeSortSelect.value = "name-asc";
   recipeCategoryFilter.value = "";
   recipeOwnerFilter.value = "";
+  syncSortUi();
   markActiveFilters();
   loadRecipes();
 });
@@ -1567,7 +1595,7 @@ async function startApp(user){
   // Ansicht eines vorher angemeldeten Benutzers nicht stehen lassen.
   Object.assign(recipeQuery, DEFAULT_RECIPE_QUERY);
   recipeSearchInput.value = "";
-  recipeSortSelect.value = "name-asc";
+  syncSortUi();
   markActiveFilters();
 
   const loaded = await guard(() => DB.load());
