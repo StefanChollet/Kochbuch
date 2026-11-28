@@ -79,10 +79,11 @@
         <p id="stationEmptyState" class="empty-state empty-state-small" hidden>Noch keine Stationen erfasst.</p>
       </fieldset>
 
-      <label class="field">
-        <span>Reisebericht / Notizen</span>
-        <textarea id="tripLongText" rows="7" placeholder="Unterkünfte, Erlebnisse, Tipps …"></textarea>
-      </label>
+      <!-- Reisebericht: gleicher Block-Rahmen wie Reiseart und Stationen -->
+      <fieldset class="field-group">
+        <legend id="tripLongTextLegend">Reisebericht / Notizen</legend>
+        <textarea id="tripLongText" class="group-textarea" rows="7" aria-labelledby="tripLongTextLegend" placeholder="Unterkünfte, Erlebnisse, Tipps …"></textarea>
+      </fieldset>
 
       <fieldset class="field-group">
         <legend>Bilder</legend>
