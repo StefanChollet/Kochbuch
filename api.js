@@ -284,6 +284,21 @@ const routes = [
     sendJson(res, 201, db.addImage(id, await readJson(req)));
   }, "write"],
 
+  // Reihenfolge der Bilder sofort speichern: { ids: [...] }
+  ["PUT", /^\/api\/trips\/([^/]+)\/image-order$/, async (req, res, ctx, id) => {
+    requireTripAccess(ctx, id);
+    const body = await readJson(req);
+    sendJson(res, 200, { ids: db.setImageOrder(id, body && body.ids) });
+  }, "write"],
+
+  // Ein Bild sofort endgueltig loeschen
+  ["DELETE", /^\/api\/images\/([^/]+)$/, async (req, res, ctx, id) => {
+    const image = db.getImage(id);
+    if (!image || !db.canAccessTrip(ctx.account, image.tripId)) throw new HttpError(404, `Bild "${id}" nicht gefunden.`);
+    db.deleteImage(id);
+    sendEmpty(res, 204);
+  }, "write"],
+
   // Inhalt eines Zeichenblatts zum erneuten Bearbeiten (nur fuer Reisen, die man sehen darf)
   ["GET", /^\/api\/images\/([^/]+)\/scene$/, async (req, res, ctx, id) => {
     const row = db.getImageScene(id);

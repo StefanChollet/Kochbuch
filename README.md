@@ -119,14 +119,25 @@ oder ein Absturz danach lassen sie bestehen.
   bis ein Name da ist und ein weiteres Bild kommt oder *Speichern* gedrückt wird.
 - Klappt das Sofort-Speichern nicht (z. B. keine Verbindung), bleibt das Bild
   „nicht gespeichert“ vorgemerkt und geht mit *Speichern* noch einmal mit.
-- Entfernen und Umordnen von Bildern gelten weiterhin erst mit *Speichern*.
+- **Entfernen** (✕ oder Kontextmenü *Bild entfernen*) löscht ein gespeichertes Bild
+  bzw. Zeichenblatt nach einer Rückfrage **sofort endgültig** aus der Datenbank
+  (`DELETE /api/images/:id`); während des Löschens zeigt es „Löscht…“. Ein nur
+  vorgemerktes Bild wird einfach weggelassen.
+- **Ändern** eines Zeichenblatts (*✎ Bearbeiten* → *Änderungen übernehmen*):
+  die alte Fassung wird sofort gelöscht und die neue an ihrer Stelle gespeichert.
+- **Umordnen und Sortieren** werden sofort gespeichert (`PUT /api/trips/:id/image-order`);
+  bei schnellen Folgeänderungen geht nur die letzte an den Server.
+- **Speichern der Reise löscht nie ein Bild.** Es sichert Texte, Reiseart und
+  Stationen und hängt höchstens noch vorgemerkte Bilder an. Eine veraltete Seite
+  (zweiter Tab, anderes Gerät) kann so keine inzwischen gespeicherten Bilder entfernen.
+- Die Bild-Auswahl zählt nicht als ungespeicherte Änderung (*Abbrechen* fragt nicht).
 - Uploads laufen nacheinander (Warteschlange); *Speichern* wartet sie ab, so
   entstehen keine doppelten Bilder.
 
 ## Bilder ordnen
 
 Die Reihenfolge im Block *Bilder* ist die gespeicherte Reihenfolge
-(`images.position`); Änderungen werden wie alles andere mit **Speichern** gesichert.
+(`images.position`); jede Änderung wird **sofort** gespeichert (siehe oben).
 
 - **Ziehen und Ablegen:** ein Bild mit der Maus an eine andere Stelle ziehen – ein
   gelber Balken zeigt, wo es landet. Von aussen hereingezogene Dateien lösen kein
@@ -286,10 +297,14 @@ Basis `/api`, JSON. Fehler als `{ "error": "..." }`.
 | `POST` | `/api/trips` | Reise anlegen |
 | `GET` `PUT` `DELETE` | `/api/trips/:id` | Reise lesen / ersetzen / löschen |
 | `POST` | `/api/trips/:id/images` | ein Bild sofort speichern: `{ name, dataUrl, scene?, createdAt?, replaces? }` – angehängt, oder mit `replaces` an der Stelle dieses Bildes (Erstellzeit bleibt) |
+| `PUT` | `/api/trips/:id/image-order` | Reihenfolge sofort speichern: `{ ids: [...] }` – nicht genannte Bilder bleiben dahinter, nichts wird gelöscht |
 | `GET` | `/api/images/:id` | Bildbytes (nur für Reisen, die man sehen darf) |
+| `DELETE` | `/api/images/:id` | ein Bild sofort endgültig löschen |
 
-Bilder: neue als `{ name, dataUrl }`, bestehende nur per `{ id }`; fehlt ein
-Bild im `PUT`, ist es gelöscht. Max. 8 MB pro Bild, 32 MB pro Anfrage.
+Bilder: beim Anlegen (`POST /api/trips`) als `images: [{ name, dataUrl }]`. Beim
+`PUT` bleiben die Bilder unberührt; `addImages: [{ name, dataUrl }]` hängt noch
+vorgemerkte an. (Die alte Komplett-Liste `images` im `PUT` wird weiter verstanden:
+dort gilt ein fehlendes Bild als gelöscht.) Max. 8 MB pro Bild, 32 MB pro Anfrage.
 
 ## Sichern
 

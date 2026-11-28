@@ -457,9 +457,13 @@ function normalizeTripInput(input) {
     throw new HttpError(400, "Reise-Daten fehlen oder sind kein Objekt.");
   }
   const stations = input.stations == null ? [] : input.stations;
-  const images = input.images == null ? [] : input.images;
+  // images: komplette Liste (nur noch beim Anlegen) - fehlt sie, bleiben die Bilder unberuehrt.
+  // addImages: noch nicht sofort gespeicherte neue Bilder, werden angehaengt.
+  const images = input.images == null ? null : input.images;
+  const addImages = input.addImages == null ? [] : input.addImages;
   if (!Array.isArray(stations)) throw new HttpError(400, 'Feld "stations" muss eine Liste sein.');
-  if (!Array.isArray(images)) throw new HttpError(400, 'Feld "images" muss eine Liste sein.');
+  if (images !== null && !Array.isArray(images)) throw new HttpError(400, 'Feld "images" muss eine Liste sein.');
+  if (!Array.isArray(addImages)) throw new HttpError(400, 'Feld "addImages" muss eine Liste sein.');
   const startDate = isoDate(input.startDate, "startDate");
   const endDate = isoDate(input.endDate, "endDate");
   if (startDate && endDate && endDate < startDate) {
@@ -475,6 +479,7 @@ function normalizeTripInput(input) {
     categories: normalizeCategories(input.categories),
     stations,
     images,
+    addImages,
   };
 }
 
@@ -505,7 +510,7 @@ function createTrip(input, accountId) {
     `).run(id, data.name, data.shortDesc, data.destination, data.startDate, data.endDate, data.longText, accountId, ts, ts);
     writeCategories(id, data.categories);
     writeStations(id, data.stations);
-    writeImages(id, data.images);
+    writeImages(id, [...(data.images || []), ...data.addImages]);
     return getTrip(id);
   });
 }
@@ -523,7 +528,10 @@ function updateTrip(id, input) {
     `).run(data.name, data.shortDesc, data.destination, data.startDate, data.endDate, data.longText, nowIso(), id);
     writeCategories(id, data.categories);
     writeStations(id, data.stations);
-    writeImages(id, data.images);
+    // Bilder werden sofort einzeln gespeichert/geloescht/geordnet. Speichern
+    // der Reise loescht deshalb nie Bilder - nur die alte Komplett-Liste tut das.
+    if (data.images) writeImages(id, data.images);
+    for (const img of data.addImages) insertImage(id, img);
     return getTrip(id);
   });
 }
@@ -543,31 +551,71 @@ function deleteTrip(id) {
  * neue id, denn die Bild-Adressen werden als unveraenderlich zwischengespeichert.
  */
 function addImage(tripId, input) {
-  if (!input || typeof input !== "object") throw new HttpError(400, "Bild-Daten fehlen.");
-  const name = text(input.name, "name", { max: 200 });
-  const { mime, buf } = decodeDataUrl(input.dataUrl);
-  const scene = normalizeScene(input.scene);
   return transaction(() => {
     if (!db.prepare("SELECT 1 FROM trips WHERE id = ?").get(tripId)) {
       throw new HttpError(404, `Reise "${tripId}" nicht gefunden.`);
     }
-    const old = input.replaces
-      ? db.prepare("SELECT id, position, created_at AS createdAt FROM images WHERE id = ? AND trip_id = ?").get(String(input.replaces), tripId)
-      : null;
-    let position;
-    if (old) {
-      position = old.position;
-      db.prepare("DELETE FROM images WHERE id = ?").run(old.id);
-    } else {
-      position = db.prepare("SELECT COALESCE(MAX(position) + 1, 0) AS p FROM images WHERE trip_id = ?").get(tripId).p;
-    }
-    const createdAt = input.createdAt ? normalizeCreatedAt(input.createdAt) : (old ? old.createdAt : nowIso());
-    const id = makeId();
-    db.prepare(
-      "INSERT INTO images (id, trip_id, name, mime, bytes, data, position, scene, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    ).run(id, tripId, name, mime, buf.length, buf, position, scene, createdAt);
+    const saved = insertImage(tripId, input);
     db.prepare("UPDATE trips SET updated_at = ? WHERE id = ?").run(nowIso(), tripId);
-    return { id, name, mime, bytes: buf.length, createdAt, hasScene: !!scene, url: `api/images/${id}`, replaced: old ? old.id : null };
+    return saved;
+  });
+}
+
+/** Ein Bild einfuegen (innerhalb einer Transaktion): angehaengt oder an Stelle von input.replaces. */
+function insertImage(tripId, input) {
+  if (!input || typeof input !== "object") throw new HttpError(400, "Bild-Daten fehlen.");
+  const name = text(input.name, "name", { max: 200 });
+  const { mime, buf } = decodeDataUrl(input.dataUrl);
+  const scene = normalizeScene(input.scene);
+  const old = input.replaces
+    ? db.prepare("SELECT id, position, created_at AS createdAt FROM images WHERE id = ? AND trip_id = ?").get(String(input.replaces), tripId)
+    : null;
+  let position;
+  if (old) {
+    position = old.position;
+    db.prepare("DELETE FROM images WHERE id = ?").run(old.id);
+  } else {
+    position = db.prepare("SELECT COALESCE(MAX(position) + 1, 0) AS p FROM images WHERE trip_id = ?").get(tripId).p;
+  }
+  const createdAt = input.createdAt ? normalizeCreatedAt(input.createdAt) : (old ? old.createdAt : nowIso());
+  const id = makeId();
+  db.prepare(
+    "INSERT INTO images (id, trip_id, name, mime, bytes, data, position, scene, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  ).run(id, tripId, name, mime, buf.length, buf, position, scene, createdAt);
+  return { id, name, mime, bytes: buf.length, createdAt, hasScene: !!scene, url: `api/images/${id}`, replaced: old ? old.id : null };
+}
+
+/** Ein Bild sofort endgueltig loeschen. */
+function deleteImage(id) {
+  return transaction(() => {
+    const row = db.prepare("SELECT trip_id AS tripId FROM images WHERE id = ?").get(id);
+    if (!row) return false;
+    db.prepare("DELETE FROM images WHERE id = ?").run(id);
+    db.prepare("UPDATE trips SET updated_at = ? WHERE id = ?").run(nowIso(), row.tripId);
+    return true;
+  });
+}
+
+/**
+ * Reihenfolge der Bilder sofort speichern: die genannten ids in dieser
+ * Reihenfolge vorne, alle anderen Bilder der Reise (z. B. gerade woanders
+ * hochgeladen) behalten ihre Reihenfolge dahinter. Nichts wird geloescht.
+ */
+function setImageOrder(tripId, ids) {
+  if (!Array.isArray(ids)) throw new HttpError(400, 'Feld "ids" muss eine Liste sein.');
+  return transaction(() => {
+    if (!db.prepare("SELECT 1 FROM trips WHERE id = ?").get(tripId)) {
+      throw new HttpError(404, `Reise "${tripId}" nicht gefunden.`);
+    }
+    const current = db.prepare("SELECT id FROM images WHERE trip_id = ? ORDER BY position").all(tripId).map((r) => r.id);
+    const known = new Set(current);
+    const front = [...new Set(ids.map(String))].filter((id) => known.has(id));
+    const frontSet = new Set(front);
+    const order = [...front, ...current.filter((id) => !frontSet.has(id))];
+    const update = db.prepare("UPDATE images SET position = ? WHERE id = ?");
+    order.forEach((id, index) => update.run(index, id));
+    db.prepare("UPDATE trips SET updated_at = ? WHERE id = ?").run(nowIso(), tripId);
+    return order;
   });
 }
 
@@ -845,6 +893,8 @@ module.exports = {
   updateTrip,
   deleteTrip,
   addImage,
+  deleteImage,
+  setImageOrder,
   getImage,
   getImageScene,
   listCategoryOptions,

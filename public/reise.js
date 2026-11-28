@@ -53,7 +53,8 @@ cancelBtn.addEventListener("click", () => { if(confirmLeave()) backToOverview();
 window.addEventListener("beforeunload", (e) => {
   if(dirty && !readOnly && !leaving){ e.preventDefault(); e.returnValue = ""; }
 });
-tripForm.addEventListener("input", () => { dirty = true; });
+// Bild-Auswahl zaehlt nicht: Bilder werden sofort einzeln gespeichert.
+tripForm.addEventListener("input", (e) => { if(e.target !== imageInput) dirty = true; });
 
 /* ---- Reiseart ---- */
 function renderCategoryList(){
@@ -163,7 +164,8 @@ function renderImageList(focusKey){
       <button type="button" class="image-menu-btn" data-action="image-menu" aria-label="Menü für dieses Bild" aria-haspopup="menu">⋯</button>
       ${isEditableDrawing(img) ? `<button type="button" class="image-edit" data-action="edit-drawing" title="Zeichenblatt mit allen Objekten wieder bearbeiten">✎ Bearbeiten</button>` : ""}
       <button type="button" class="image-remove" data-action="remove-image" aria-label="Bild entfernen">✕</button>
-      ${img.saving ? `<span class="image-state is-saving" role="status">Speichert…</span>`
+      ${img.deleting ? `<span class="image-state is-saving" role="status">Löscht…</span>`
+        : img.saving ? `<span class="image-state is-saving" role="status">Speichert…</span>`
         : img.isNew ? `<span class="image-state is-pending" title="Wird mit „Speichern“ in der Reise gesichert">nicht gespeichert</span>` : ""}
     </div>
   `).join("");
@@ -206,12 +208,39 @@ imageListEl.addEventListener("click", async (e) => {
   }, { scene, name: original.name });
 });
 
+/* Entfernen: gespeicherte Bilder werden sofort endgueltig geloescht (mit
+   Rueckfrage); laeuft gerade noch ihr Upload, wird danach geloescht. */
 imageListEl.addEventListener("click", (e) => {
-  if(!e.target.closest('button[data-action="remove-image"]')) return;
-  const wrap = e.target.closest(".image-thumb");
-  workingImages = workingImages.filter(i => i.key !== wrap.dataset.key);
-  dirty = true;
+  if(!e.target.closest('button[data-action="remove-image"]') || readOnly) return;
+  const key = e.target.closest(".image-thumb").dataset.key;
+  const entry = workingImages.find(i => i.key === key);
+  if(!entry) return;
+  const kind = isEditableDrawing(entry) ? "Zeichenblatt" : "Bild";
+  const stored = entry.id || entry.saving;
+  if(stored && !window.confirm(`${kind} „${entry.name}“ endgültig löschen?\nEs wird sofort aus der Datenbank entfernt.`)) return;
+  if(!stored){
+    // nur vorgemerkt, nie gespeichert: einfach weglassen
+    workingImages = workingImages.filter(i => i !== entry);
+    renderImageList();
+    showStatus(`${kind} „${entry.name}“ entfernt.`, "success");
+    return;
+  }
+  entry.deleting = true;
   renderImageList();
+  const job = uploadQueue.then(async () => {
+    try{
+      if(entry.id) await API.del(`/images/${enc(entry.id)}`);
+      workingImages = workingImages.filter(i => i !== entry);
+      renderImageList();
+      showStatus(`${kind} „${entry.name}“ ist endgültig gelöscht.`, "success");
+    }catch(err){
+      console.error("Travelfy:", err);
+      entry.deleting = false;
+      renderImageList();
+      showStatus(`${kind} konnte nicht gelöscht werden: ${err.message}`, "error");
+    }
+  });
+  uploadQueue = job.catch(() => {});
 });
 
 /* ---- Bilder sofort dauerhaft speichern ----
@@ -265,8 +294,17 @@ async function uploadImage(entry, replaces, label){
   }
 }
 
-/** Formularinhalt als Reise-Daten (fuer Speichern und das automatische Anlegen). */
+/**
+ * Formularinhalt als Reise-Daten (fuer Speichern und das automatische Anlegen).
+ * Bestehende Reise: Bilder sind schon einzeln gespeichert - mit geht nur, was
+ * noch vorgemerkt ist (addImages); Speichern loescht nie ein Bild.
+ * Neue Reise: alle (vorgemerkten) Bilder als Liste.
+ */
 function tripPayload(){
+  const asNew = (img) => ({ name: img.name, dataUrl: img.dataUrl, scene: img.scene || undefined, createdAt: img.createdAt || undefined });
+  const imagesPart = tripId
+    ? { addImages: workingImages.filter(img => img.isNew && img.dataUrl).map(asNew) }
+    : { images: workingImages.filter(img => img.dataUrl).map(asNew) };
   return {
     name: tripNameInput.value.trim(),
     shortDesc: tripShortDescInput.value.trim(),
@@ -276,9 +314,7 @@ function tripPayload(){
     longText: tripLongTextInput.value,
     categories: workingCategories.map(c => c.name),
     stations: workingStations.map(s => ({ name: s.name, note: s.note })),
-    images: workingImages.map(img => img.isNew
-      ? { name: img.name, dataUrl: img.dataUrl, scene: img.scene || undefined, createdAt: img.createdAt || undefined }
-      : { id: img.id, name: img.name })
+    ...imagesPart
   };
 }
 
@@ -421,10 +457,28 @@ function sortImages(mode){
   else showStatus(`Die Bilder sind schon so sortiert (${label}).`, "info");
 }
 
+/* Neue Reihenfolge sofort speichern (gespeicherte Bilder; noch vorgemerkte
+   kommen beim Hochladen hinten dazu). Bei einer neuen Reise ohne id gilt sie
+   beim Anlegen. Mehrere schnelle Aenderungen: nur die letzte zaehlt. */
+let orderSaveSeq = 0;
 function imagesReordered(focusKey, message){
-  dirty = true;
   renderImageList(focusKey);
-  showStatus(`${message} – mit „Speichern“ in der Reise sichern.`, "success");
+  if(!tripId){
+    showStatus(`${message}.`, "success");
+    return;
+  }
+  const seq = ++orderSaveSeq;
+  const job = uploadQueue.then(async () => {
+    if(seq !== orderSaveSeq) return;     // inzwischen schon wieder geaendert
+    try{
+      await API.put(`/trips/${enc(tripId)}/image-order`, { ids: workingImages.filter(i => i.id).map(i => i.id) });
+      showStatus(`${message} – Reihenfolge ist gespeichert.`, "success");
+    }catch(err){
+      console.error("Travelfy:", err);
+      showStatus(`Reihenfolge konnte nicht gespeichert werden: ${err.message}`, "error");
+    }
+  });
+  uploadQueue = job.catch(() => {});
 }
 
 /* Kontextmenue: Rechtsklick, Taste "Kontextmenü"/Umschalt+F10 oder Knopf "⋯" */
