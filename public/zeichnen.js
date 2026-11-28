@@ -23,8 +23,22 @@ const Zeichnen = (() => {
   const colorInput = document.getElementById("drawColor");
   const widthSelect = document.getElementById("drawWidth");
   const photoInput = document.getElementById("drawPhotoInput");
-  const W = canvas.width;
-  const H = canvas.height;
+  /* Blattgroesse in Blatt-Punkten (W x H) - alle Werkzeuge rechnen damit.
+     Normal 1600 x 1000. Ein Foto bekommt ein Blatt in seinem Format (lange
+     Seite 1600 Punkte). RES: Pixel je Blatt-Punkt beim Zeichnen und
+     Exportieren - bei grossen Fotos bis 2, damit sie scharf bleiben. */
+  const BOARD_LONG = 1600, MAX_RES = 2;
+  let W = 1600, H = 1000, RES = 1;
+  let photoMode = false;     // Blatt aus einem Foto: Ergebnis als JPEG
+
+  function setBoard(w, h, res){
+    W = Math.max(100, Math.round(w));
+    H = Math.max(100, Math.round(h));
+    RES = Math.min(MAX_RES, Math.max(1, Number(res) || 1));
+    canvas.width = Math.round(W * RES);
+    canvas.height = Math.round(H * RES);
+    canvas.style.aspectRatio = `${W} / ${H}`;
+  }
 
   const HINTS = {
     spline: "Krumme Linie zeichnen – beim Loslassen wird daraus eine glatte Kurve (Spline).",
@@ -735,9 +749,14 @@ const Zeichnen = (() => {
       }else{
         // Gedrehte Form: Punkt zurueckdrehen und gegen die ungedrehte Form pruefen
         const q = ROTATABLE.has(el.type) && el.rotation ? rotatePoint(p, centerOf(el), -rad(el.rotation)) : p;
+        // Pfad in Blatt-Punkten pruefen (ohne die Zeichen-Skalierung)
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
         shapePath(ctx, el);
         ctx.lineWidth = el.width + 16;
-        if(ctx.isPointInPath(q.x, q.y) || ctx.isPointInStroke(q.x, q.y)) return el;
+        const inside = ctx.isPointInPath(q.x, q.y) || ctx.isPointInStroke(q.x, q.y);
+        ctx.restore();
+        if(inside) return el;
       }
     }
     return null;
@@ -895,6 +914,7 @@ const Zeichnen = (() => {
   /* ---------------------------------------------------------- Zeichnen */
 
   function render(){
+    ctx.setTransform(RES, 0, 0, RES, 0, 0);   // Blatt-Punkte -> Pixel
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, W, H);
     elements.forEach(el => drawElement(ctx, el));
@@ -1875,15 +1895,24 @@ const Zeichnen = (() => {
     else cancelText();
   });
 
-  /** Blatt als Bild: PNG, bei sehr grossen Fotos JPEG (Grenze 8 MB je Bild). */
+  /**
+   * Blatt als Bild in voller Aufloesung (W x H x RES). Aus einem Foto: JPEG
+   * (wie ein Foto); sonst PNG, bei sehr grossen Fotos darin JPEG (Grenze 8 MB je Bild).
+   */
   function exportImage(){
     const out = document.createElement("canvas");
-    out.width = W;
-    out.height = H;
+    out.width = Math.round(W * RES);
+    out.height = Math.round(H * RES);
     const c = out.getContext("2d");
+    c.setTransform(RES, 0, 0, RES, 0, 0);
     c.fillStyle = "#ffffff";
     c.fillRect(0, 0, W, H);
     elements.forEach(el => drawElement(c, el));
+    if(photoMode){
+      let dataUrl = out.toDataURL("image/jpeg", 0.92);
+      if(dataUrl.length * 0.75 > 6 * 1024 * 1024) dataUrl = out.toDataURL("image/jpeg", 0.8);
+      return dataUrl;
+    }
     let dataUrl = out.toDataURL("image/png");
     if(dataUrl.length * 0.75 > 6 * 1024 * 1024) dataUrl = out.toDataURL("image/jpeg", 0.9);
     return dataUrl;
@@ -1928,7 +1957,7 @@ const Zeichnen = (() => {
       }
       return copy;
     });
-    return JSON.stringify({ version: 1, width: W, height: H, images, elements: out });
+    return JSON.stringify({ version: 1, width: W, height: H, res: RES, photo: photoMode || undefined, images, elements: out });
   }
 
   /** Gespeicherten Inhalt wieder in Objekte verwandeln (Fotos werden geladen). */
@@ -1962,15 +1991,33 @@ const Zeichnen = (() => {
     action = null;
     changed = false;
     editName = options.name || null;
-    drawTitle.textContent = options.scene ? "Zeichenblatt bearbeiten" : "Zeichenblatt";
-    applyBtn.textContent = options.scene ? "Änderungen übernehmen" : "In Bilder übernehmen";
+    const editing = !!(options.scene || options.photo);
+    drawTitle.textContent = (options.photo || (options.scene && options.scene.photo)) ? "Foto bearbeiten" : options.scene ? "Zeichenblatt bearbeiten" : "Zeichenblatt";
+    applyBtn.textContent = editing ? "Änderungen übernehmen" : "In Bilder übernehmen";
     loadWebFonts();
     if(options.scene){
-      elements = await loadScene(options.scene);
+      const sc = options.scene;
+      setBoard(sc.width || 1600, sc.height || 1000, sc.res || 1);
+      photoMode = !!sc.photo;
+      elements = await loadScene(sc);
       // Verwendete Schriften nachladen, damit Texte gleich richtig erscheinen
       [...new Set(elements.filter(el => el.type === "text").map(el => el.font || DEFAULT_FONT))].forEach(ensureFont);
+    }else if(options.photo){
+      // Foto als Hintergrund: Blatt im Format des Fotos, Foto fuellt es ganz
+      let img;
+      try{ img = await loadImage(options.photo); }
+      catch(err){ showStatus(err.message, "error"); return; }
+      const nw = img.naturalWidth, nh = img.naturalHeight;
+      const scale = BOARD_LONG / Math.max(nw, nh);
+      setBoard(nw * scale, nh * scale, Math.max(nw, nh) / BOARD_LONG);
+      photoMode = true;
+      elements = [{ type: "image", ...newStyle(), opacity: 1, fill: { type: "none" }, rotation: 0, x: 0, y: 0, w: W, h: H, img }];
+    }else{
+      setBoard(1600, 1000, 1);
+      photoMode = false;
     }
-    setTool(options.scene ? "select" : "rect");
+    setTool(options.photo ? "text" : options.scene ? "select" : "rect");
+    if(options.photo) hint.textContent = "Foto bearbeiten: ins Bild klicken und einen Titel tippen – oder Linien, Formen und Pfeile hinzufügen. Das Original bleibt erhalten.";
     render();
     dialog.showModal();
   }

@@ -291,6 +291,13 @@ const routes = [
     sendJson(res, 200, { ids: db.setImageOrder(id, body && body.ids) });
   }, "write"],
 
+  // Bearbeitetes Foto sofort auf sein Original zuruecksetzen -> das wiederhergestellte Bild
+  ["POST", /^\/api\/images\/([^/]+)\/restore$/, async (req, res, ctx, id) => {
+    const image = db.getImage(id);
+    if (!image || !db.canAccessTrip(ctx.account, image.tripId)) throw new HttpError(404, `Bild "${id}" nicht gefunden.`);
+    sendJson(res, 200, db.restoreOriginal(id));
+  }, "write"],
+
   // Ein Bild sofort endgueltig loeschen
   ["DELETE", /^\/api\/images\/([^/]+)$/, async (req, res, ctx, id) => {
     const image = db.getImage(id);

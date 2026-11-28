@@ -162,7 +162,10 @@ function renderImageList(focusKey){
          title="${readOnly ? "Doppelklick: vergrößern" : "Ziehen: neu anordnen · Rechtsklick: Menü · Doppelklick: vergrößern"}">
       <img src="${escapeHtml(img.url || img.dataUrl)}" alt="${escapeHtml(img.name)}" loading="lazy" draggable="false">
       <button type="button" class="image-menu-btn" data-action="image-menu" aria-label="Menü für dieses Bild" aria-haspopup="menu">⋯</button>
-      ${isEditableDrawing(img) ? `<button type="button" class="image-edit" data-action="edit-drawing" title="Zeichenblatt mit allen Objekten wieder bearbeiten">✎ Bearbeiten</button>` : ""}
+      <div class="image-actions">
+        <button type="button" class="image-edit" data-action="edit-drawing" title="${isEditableDrawing(img) ? "Im Zeichenblatt mit allen Objekten weiter bearbeiten" : "Im Zeichenblatt bearbeiten – z. B. einen Titel einfügen. Das Original bleibt erhalten."}">✎ Bearbeiten</button>
+        ${img.hasOriginal ? `<button type="button" class="image-restore" data-action="restore-original" title="Alle Bearbeitungen verwerfen und das Originalbild wiederherstellen">↺ Original</button>` : ""}
+      </div>
       <button type="button" class="image-remove" data-action="remove-image" aria-label="Bild entfernen">✕</button>
       ${img.deleting ? `<span class="image-state is-saving" role="status">Löscht…</span>`
         : img.saving ? `<span class="image-state is-saving" role="status">Speichert…</span>`
@@ -186,15 +189,24 @@ imageListEl.addEventListener("click", async (e) => {
   const editBtn = e.target.closest('button[data-action="edit-drawing"]');
   if(!editBtn || readOnly) return;
   const key = editBtn.closest(".image-thumb").dataset.key;
-  const original = workingImages.find(i => i.key === key);
+  let original = workingImages.find(i => i.key === key);
   if(!original) return;
   editBtn.disabled = true;
-  let scene = null;
+  // Laeuft noch das Hochladen, erst abwarten - nur ein gespeichertes Foto behaelt sein Original
+  if(original.saving) await uploadQueue;
+  original = workingImages.find(i => i.key === key) || original;
+  const isDrawing = isEditableDrawing(original);
+  let scene = null, photo = null;
   const ok = await guard(async () => {
-    scene = original.scene ? JSON.parse(original.scene) : await API.get(`/images/${enc(original.id)}/scene`);
+    if(isDrawing){
+      scene = original.scene ? JSON.parse(original.scene) : await API.get(`/images/${enc(original.id)}/scene`);
+    }else{
+      // Foto: als Data-URL ins Zeichenblatt (so steckt es auch im gespeicherten Inhalt)
+      photo = original.dataUrl || await blobToDataUrl(await (await fetch(original.url, { credentials: "same-origin" })).blob());
+    }
   });
   editBtn.disabled = false;
-  if(!ok || !scene) return;
+  if(!ok || !(scene || photo)) return;
   const time = imageTime(original);
   Zeichnen.open(({ name, dataUrl, scene: newScene }) => {
     const idx = workingImages.findIndex(i => i.key === key);
@@ -203,9 +215,46 @@ imageListEl.addEventListener("click", async (e) => {
       createdAt: time ? new Date(time).toISOString() : undefined };
     workingImages[idx] = entry;
     renderImageList();
-    // gespeichertes Zeichenblatt: auf dem Server an derselben Stelle ersetzen
-    storeImageNow(entry, original.id || null, "Zeichenblatt");
-  }, { scene, name: original.name });
+    // auf dem Server an derselben Stelle ersetzen; ein Foto behaelt dort sein Original
+    storeImageNow(entry, original.id || null, isDrawing ? "Zeichenblatt" : "Bearbeitetes Foto");
+  }, isDrawing ? { scene, name: original.name } : { photo, name: original.name });
+});
+
+function blobToDataUrl(blob){
+  return new Promise((resolve, reject) => {
+    if(!blob.type.startsWith("image/")) { reject(new Error("Das Bild konnte nicht geladen werden.")); return; }
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("Das Bild konnte nicht gelesen werden."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+/* Original wiederherstellen: alle Bearbeitungen eines Fotos verwerfen (sofort, mit Rueckfrage). */
+imageListEl.addEventListener("click", (e) => {
+  if(!e.target.closest('button[data-action="restore-original"]') || readOnly) return;
+  const key = e.target.closest(".image-thumb").dataset.key;
+  const entry = workingImages.find(i => i.key === key);
+  if(!entry || !entry.id || !entry.hasOriginal) return;
+  if(!window.confirm(`Bearbeitungen an „${entry.name}“ verwerfen und das Originalbild${entry.originalName ? ` „${entry.originalName}“` : ""} wiederherstellen?`)) return;
+  entry.saving = true;
+  renderImageList();
+  const job = uploadQueue.then(async () => {
+    try{
+      const restored = await API.post(`/images/${enc(entry.id)}/restore`, {});
+      Object.assign(entry, { id: restored.id, url: restored.url, name: restored.name, createdAt: restored.createdAt,
+        hasScene: false, hasOriginal: false, originalName: null, saving: false });
+      delete entry.scene;
+      renderImageList();
+      showStatus(`Originalbild „${restored.name}“ ist wiederhergestellt.`, "success");
+    }catch(err){
+      console.error("Travelfy:", err);
+      entry.saving = false;
+      renderImageList();
+      showStatus(`Original konnte nicht wiederhergestellt werden: ${err.message}`, "error");
+    }
+  });
+  uploadQueue = job.catch(() => {});
 });
 
 /* Entfernen: gespeicherte Bilder werden sofort endgueltig geloescht (mit
@@ -280,6 +329,7 @@ async function uploadImage(entry, replaces, label){
       createdAt: entry.createdAt || undefined, replaces: replaces || undefined
     });
     Object.assign(entry, { id: saved.id, url: saved.url, name: saved.name, hasScene: !!saved.hasScene,
+      hasOriginal: !!saved.hasOriginal, originalName: saved.originalName || null,
       createdAt: saved.createdAt, isNew: false, saving: false });
     delete entry.dataUrl;
     delete entry.scene;
@@ -511,7 +561,8 @@ function openImageMenu(key, x, y){
       + item("name-asc", "Name A–Z", last < 1)
       + item("name-desc", "Name Z–A", last < 1)
       + `<div class="image-context-sep" role="separator"></div>`
-      + (isEditableDrawing(img) ? item("edit", "✎ Zeichenblatt bearbeiten") : "")
+      + item("edit", isEditableDrawing(img) ? "✎ Im Zeichenblatt bearbeiten" : "✎ Im Zeichenblatt bearbeiten (Titel …)")
+      + (img.hasOriginal && img.id ? item("restore", "↺ Originalbild wiederherstellen") : "")
       + item("remove", "✕ Bild entfernen");
   }
   imageMenu.innerHTML = html;
@@ -565,6 +616,7 @@ imageMenu.addEventListener("click", (e) => {
     case "next": moveImage(key, pos + 1); break;
     case "last": moveImage(key, workingImages.length - 1); break;
     case "edit": imageListEl.querySelector(`.image-thumb[data-key="${CSS.escape(key)}"] [data-action="edit-drawing"]`)?.click(); break;
+    case "restore": imageListEl.querySelector(`.image-thumb[data-key="${CSS.escape(key)}"] [data-action="restore-original"]`)?.click(); break;
     case "remove": imageListEl.querySelector(`.image-thumb[data-key="${CSS.escape(key)}"] [data-action="remove-image"]`)?.click(); break;
     default: sortImages(action);
   }
@@ -724,7 +776,8 @@ function fillForm(trip, categoryOptions){
     tripLongTextInput.value = trip.longText || "";
     workingCategories = (trip.categories || []).map(name => ({ key: makeId(), name }));
     workingStations = (trip.stations || []).map(s => ({ key: s.id || makeId(), name: s.name, note: s.note || "" }));
-    workingImages = (trip.images || []).map(i => ({ key: i.id, id: i.id, name: i.name, url: i.url, hasScene: !!i.hasScene, createdAt: i.createdAt || undefined }));
+    workingImages = (trip.images || []).map(i => ({ key: i.id, id: i.id, name: i.name, url: i.url, hasScene: !!i.hasScene,
+      hasOriginal: !!i.hasOriginal, originalName: i.originalName || null, createdAt: i.createdAt || undefined }));
   }else{
     detailHeading.textContent = "Neue Reise";
     document.title = "Travelfy – Neue Reise";

@@ -22,7 +22,8 @@ const path = require("node:path");
 
 // 2: Zeichenblaetter bleiben bearbeitbar (images.scene) und behalten ihre Erstellzeit (images.created_at)
 // 3: Bilddaten als Dateien im Bilder-Ordner, in der Tabelle nur noch Metadaten (images.file, images.scene_file)
-const SCHEMA_VERSION = 3;
+// 4: bearbeitete Fotos behalten ihr Original (images.original_file/_mime/_name) - wiederherstellbar
+const SCHEMA_VERSION = 4;
 // Hoechstgroesse des gespeicherten Zeichenblatt-Inhalts (Objekte samt eingesetzter Fotos)
 const MAX_SCENE_CHARS = 20 * 1024 * 1024;
 // Kennung dieser Anwendung in der Datenbank: eine fremde Datenbankdatei
@@ -117,7 +118,10 @@ CREATE TABLE IF NOT EXISTS images (
   file     TEXT NOT NULL,   -- Bilddatei im Bilder-Ordner, z.B. "mx0ezevgecac35c2.jpg"
   scene_file TEXT,          -- Zeichenblatt-Inhalt als JSON-Datei (NULL = normales Foto)
   position INTEGER NOT NULL,
-  created_at TEXT           -- Erstellzeit; bleibt beim Bearbeiten eines Zeichenblatts erhalten
+  created_at TEXT,          -- Erstellzeit; bleibt beim Bearbeiten eines Zeichenblatts erhalten
+  original_file TEXT,       -- bearbeitetes Foto: Datei des Originalfotos (NULL = keins)
+  original_mime TEXT,
+  original_name TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_images_trip ON images(trip_id, position);
 `;
@@ -154,6 +158,11 @@ function open(file, options = {}) {
   // Aeltere Datenbank mit Bilddaten in der Tabelle: einmalig in Dateien umziehen
   const imageColumns = db.prepare("PRAGMA table_info(images)").all().map((c) => c.name);
   if (imageColumns.includes("data")) migrateImagesToFiles(imageColumns);
+  // Schema 4: Spalten fuer das Original bearbeiteter Fotos
+  const cols4 = db.prepare("PRAGMA table_info(images)").all().map((c) => c.name);
+  for (const col of ["original_file", "original_mime", "original_name"]) {
+    if (!cols4.includes(col)) db.exec(`ALTER TABLE images ADD COLUMN ${col} TEXT`);
+  }
 
   const row = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get();
   if (!row) {
@@ -222,9 +231,10 @@ function storeImageFiles(id, mime, buf, scene) {
 function sweepImageFiles() {
   if (!db || !imagesDir) return 0;
   const used = new Set();
-  for (const r of db.prepare("SELECT file, scene_file AS sceneFile FROM images").all()) {
+  for (const r of db.prepare("SELECT file, scene_file AS sceneFile, original_file AS originalFile FROM images").all()) {
     used.add(r.file);
     if (r.sceneFile) used.add(r.sceneFile);
+    if (r.originalFile) used.add(r.originalFile);
   }
   let removed = 0;
   for (const name of fs.readdirSync(imagesDir)) {
@@ -492,9 +502,10 @@ function getTrip(id) {
 
   // Nur Metadaten - die Bilddatei kommt ueber GET /api/images/:id.
   trip.images = db.prepare(`
-    SELECT id, name, mime, bytes, created_at AS createdAt, (scene_file IS NOT NULL) AS hasScene
+    SELECT id, name, mime, bytes, created_at AS createdAt, (scene_file IS NOT NULL) AS hasScene,
+           (original_file IS NOT NULL) AS hasOriginal, original_name AS originalName
     FROM images WHERE trip_id = ? ORDER BY position
-  `).all(id).map((img) => ({ ...img, hasScene: !!img.hasScene, url: `api/images/${img.id}` }));
+  `).all(id).map((img) => ({ ...img, hasScene: !!img.hasScene, hasOriginal: !!img.hasOriginal, url: `api/images/${img.id}` }));
 
   return trip;
 }
@@ -703,7 +714,15 @@ function insertImage(tripId, input) {
   const { mime, buf } = decodeDataUrl(input.dataUrl);
   const scene = normalizeScene(input.scene);
   const old = input.replaces
-    ? db.prepare("SELECT id, position, created_at AS createdAt FROM images WHERE id = ? AND trip_id = ?").get(String(input.replaces), tripId)
+    ? db.prepare(`SELECT id, name, mime, file, scene_file AS sceneFile, position, created_at AS createdAt,
+                         original_file AS originalFile, original_mime AS originalMime, original_name AS originalName
+                  FROM images WHERE id = ? AND trip_id = ?`).get(String(input.replaces), tripId)
+    : null;
+  // Original behalten: wird ein (noch unbearbeitetes) Foto ersetzt, ist seine Datei das
+  // Original; ein schon bearbeitetes Foto reicht sein Original weiter. Zeichenblaetter haben keins.
+  const original = !old ? null
+    : old.originalFile ? { file: old.originalFile, mime: old.originalMime, name: old.originalName }
+    : !old.sceneFile ? { file: old.file, mime: old.mime, name: old.name }
     : null;
   let position;
   if (old) {
@@ -717,9 +736,12 @@ function insertImage(tripId, input) {
   // Erst die Dateien, dann der Datensatz - geht etwas schief, raeumt withSweep sie weg
   const { file, sceneFile } = storeImageFiles(id, mime, buf, scene);
   db.prepare(
-    "INSERT INTO images (id, trip_id, name, mime, bytes, file, scene_file, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-  ).run(id, tripId, name, mime, buf.length, file, sceneFile, position, createdAt);
-  return { id, name, mime, bytes: buf.length, createdAt, hasScene: !!scene, url: `api/images/${id}`, replaced: old ? old.id : null };
+    `INSERT INTO images (id, trip_id, name, mime, bytes, file, scene_file, position, created_at, original_file, original_mime, original_name)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(id, tripId, name, mime, buf.length, file, sceneFile, position, createdAt,
+    original ? original.file : null, original ? original.mime : null, original ? original.name : null);
+  return { id, name, mime, bytes: buf.length, createdAt, hasScene: !!scene, hasOriginal: !!original,
+    originalName: original ? original.name : null, url: `api/images/${id}`, replaced: old ? old.id : null };
 }
 
 /** Ein Bild sofort endgueltig loeschen. */
@@ -730,6 +752,32 @@ function deleteImage(id) {
     db.prepare("DELETE FROM images WHERE id = ?").run(id);
     db.prepare("UPDATE trips SET updated_at = ? WHERE id = ?").run(nowIso(), row.tripId);
     return true;
+  }));
+}
+
+/**
+ * Bearbeitetes Foto auf sein Original zuruecksetzen: ein neuer Datensatz an
+ * derselben Stelle (gleiche Erstellzeit) zeigt wieder auf die Originaldatei;
+ * die bearbeitete Fassung samt Zeichenblatt-Inhalt entfaellt.
+ */
+function restoreOriginal(id) {
+  return withSweep(() => transaction(() => {
+    const row = db.prepare(`SELECT id, trip_id AS tripId, position, created_at AS createdAt,
+                                   original_file AS file, original_mime AS mime, original_name AS name
+                            FROM images WHERE id = ?`).get(id);
+    if (!row) throw new HttpError(404, `Bild "${id}" nicht gefunden.`);
+    if (!row.file) throw new HttpError(400, "Dieses Bild hat kein gespeichertes Original.");
+    let bytes;
+    try { bytes = fs.statSync(imageFilePath(row.file)).size; }
+    catch { throw new HttpError(404, "Die Datei des Originalbildes fehlt auf dem Server."); }
+    db.prepare("DELETE FROM images WHERE id = ?").run(row.id);
+    const newId = makeId();
+    db.prepare(
+      "INSERT INTO images (id, trip_id, name, mime, bytes, file, scene_file, position, created_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)"
+    ).run(newId, row.tripId, row.name || "", row.mime, bytes, row.file, row.position, row.createdAt);
+    db.prepare("UPDATE trips SET updated_at = ? WHERE id = ?").run(nowIso(), row.tripId);
+    return { id: newId, name: row.name || "", mime: row.mime, bytes, createdAt: row.createdAt,
+      hasScene: false, hasOriginal: false, url: `api/images/${newId}`, replaced: row.id };
   }));
 }
 
@@ -1031,6 +1079,7 @@ module.exports = {
   deleteTrip,
   addImage,
   deleteImage,
+  restoreOriginal,
   setImageOrder,
   getImage,
   imageFilePath,

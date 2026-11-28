@@ -258,12 +258,21 @@ bearbeitbar (Farbe, Füllung, Text …), auch nach dem Speichern und erneuten
   JPEG) bei den Bildern der Reise ab; gesichert wird sie mit *Speichern*.
 - **Wieder bearbeiten:** Mit dem Bild wird der Inhalt des Blatts gespeichert
   (alle Objekte mit ihren Eigenschaften, Gruppen, eingesetzte Fotos – jedes Foto
-  nur einmal; Spalte `images.scene`, max. 20 MB). Solche Zeichenblätter haben in
-  der Bilderliste den Knopf **✎ Bearbeiten** (nur mit Schreibrecht und grüner
-  Ampel): er öffnet das Blatt mit allen Objekten, *Änderungen übernehmen*
-  ersetzt das Bild an derselben Stelle; Name und **Erstellzeit** (`images.created_at`)
-  bleiben, damit die Reihenfolge in der Dia-Show gleich bleibt. Gespeichert wird
-  mit *Speichern*. Zeichenblätter von vor dieser Funktion sind nur als Bild
+  nur einmal; Datei `<id>.scene.json`, max. 20 MB). **✎ Bearbeiten** (nur mit
+  Schreibrecht und grüner Ampel) öffnet das Blatt mit allen Objekten,
+  *Änderungen übernehmen* ersetzt das Bild sofort an derselben Stelle; Name und
+  **Erstellzeit** bleiben, damit die Reihenfolge in der Dia-Show gleich bleibt.
+- **Fotos bearbeiten** (z. B. Titel einfügen): **✎ Bearbeiten** gibt es an *jedem*
+  Bild. Ein Foto öffnet sich als Hintergrund eines Blatts **in seinem Format**
+  (lange Seite 1600 Punkte) und in **voller Auflösung** (bis 2 Pixel je Punkt, z. B.
+  2400 × 1800 bleibt 2400 × 1800); das Text-Werkzeug ist gleich aktiv. Das Ergebnis
+  wird als JPEG gespeichert und bleibt als Zeichenblatt weiter bearbeitbar.
+- **Original bleibt erhalten:** Beim ersten Bearbeiten eines Fotos merkt sich die
+  Datenbank dessen Datei (`images.original_file`, `original_mime`, `original_name`);
+  weitere Bearbeitungen reichen das Original weiter. **↺ Original** (am Bild oder im
+  Kontextmenü) verwirft nach einer Rückfrage alle Bearbeitungen und stellt das
+  Originalbild sofort wieder her – byte-genau, mit Name und Erstellzeit
+  (`POST /api/images/:id/restore`). Schema 4 ergänzt die Spalten beim ersten Start. Zeichenblätter von vor dieser Funktion sind nur als Bild
   vorhanden und lassen sich nicht mehr in Objekte zerlegen.
 - Schema 2 der Datenbank (`images.scene`, `images.created_at`) wird beim ersten
   Start automatisch ergänzt; vorhandene Daten bleiben unverändert.
