@@ -13,13 +13,17 @@
    nur ohne Netz kommt die zuletzt gespeicherte Fassung.
    ========================================================================= */
 
-const CACHE = "kochbuch-shell-v31";
+// Den Platzhalter im Namen ersetzt der Server durch die Version (server.js): jede neue
+// Version bekommt so von selbst einen neuen Cache-Namen.
+const CACHE = "kochbuch-shell-__BUILD__";
 // Basis der App = Verzeichnis dieses Skripts, z.B. "/kochbuch/".
 const BASE = new URL("./", self.location.href).pathname;
 const SHELL = [
   "",
   "kochbuch.css",
   "kochbuch.js",
+  "version.js",
+  "version-anzeige.js",
   "kochansicht.html",
   "kochansicht.css",
   "kochansicht.js",
