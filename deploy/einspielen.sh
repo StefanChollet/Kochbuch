@@ -55,6 +55,12 @@ deploy_app() {
         test -s \"\$d/data/\$f.bak-vor-update-$TS\" || { echo \"   Sicherung von \$f fehlgeschlagen\"; exit 1; }
         echo \"   Sicherung: \$d/data/\$f.bak-vor-update-$TS\"
       done
+    fi
+    # Bilder-Ordner (Bilddateien liegen nicht in der Datenbank): Sicherung per
+    # Hardlinks - kostet keinen Platz, und spaeter geloeschte Bilder bleiben darin.
+    if [ -d \$d/data/images ]; then
+      cp -al \$d/data/images \$d/data/images.bak-vor-update-$TS
+      echo \"   Sicherung: \$d/data/images.bak-vor-update-$TS (\$(ls \$d/data/images | wc -l) Dateien)\"
     fi"
 
   # Neuen Code daneben auspacken, dann tauschen (alter Code -> app.bak-<zeit>)
